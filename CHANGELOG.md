@@ -10,6 +10,14 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.2.2 (2026-11-15)
+
+Affects: every game using the default `identity: 'tab'`; a bug fix, no change needed in games (take 0.2.2). Found in the owner's first phone test (B-033).
+
+- Fixed: a tab opened from another tab of the same browser (a link opened in a new tab, a duplicated tab) became the same participant as the first tab, because browsers copy the tab's session storage; it took the first tab's seat (for the owner: the room and the host role) and closed the first tab. Such a copy is now recognised and gets an identity of its own, so it joins as a new participant. A reload still keeps the seat. Recognising copies needs the browser's Web Locks or BroadcastChannel (all current browsers).
+- New: `tabSession()` tells a game whether the current tab is such a copy, for per-tab state it keeps itself in session storage.
+- Demo: a copied tab no longer rejoins the first tab's room by itself, and someone arriving by an invitation link lands in the name field.
+
 ## 0.2.1 (2026-11-15)
 
 Affects: nobody yet (take 0.2.1 rather than 0.2.0). No change to the room server or the client.

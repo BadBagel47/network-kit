@@ -12,6 +12,10 @@
 // forgotten tab does not keep knocking for ever.
 
 import { PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, normalizeCode } from '../shared/protocol.js';
+import { tabSession } from './tab.js';
+
+// Identities already renewed in this page because the tab was a copy.
+const renewedInThisPage = new Set();
 
 const memoryStore = new Map();
 const memoryStorage = {
@@ -101,6 +105,11 @@ export class NetworkRoom {
     // `slot` keeps a separate identity in the same browser (e.g. a big-screen window).
     const prefix = `network-kit:${apiBase(this.server, this.basePath)}:${o.slot ? `${o.slot}:` : ''}`;
     const keyStore = o.storage ?? pickStorage(o.identity === 'device' ? 'localStorage' : 'sessionStorage');
+    this.keyStore = keyStore;
+    this.playerKeyName = `${prefix}player-key`;
+    // A per-tab identity must not be shared with a tab the browser copied (B-033).
+    this.tabScoped = !o.storage && !o.playerKey && o.identity !== 'device' && keyStore === globalThis.sessionStorage;
+    this.tabSession = o.tabSession ?? (this.tabScoped ? tabSession : null);
     this.ownerStore = o.storage ?? pickStorage('localStorage');
     this.playerKey = o.playerKey ?? keyStore.getItem(`${prefix}player-key`);
     if (!this.playerKey) {
@@ -241,8 +250,28 @@ export class NetworkRoom {
       if (!this.welcomed) this.finish(0, 'timeout');
     }, this.connectTimeoutMs);
     this.watch();
-    this.open();
+    this.claimIdentity().then(() => this.open());
     return promise;
+  }
+
+  /**
+   * A tab opened from another tab (or duplicated) starts with a copy of its
+   * sessionStorage, identity included. Such a copy gets an identity of its
+   * own, so it joins as a new participant instead of taking over the other
+   * tab's seat. A reload keeps the identity.
+   */
+  async claimIdentity() {
+    if (!this.tabSession) return;
+    try {
+      const { copied } = await this.tabSession();
+      if (copied && !renewedInThisPage.has(this.playerKeyName)) {
+        renewedInThisPage.add(this.playerKeyName);
+        this.playerKey = randomKey();
+        this.keyStore.setItem(this.playerKeyName, this.playerKey);
+      }
+    } catch {
+      // cannot tell: keep the stored identity
+    }
   }
 
   open() {

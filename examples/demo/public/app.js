@@ -2,7 +2,7 @@
 // everyone's ship; the others send their keys only when they change; the
 // host sends positions often and gives the room a full snapshot now and then.
 import {
-  NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg,
+  NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession,
 } from './network-kit/client/index.js';
 
 const SERVER = location.origin;
@@ -50,8 +50,18 @@ $('join').onclick = () => enter(NetworkRoom.join(SERVER, joinOptions()));
 $('watch').onclick = () => enter(NetworkRoom.join(SERVER, joinOptions({ role: 'viewer' })));
 
 // Coming back after a reload keeps the same seat (same tab, same identity).
+// A tab the browser copied from another (a link opened in a new tab) is not
+// that tab: it starts on this screen and asks for a name.
+const { copied } = await tabSession();
+if (copied) sessionStorage.removeItem('demo:room');
 const saved = sessionStorage.getItem('demo:room');
-if (saved && (!link || link.code === saved)) enter(NetworkRoom.join(SERVER, { ...OPTIONS, code: saved, name: nameValue() }));
+if (saved && (!link || link.code === saved)) {
+  enter(NetworkRoom.join(SERVER, { ...OPTIONS, code: saved, name: nameValue() }));
+} else if (link) {
+  // Arrived by an invitation: the name is the next thing to fill in.
+  $('name').focus();
+  $('name').select();
+}
 
 // ------------------------------------------------------------- game screen
 

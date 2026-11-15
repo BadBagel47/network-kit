@@ -14,14 +14,13 @@
 | F-004 | Feature | Automatic daily budget per game | Medium | Proposal | Standard |
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
 | D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | EU rooms confirmed 2026-11-15 (first demo deploy); the Free plan figures are still unchecked | Standard |
-| D-025 | Design | Try the demo on two real phones: lock screen, wifi to mobile data, tab in the background | Medium | Owner task; never done | – |
+| D-025 | Design | Try the demo on real phones: lock screen, wifi to mobile data, tab in the background (two phones, or two browser apps on one) | Medium | Owner task; started 2026-11-15 on one phone (found B-033) | – |
 | F-026 | Feature | Operations: what players see when the daily quota is used up, a budget for the public demo, logging in production | Low | Proposal from the review 2026-11-15 | Standard |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
 | F-029 | Feature | Rooms created by a game's server without a participating creator (e.g. an invitation two people open), with the first eligible participant leading | Medium | Idea from the games pass (D-012); needed when Bricks moves | Strong, high |
 | F-030 | Feature | A room-kept state for newcomers, optionally per role, so joiners and reloading participants get it without relying on the host | Medium | Idea from the games pass (D-012) | Strong, high |
 | F-031 | Feature | Smaller additions found in the games pass: automatic placement, ready flags, pause timeline in server time, grace period per phase, unban and ban list, admit one by one, access per role, private kept state per participant, server time on relayed messages, state saved in parts, rate caps per role | Low | Ideas from the games pass (D-012); each is added when a game needs it | Standard |
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
-| B-033 | Bug | A new tab opened from a game page in the same browser becomes the same participant (here: the owner and host) and closes the first tab; the demo then also skips the name | High | Pågår 2026-11-15 | Strong, medium |
 
 ## Done
 
@@ -48,28 +47,26 @@
 | D-023 | Design | API details to settle before the first game depends on them (naming of posts, phase, host event, message targets, storage keys) | 2026-11-15, v0.2.0: choices listed under Decisions in `docs/HANDOFF.md` |
 | F-024 | Feature | Tests that were missing: client unit tests, a real sleep test, the browser test in CI and before a release | 2026-11-15, v0.2.0: client unit tests, real sleep test, browser test in CI and before a release |
 | B-027 | Bug | Documentation disagrees with the code in several places | 2026-11-15, v0.2.0 |
+| B-033 | Bug | A new tab opened from a game page in the same browser becomes the same participant (here: the owner and host) and closes the first tab; the demo then also skips the name | 2026-11-15, v0.2.2 (tested in Chromium and on an emulated phone; not yet on the owner's phone) |
 
 ## Proposed runs (2026-11-15, after v0.2.0)
 
-- **A** – strong model, medium level – A copied tab is a new participant
-  - B-033 – Give a tab that the browser copied from another its own identity, and let the demo ask for a name when someone arrives by a link, so opening the invitation in a new tab of the same browser makes a new player instead of taking over the room.
-
-- **B** – strong model, high level – Administration and budget
+- **A** – strong model, high level – Administration and budget
   - D-011 – Check Cloudflare's current free limits first, so the numbers below are right.
   - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap.
   - F-004 – Give each game a share of the daily free budget that closes it for the day when used up.
   - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game; the gate is checked inside the room (new joins and round starts, not reconnects) and running rooms can be stopped.
   - F-026 – Show players a clear message when the quota is used up, give the public demo a budget and turn on logging.
-- **C** – strong model, high level – Additions for the next games to move
+- **B** – strong model, high level – Additions for the next games to move
   - F-029 – Let a game's server create a room nobody in it created, so two people opening the same invitation land in one room.
   - F-030 – Let the room keep a state for newcomers, so joiners and reloading participants get it without relying on the host.
 
-- **D** – standard model, medium level – Follow-ups from the check of v0.2.0
+- **C** – standard model, medium level – Follow-ups from the check of v0.2.0
   - F-032 – Notice a room nobody is playing in, and test the update and release workflows automatically, so a forgotten room costs less and workflow mistakes are caught early.
 
-Owner tasks: D-025 (try the demo on two real phones) and D-028 (decide how Boomers runs its game).
+Owner tasks: D-025 (try the demo on phones; on one phone, use two different browser apps) and D-028 (decide how Boomers runs its game).
 
-Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.2.1 following `docs/INTEGRATION.md`. Neither run here is needed for it.
+Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.2.2 following `docs/INTEGRATION.md`. Neither run here is needed for it.
 
 ## Details
 
@@ -287,5 +284,5 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - Reproduced with an emulated phone (Pixel 7, local workerd). Opening the link in a new tab from the game page: the new tab is the same participant as the first (same id, owner and host) and the first tab is closed. A separate browser, or a new tab where the link is pasted, works as intended.
 - Cause in the kit: with `identity: 'tab'` the identity is kept in `sessionStorage`, which browsers copy into a tab opened from another tab (and into a duplicated tab). The copy then counts as a reload of the same tab.
 - Cause in the demo: it also keeps the current room in `sessionStorage` and rejoins it automatically when the link is for the same room, so the copied tab never shows the start screen.
-- Fix proposal: the client notices that another open tab already uses the identity (a browser lock held per identity, with a broadcast check where locks are missing) and makes a new identity for the copy; the demo rejoins automatically only after a reload, not when a link is opened. A test in Chromium that opens a copied tab.
+- Fixed in v0.2.2: every tab holds a browser lock named after its tab id (Web Locks, with a BroadcastChannel question where locks are missing); a tab whose stored id is held by another open tab is a copy and gets a new id, and the client then makes a new identity for it. `tabSession()` is exported for games' own per-tab state; the demo uses it so a copied tab does not rejoin the first tab's room, and focuses the name field when someone arrives by a link. Tests: unit tests of the detection, the real client joining from a copied tab, and the Chromium test opening the invitation in a new tab of the owner's browser (it asks for a name, joins as a third participant, and the owner's tab stays owner and host).
 - Not affected: games where every participant uses their own device, which is the normal case. Workaround for testing on one phone: use two different browser apps.

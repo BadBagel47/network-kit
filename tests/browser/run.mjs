@@ -50,6 +50,28 @@ try {
   assert.ok(!b.p.url().includes('key='), 'the key is removed from the address bar');
   await b.p.waitForFunction(() => document.querySelector('#players').textContent.includes('Ada'));
 
+  // B-033: the invitation opened in a new tab of the owner's own browser (the
+  // browser copies the tab's session storage) is a new participant: it asks
+  // for a name, and the owner's tab keeps the room.
+  const aId = await a.p.evaluate(() => window.demo.room.me);
+  const [copy] = await Promise.all([a.context.waitForEvent('page'), a.p.evaluate((l) => window.open(l, '_blank'), playerLink)]);
+  copy.on('pageerror', (e) => errors.push(`copy: ${e.message}`));
+  await copy.waitForLoadState();
+  await copy.waitForSelector('#start:not([hidden])');
+  assert.equal(await copy.evaluate(() => document.activeElement?.id), 'name', 'the name field is ready to fill in');
+  await copy.fill('#name', 'Cleo');
+  await copy.click('#join');
+  await copy.waitForSelector('#game:not([hidden])');
+  const copyId = await copy.evaluate(() => window.demo.room.me);
+  assert.notEqual(copyId, aId);
+  assert.equal(await copy.evaluate(() => window.demo.room.isOwner || window.demo.room.isHost), false);
+  await a.p.waitForFunction(() => document.querySelector('#players').textContent.includes('Cleo'));
+  assert.equal(await a.p.textContent('#status'), 'Online', 'the owner\'s tab is still in the room');
+  assert.equal(await a.p.evaluate(() => window.demo.room.isOwner && window.demo.room.isHost), true);
+  await copy.click('#leave');
+  await a.p.waitForFunction(() => !document.querySelector('#players').textContent.includes('Cleo'));
+  await copy.close();
+
   await a.p.click('#start-game');
   await b.p.waitForFunction(() => document.querySelector('#overlay').hidden, null, { timeout: 8000 });
 

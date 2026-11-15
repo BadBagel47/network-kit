@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.2** (0.2.1).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.2** (0.2.2).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -188,7 +188,7 @@ element.innerHTML = qrSvg(url);
 | `name`, `code`, `key`, `role` | | Nickname, room code, invitation key, wanted role (open rooms). |
 | `ownerKey` | from storage | The owner key, to come back as owner from another device. |
 | `on` | – | Handlers registered before connecting, e.g. `{ host: fn }`. |
-| `identity` | `'tab'` | Who a browser is. `'tab'`: a reload keeps the seat and two tabs are two participants, but a link opened again in a new tab is a new participant (the old seat is held for the grace period). `'device'`: all tabs of the browser are one participant, and a second tab replaces the first. |
+| `identity` | `'tab'` | Who a browser is. `'tab'`: a reload keeps the seat and two tabs are two participants, also a tab the browser copied from another (a link opened in a new tab, a duplicated tab). A link opened again in a new tab after the old one was closed is a new participant too (the old seat is held for the grace period). `'device'`: all tabs of the browser are one participant, and a second tab replaces the first. |
 | `slot` | – | A separate identity in the same browser, e.g. `'screen'` for a big-screen window. |
 | `hostSilentMs` | off | Host-run games: report the host to the room when it has sent nothing for this long during play. Set it only if the host sends continuously. |
 | `connectTimeoutMs` | 15 s | The first connect must succeed within this. |
@@ -199,6 +199,8 @@ element.innerHTML = qrSvg(url);
 | `basePath`, `storage`, `heartbeatMs`, … | | See the constructor in `client/room.js`. |
 
 Identities and owner keys are stored per game server, so games on the same site do not share them.
+
+**Per-tab state of your own:** browsers copy a tab's `sessionStorage` into a tab opened from it. If the game keeps per-tab state there (for example "the room this tab is in", to rejoin after a reload), check `await tabSession()` first: `{ id, copied }`, where `copied` is true in such a copy, whose stored state belongs to the other tab. The demo does this. It needs Web Locks or BroadcastChannel; without either, every tab counts as the original.
 
 ### Events (`room.on(type, fn)` returns an unsubscribe function)
 
