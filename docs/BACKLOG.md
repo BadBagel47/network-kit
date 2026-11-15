@@ -107,6 +107,7 @@ Run A together with Critical ST8 F-040 (online mode), the first real user. Boome
 
 ### D-009 Versions and updates (proposal 2026-11-15)
 - Owner's question: can network-kit keep developing after games use it, and do bug fixes reach those games, without it becoming messy? Same need for `BadBagel47/geo-kit` (shared GPS module).
+- Same model as `BadBagel47/geo-kit`, which already has version numbers, an automatic tagged release per version and projects pinned to a tag; geo-kit D-016 adds the same update proposals there.
 - Version numbers: MAJOR.MINOR.PATCH. PATCH = bug fix only, safe to take; MINOR = new features, old code keeps working; MAJOR = something changes in a way games must adapt to (rare, with a short guide).
 - Each game uses a fixed version and records it in its HANDOFF. Nothing changes in a game until it updates.
 - Delivery: a copy of the client files inside each game's repository (e.g. `vendor/network-kit/`), made by a small workflow, not loaded from another site at run time (Critical's tests forbid loading from other services, and a copy keeps working even if something elsewhere breaks). The game's server part includes the same version.
