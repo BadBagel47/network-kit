@@ -21,6 +21,7 @@
 | F-030 | Feature | A room-kept state for newcomers, optionally per role, so joiners and reloading participants get it without relying on the host | Medium | Idea from the games pass (D-012) | Strong, high |
 | F-031 | Feature | Smaller additions found in the games pass: automatic placement, ready flags, pause timeline in server time, grace period per phase, unban and ban list, admit one by one, access per role, private kept state per participant, server time on relayed messages, state saved in parts, rate caps per role | Low | Ideas from the games pass (D-012); each is added when a game needs it | Standard |
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
+| B-033 | Bug | A new tab opened from a game page in the same browser becomes the same participant (here: the owner and host) and closes the first tab; the demo then also skips the name | High | Found in the owner's phone test 2026-11-15 (reproduced) | Strong, medium |
 
 ## Done
 
@@ -50,17 +51,20 @@
 
 ## Proposed runs (2026-11-15, after v0.2.0)
 
-- **A** – strong model, high level – Administration and budget
+- **A** – strong model, medium level – A copied tab is a new participant
+  - B-033 – Give a tab that the browser copied from another its own identity, and let the demo ask for a name when someone arrives by a link, so opening the invitation in a new tab of the same browser makes a new player instead of taking over the room.
+
+- **B** – strong model, high level – Administration and budget
   - D-011 – Check Cloudflare's current free limits first, so the numbers below are right.
   - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap.
   - F-004 – Give each game a share of the daily free budget that closes it for the day when used up.
   - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game; the gate is checked inside the room (new joins and round starts, not reconnects) and running rooms can be stopped.
   - F-026 – Show players a clear message when the quota is used up, give the public demo a budget and turn on logging.
-- **B** – strong model, high level – Additions for the next games to move
+- **C** – strong model, high level – Additions for the next games to move
   - F-029 – Let a game's server create a room nobody in it created, so two people opening the same invitation land in one room.
   - F-030 – Let the room keep a state for newcomers, so joiners and reloading participants get it without relying on the host.
 
-- **C** – standard model, medium level – Follow-ups from the check of v0.2.0
+- **D** – standard model, medium level – Follow-ups from the check of v0.2.0
   - F-032 – Notice a room nobody is playing in, and test the update and release workflows automatically, so a forgotten room costs less and workflow mistakes are caught early.
 
 Owner tasks: D-025 (try the demo on two real phones) and D-028 (decide how Boomers runs its game).
@@ -277,3 +281,11 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - The update template and the release workflow were simulated by hand in run B, not tested in CI. A small script that runs their shell steps against local repositories would catch regressions.
 - The gate has a unit test for creating a room, none for joining (it changes in F-003 anyway).
 - A CI check that a change to `src/` comes with a version bump and a changelog entry.
+
+### B-033 A copied tab takes over the participant (2026-11-15)
+- Found by the owner when trying the demo on one phone (D-025): the player link opened in a new tab of the same browser showed "(owner, host)" and no name field, and the first tab closed with "The room was opened in another tab."
+- Reproduced with an emulated phone (Pixel 7, local workerd). Opening the link in a new tab from the game page: the new tab is the same participant as the first (same id, owner and host) and the first tab is closed. A separate browser, or a new tab where the link is pasted, works as intended.
+- Cause in the kit: with `identity: 'tab'` the identity is kept in `sessionStorage`, which browsers copy into a tab opened from another tab (and into a duplicated tab). The copy then counts as a reload of the same tab.
+- Cause in the demo: it also keeps the current room in `sessionStorage` and rejoins it automatically when the link is for the same room, so the copied tab never shows the start screen.
+- Fix proposal: the client notices that another open tab already uses the identity (a browser lock held per identity, with a broadcast check where locks are missing) and makes a new identity for the copy; the demo rejoins automatically only after a reload, not when a link is opened. A test in Chromium that opens a copied tab.
+- Not affected: games where every participant uses their own device, which is the normal case. Workaround for testing on one phone: use two different browser apps.
