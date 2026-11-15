@@ -16,7 +16,7 @@
 | F-010 | Feature | Notice a host whose connection died silently (e.g. a phone that went to sleep) within seconds, so takeover does not wait for Cloudflare to close the connection | Medium | Idea (found in run A) | Strong, medium |
 | D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | EU rooms confirmed 2026-11-15 (first demo deploy); the Free plan figures are still unchecked | Standard |
 | D-012 | Design | Check Boomers', Bricks' and Buzzy's needs against the core before they move here, and collect what is missing as general features | Medium | Approved by the owner 2026-11-15 | Strong, high |
-| F-013 | Feature | Game-master host: a host without a player seat (e.g. a quiz host), and a choice between takeover and waiting for the host when its connection drops | Medium | Approved by the owner 2026-11-15 | Strong, medium |
+| F-013 | Feature | Game-master host: a host without a player seat (e.g. a quiz host), a choice between takeover and waiting for the host when its connection drops, and roles defined by the game | Medium | Approved by the owner 2026-11-15 | Strong, medium |
 
 ## Done
 
@@ -38,7 +38,7 @@
   - D-011 – Check Cloudflare's current free limits (EU rooms are already confirmed), so the budget numbers above are right.
 - **B** – strong model, high level – Host options and fit for the other games
   - D-012 – Go through Boomers', Bricks' and Buzzy's needs against the core and list what is missing as general features, so moving them later needs no rework.
-  - F-013 – Add a host who leads without playing and a choice to wait for a lost host instead of handing over, so a quiz like Buzzy works without players seeing the answers.
+  - F-013 – Add a host who leads without playing, a choice to wait for a lost host instead of handing over, and roles that each game defines itself, so a quiz like Buzzy works without players seeing the answers and a new role such as a referee later is only a setting.
   - F-010 – Notice a silently dead host within seconds using the heartbeats the room already gets, so the other players are not left waiting when the host's phone sleeps.
 
 Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0.1.0; neither run here is needed for it.
@@ -143,3 +143,4 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0
 - Buzzy has a quiz host who leads without playing (host, up to 12 players, up to 4 viewer screens). If such a host drops, a player must not take over (they could see the answers); the room should pause and wait for the host.
 - General options, each with a default that keeps today's behaviour: a host without a player seat (not counted among players and posts), and `takeover` on (today) or off (pause and wait for the host during the grace period; what happens after the grace period is chosen too).
 - Also useful for e.g. a party game with a game master. Covered by an example game's tests.
+- Roles defined by the game (owner decision 2026-11-15): instead of only the built-in `player` and `viewer`, a game lists its own kinds of participants with their seat limits and rights (e.g. plays or not, may pause, may become host, gets the invitation keys, has its own share link). `player` and `viewer` stay as the default, so games written for v0.1.0 keep working (a MINOR version). This makes a later role such as a referee a setting instead of a change to the core. No referee is built now: it waits until a game needs it.
