@@ -17,7 +17,7 @@ node scripts/vendor.mjs ../my-game/vendor/network-kit
 
 This writes `client/`, `server/`, `shared/`, `version.js`, `VERSION` and a short README. Record the version in the game's HANDOFF. Never edit the copy: fix network-kit first (with a test that shows the bug), release, then update.
 
-For automatic bug-fix updates, copy `templates/update-network-kit.yml` to the game's `.github/workflows/` and set `VENDOR_DIR`, `SETUP_COMMAND` and `TEST_COMMAND` at the top. Every day it looks for a newer PATCH of the same MAJOR.MINOR, copies it, runs the game's tests and pushes it to `main` only if they pass. Otherwise it pushes a branch `network-kit/vX.Y.Z` and opens an issue. While network-kit is a private repository, the game needs a secret `NETWORK_KIT_TOKEN` with read access to it.
+For automatic bug-fix updates, copy `templates/update-network-kit.yml` to the game's `.github/workflows/` and set `VENDOR_DIR`, `SETUP_COMMAND` and `TEST_COMMAND` at the top. Every day it looks for a newer PATCH of the same MAJOR.MINOR, copies it, runs the game's tests and pushes it to `main` only if they pass. Otherwise it pushes a branch `network-kit/vX.Y.Z` and opens an issue. network-kit is public, so no token is needed (`NETWORK_KIT_TOKEN` is only for a private copy).
 
 > Note for games published with GitHub Pages from a branch: check once that a push made by the workflow starts the Pages build.
 
