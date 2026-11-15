@@ -21,6 +21,7 @@
 | F-030 | Feature | A room-kept state for newcomers, optionally per role, so joiners and reloading participants get it without relying on the host | Medium | Idea from the games pass (D-012) | Strong, high |
 | F-031 | Feature | Smaller additions found in the games pass: automatic placement, ready flags, pause timeline in server time, grace period per phase, unban and ban list, admit one by one, access per role, private kept state per participant, server time on relayed messages, state saved in parts, rate caps per role | Low | Ideas from the games pass (D-012); each is added when a game needs it | Standard |
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
+| B-034 | Bug | The host role moves to another player in the lobby when the owner's phone switches app for a few seconds, and stays there when the owner is back; the demo then tells the owner to wait for the host although the owner can start | Medium | Found in the owner's phone test 2026-11-16 (reproduced) | Strong, medium |
 
 ## Done
 
@@ -51,17 +52,20 @@
 
 ## Proposed runs (2026-11-15, after v0.2.0)
 
-- **A** – strong model, high level – Administration and budget
+- **A** – strong model, medium level – Host stays with the owner outside a game
+  - B-034 – Hand the game to someone else only while a game is running, and give the host role back to the owner who returns between games, so a short app switch in the lobby does not move the room's host; the demo shows the owner that they can start.
+
+- **B** – strong model, high level – Administration and budget
   - D-011 – Check Cloudflare's current free limits first, so the numbers below are right.
   - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap.
   - F-004 – Give each game a share of the daily free budget that closes it for the day when used up.
   - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game; the gate is checked inside the room (new joins and round starts, not reconnects) and running rooms can be stopped.
   - F-026 – Show players a clear message when the quota is used up, give the public demo a budget and turn on logging.
-- **B** – strong model, high level – Additions for the next games to move
+- **C** – strong model, high level – Additions for the next games to move
   - F-029 – Let a game's server create a room nobody in it created, so two people opening the same invitation land in one room.
   - F-030 – Let the room keep a state for newcomers, so joiners and reloading participants get it without relying on the host.
 
-- **C** – standard model, medium level – Follow-ups from the check of v0.2.0
+- **D** – standard model, medium level – Follow-ups from the check of v0.2.0
   - F-032 – Notice a room nobody is playing in, and test the update and release workflows automatically, so a forgotten room costs less and workflow mistakes are caught early.
 
 Owner tasks: D-025 (try the demo on phones; on one phone, use two different browser apps) and D-028 (decide how Boomers runs its game).
@@ -286,3 +290,10 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - Cause in the demo: it also keeps the current room in `sessionStorage` and rejoins it automatically when the link is for the same room, so the copied tab never shows the start screen.
 - Fixed in v0.2.2: every tab holds a browser lock named after its tab id (Web Locks, with a BroadcastChannel question where locks are missing); a tab whose stored id is held by another open tab is a copy and gets a new id, and the client then makes a new identity for it. `tabSession()` is exported for games' own per-tab state; the demo uses it so a copied tab does not rejoin the first tab's room, and focuses the name field when someone arrives by a link. Tests: unit tests of the detection, the real client joining from a copied tab, and the Chromium test opening the invitation in a new tab of the owner's browser (it asks for a name, joins as a third participant, and the owner's tab stays owner and host).
 - Not affected: games where every participant uses their own device, which is the normal case. Workaround for testing on one phone: use two different browser apps.
+
+### B-034 Host moves in the lobby (2026-11-16)
+- Found by the owner in the phone test (D-025): A (owner, Brave) created the room, B joined in Firefox; switching to Firefox put Brave in the background, Android closed its connection, and four seconds later B was host. Back in Brave, A was still the owner but not the host, and the demo said "Waiting for the host to start" while showing A a Start button.
+- Reproduced on the fake host with the demo's crew options: in the lobby, a dropped owner-host is replaced after `takeoverMs`, and the owner returning does not get the host role back.
+- Cause: takeover starts whenever the host drops, also when no game is running (lobby, between rounds), where there is nothing to continue; and the host role only returns to the owner by a handover.
+- Proposal: with `takeover` on, a lost host is replaced only while a game is in progress (countdown or playing, also paused); in the lobby and after a round the room just waits. An owner who comes back while no game is in progress gets the host role back (with the kept state, so a series of rounds continues). The demo's text: the owner, who may start, is told to press Start.
+- Phones close a background tab's connection within seconds, so during a game a short app switch by the host still hands the game over (that is what takeover is for). If that is too eager, `takeoverMs` can be raised per game.
