@@ -14,6 +14,7 @@ Owner decisions behind these rules are recorded under *Decisions* in `docs/HANDO
 
 - network-kit is the shared multiplayer room server and client for the owner's hobby games (Boomers first, later Bricks, Buzzy and others).
 - The core handles rooms, codes, joining, seats, reconnection, share links, opening hours and administration. Game rules live in each game's own repository and plug into the core; the core never contains one game's rules.
+- Every feature in network-kit must be general: described without naming a single game, useful for at least two kinds of games, configurable with a sensible default, and covered by the example games' tests. A need that only one game has is solved in that game.
 - Games use a versioned copy of the client and update when it suits them, so a change here never breaks all games at once.
 - Runs on the Cloudflare Workers Free plan. No paid plan or billing upgrade without the owner's approval.
 - Keep the daily free budget in mind in every design: rooms sleep when nobody plays, inputs are sent only when they change, and each game has its own share of the budget.

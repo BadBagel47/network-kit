@@ -15,6 +15,8 @@
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
 | F-010 | Feature | Notice a host whose connection died silently (e.g. a phone that went to sleep) within seconds, so takeover does not wait for Cloudflare to close the connection | Medium | Idea (found in run A) | Strong, medium |
 | D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | EU rooms confirmed 2026-11-15 (first demo deploy); the Free plan figures are still unchecked | Standard |
+| D-012 | Design | Check Boomers', Bricks' and Buzzy's needs against the core before they move here, and collect what is missing as general features | Medium | Approved by the owner 2026-11-15 | Strong, high |
+| F-013 | Feature | Game-master host: a host without a player seat (e.g. a quiz host), and a choice between takeover and waiting for the host when its connection drops | Medium | Approved by the owner 2026-11-15 | Strong, medium |
 
 ## Done
 
@@ -34,10 +36,12 @@
   - F-004 – Give each game a share of the daily free budget that closes it for the day when used up, so one runaway game cannot stop the others.
   - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap, so you can see when it is time to pay and never get a surprise bill.
   - D-011 – Check Cloudflare's current free limits (EU rooms are already confirmed), so the budget numbers above are right.
-- **B** – strong model, medium level – Faster takeover
+- **B** – strong model, high level – Host options and fit for the other games
+  - D-012 – Go through Boomers', Bricks' and Buzzy's needs against the core and list what is missing as general features, so moving them later needs no rework.
+  - F-013 – Add a host who leads without playing and a choice to wait for a lost host instead of handing over, so a quiz like Buzzy works without players seeing the answers.
   - F-010 – Notice a silently dead host within seconds using the heartbeats the room already gets, so the other players are not left waiting when the host's phone sleeps.
 
-Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0.1.0; run A here is not needed for it.
+Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0.1.0; neither run here is needed for it.
 
 ## Details
 
@@ -128,3 +132,14 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0
 - The figures in `docs/INTEGRATION.md` (100,000 requests and 13,000 GB-s a day, 20:1 billing of incoming WebSocket messages) come from earlier notes, not from Cloudflare's pages, which could not be reached from the build environment.
 - EU-only rooms: confirmed on 2026-11-15. The first demo deploy created a room with `ROOM_JURISDICTION=eu` (recorded under Decisions in `docs/HANDOFF.md`).
 - Still open: the Free plan figures, best read from the account's own usage numbers in F-008.
+
+### D-012 Fit for the other games (2026-11-15)
+- The owner wants network-kit to work for any game and be reused, not tailored to one project (project rule in `AGENTS.md`).
+- Go through Boomers (F-002 there), Bricks (F-007 there, its 2 Players mode and private invitations) and Buzzy (#408, #348, #331 there) and compare with v0.1.0: roles, host behaviour, late join, timers, rematch, admin needs.
+- Output: a short list in this section of what already fits and what is missing, each missing piece written as a general feature with its own ID. Nothing game-specific goes into network-kit.
+
+### F-013 Game-master host (2026-11-15)
+- Today the host is a player with extra rights: the host takes a player seat, is counted in `to: 'players'`, and in host-run rooms another player takes over when the host's connection is lost.
+- Buzzy has a quiz host who leads without playing (host, up to 12 players, up to 4 viewer screens). If such a host drops, a player must not take over (they could see the answers); the room should pause and wait for the host.
+- General options, each with a default that keeps today's behaviour: a host without a player seat (not counted among players and posts), and `takeover` on (today) or off (pause and wait for the host during the grace period; what happens after the grace period is chosen too).
+- Also useful for e.g. a party game with a game master. Covered by an example game's tests.
