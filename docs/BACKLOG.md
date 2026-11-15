@@ -13,24 +13,24 @@
 | F-003 | Feature | One admin page for all games: on/off/until, private only, emergency stop | Medium | Idea | Strong, high |
 | F-004 | Feature | Automatic daily budget per game | Medium | Proposal | Standard |
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
-| F-010 | Feature | Notice a host whose connection died silently (e.g. a phone that went to sleep) within seconds, so takeover does not wait for Cloudflare to close the connection | Medium | Idea (found in run A) | Strong, medium |
+| F-010 | Feature | Notice a host whose connection died silently (e.g. a phone that went to sleep) within seconds, so takeover does not wait for Cloudflare to close the connection | Medium | Pågår 2026-11-15 (runs A and B) | Strong, medium |
 | D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | EU rooms confirmed 2026-11-15 (first demo deploy); the Free plan figures are still unchecked | Standard |
-| D-012 | Design | Check Boomers', Bricks' and Buzzy's needs against the core before they move here, and collect what is missing as general features | Medium | Approved by the owner 2026-11-15 | Strong, high |
-| F-013 | Feature | Game-master host: a host without a player seat (e.g. a quiz host), a choice between takeover and waiting for the host when its connection drops, and roles defined by the game | Medium | Approved by the owner 2026-11-15 | Strong, medium |
-| B-014 | Bug | A sleeping room loses the latest game state and its duplicate protection | High | Found in the review 2026-11-15 (reproduced) | Strong, high |
-| B-015 | Bug | Reconnects: old messages replayed after a long absence, host messages lost on a silent reconnect, the takeover message never repeated, queued messages crossing the host/player roles | High | Found in the review 2026-11-15 (reproduced) | Strong, high |
-| B-016 | Bug | The client gets stuck "offline" after a short network blip, and joining never gives up when the server cannot be reached | High | Found in the review 2026-11-15 (reproduced) | Strong, high |
-| B-017 | Bug | Uninvited connections can flood a room, stop its cleanup for good and create ghost seats; ids are not validated | High | Found in the review 2026-11-15 (reproduced) | Strong, high |
-| F-018 | Feature | Limits on what one room can cost: rate cap per connection, daily cap per room, no sending to an empty room, pause when alone | High | Proposal from the review 2026-11-15 | Strong, high |
-| D-019 | Design | Separate the room's owner (rights, keys, closing) from the host (the browser that runs the game) | High | Approved by the owner 2026-11-15; built in run B | Strong, high |
-| B-020 | Bug | Rights and lockouts: viewers and waiting players can pause, an automatic pause can get stuck, admitted players are locked out after the grace period, a ban is bypassed with a new tab | Medium | Found in the review 2026-11-15 (reproduced) | Strong, high |
-| D-021 | Design | Version policy while the kit is 0.x, and a safer update workflow for games | High | Approved by the owner 2026-11-15; built in run B | Strong, high |
-| B-022 | Bug | Server-run rooms: a storage write for every message, and the public seed reveals hidden cards in the example game | Medium | Found in the review 2026-11-15 (reproduced) | Strong, high |
-| D-023 | Design | API details to settle before the first game depends on them (naming of posts, phase, host event, message targets, storage keys) | Medium | Proposal from the review 2026-11-15 | Strong, high |
-| F-024 | Feature | Tests that were missing: client unit tests, a real sleep test, the browser test in CI and before a release | Medium | Proposal from the review 2026-11-15 | Strong, high |
+| D-012 | Design | Check Boomers', Bricks' and Buzzy's needs against the core before they move here, and collect what is missing as general features | Medium | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| F-013 | Feature | Game-master host: a host without a player seat (e.g. a quiz host), a choice between takeover and waiting for the host when its connection drops, and roles defined by the game | Medium | Pågår 2026-11-15 (runs A and B) | Strong, medium |
+| B-014 | Bug | A sleeping room loses the latest game state and its duplicate protection | High | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| B-015 | Bug | Reconnects: old messages replayed after a long absence, host messages lost on a silent reconnect, the takeover message never repeated, queued messages crossing the host/player roles | High | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| B-016 | Bug | The client gets stuck "offline" after a short network blip, and joining never gives up when the server cannot be reached | High | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| B-017 | Bug | Uninvited connections can flood a room, stop its cleanup for good and create ghost seats; ids are not validated | High | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| F-018 | Feature | Limits on what one room can cost: rate cap per connection, daily cap per room, no sending to an empty room, pause when alone | High | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| D-019 | Design | Separate the room's owner (rights, keys, closing) from the host (the browser that runs the game) | High | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| B-020 | Bug | Rights and lockouts: viewers and waiting players can pause, an automatic pause can get stuck, admitted players are locked out after the grace period, a ban is bypassed with a new tab | Medium | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| D-021 | Design | Version policy while the kit is 0.x, and a safer update workflow for games | High | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| B-022 | Bug | Server-run rooms: a storage write for every message, and the public seed reveals hidden cards in the example game | Medium | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| D-023 | Design | API details to settle before the first game depends on them (naming of posts, phase, host event, message targets, storage keys) | Medium | Pågår 2026-11-15 (runs A and B) | Strong, high |
+| F-024 | Feature | Tests that were missing: client unit tests, a real sleep test, the browser test in CI and before a release | Medium | Pågår 2026-11-15 (runs A and B) | Strong, high |
 | D-025 | Design | Try the demo on two real phones: lock screen, wifi to mobile data, tab in the background | Medium | Owner task; never done | – |
 | F-026 | Feature | Operations: what players see when the daily quota is used up, a budget for the public demo, logging in production | Low | Proposal from the review 2026-11-15 | Standard |
-| B-027 | Bug | Documentation disagrees with the code in several places | Low | Found in the review 2026-11-15 | Standard |
+| B-027 | Bug | Documentation disagrees with the code in several places | Low | Pågår 2026-11-15 (runs A and B) | Standard |
 
 ## Done
 
