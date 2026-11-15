@@ -18,6 +18,7 @@
 | F-006 | Feature | Host-run rooms: one player's browser runs the game, the server relays, and another player takes over if the host drops | Medium | Idea | Strong, high |
 | F-007 | Feature | Room-wide pause and a grace period before a lost player counts as gone | Medium | Idea | Standard |
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
+| D-009 | Design | Versions and updates: how games get new versions and bug fixes without breaking | High | Proposal (2026-11-15); decide before the first build run | Strong, high |
 
 ## Done
 
@@ -103,3 +104,12 @@ Run A together with Critical ST8 F-040 (online mode), the first real user. Boome
   - Paid: this month's use against what is included (1 million requests and 400,000 GB-s per month), an estimated cost so far, and an optional monthly spending cap of the owner's choosing that closes games before it is passed. Cloudflare's own usage notifications as a second guard.
 - Warns on the admin page when use nears a limit, e.g. at 80 %.
 - Check the current Cloudflare limits and prices when building; they can change.
+
+### D-009 Versions and updates (proposal 2026-11-15)
+- Owner's question: can network-kit keep developing after games use it, and do bug fixes reach those games, without it becoming messy? Same need for `BadBagel47/geo-kit` (shared GPS module).
+- Version numbers: MAJOR.MINOR.PATCH. PATCH = bug fix only, safe to take; MINOR = new features, old code keeps working; MAJOR = something changes in a way games must adapt to (rare, with a short guide).
+- Each game uses a fixed version and records it in its HANDOFF. Nothing changes in a game until it updates.
+- Delivery: a copy of the client files inside each game's repository (e.g. `vendor/network-kit/`), made by a small workflow, not loaded from another site at run time (Critical's tests forbid loading from other services, and a copy keeps working even if something elsewhere breaks). The game's server part includes the same version.
+- Bug fixes: when network-kit publishes a PATCH, each game gets an automatic update proposal (a branch with the new copy); it merges by itself only if the game's own tests pass, otherwise it waits and the owner is told. MINOR and MAJOR updates are taken in a normal run in that game.
+- Order: fix in network-kit first, with a test that shows the bug; never patch the copy inside a game. A game that needs a quick workaround records it and removes it when the fix arrives.
+- Keeping it tidy: no game-specific code in network-kit; a short changelog per version that says who is affected; old functions are marked as on their way out for at least one MINOR version before they are removed; network-kit's own tests include a small example game that every release must pass.
