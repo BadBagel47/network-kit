@@ -22,6 +22,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 - **Order (2026-11-15):** Critical ST8 (`BadBagel47/critical`) is the first real user, chosen by the owner. Boomers follows (earlier plan, 2026-11-13: Boomers first). Bricks stays on Firebase until network-kit is proven; Buzzy moves last (Buzzy #408).
 - **Free first, paid possible (2026-11-15):** network-kit must work on a free Cloudflare account, and the owner wants to be able to pay for the account when the quota runs out. The admin page shows the usage (F-008).
 - **Versions and updates (2026-11-15, D-009):** approved by the owner. Version numbers MAJOR.MINOR.PATCH; each game keeps its own copy of a fixed version; bug-fix releases reach games as automatic update proposals that are taken in only when the game's tests pass; fixes are always made in network-kit first. Same model as geo-kit.
+- **Publishing to main (2026-11-15):** the owner allows agents to push network-kit changes directly to `main`, in this and future runs.
 - **Room cleanup (proposal 2026-11-13):** rooms are deleted automatically after 24 hours; the server keeps only nicknames. To confirm in the first build run.
 
 ## Current state (2026-11-15)

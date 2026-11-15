@@ -10,15 +10,15 @@
 
 | ID | Type | Title | Priority | Status | Suggested model |
 | --- | --- | --- | --- | --- | --- |
-| F-001 | Feature | Room server core and browser client | Medium | Idea | Strong, high |
-| F-002 | Feature | Secure share links: room code + key per role, QR code | Medium | Idea | Strong, high |
+| F-001 | Feature | Room server core and browser client | Medium | Pågår 2026-11-15 (run A) | Strong, high |
+| F-002 | Feature | Secure share links: room code + key per role, QR code | Medium | Pågår 2026-11-15 (run A) | Strong, high |
 | F-003 | Feature | One admin page for all games: on/off/until, private only, emergency stop | Medium | Idea | Strong, high |
 | F-004 | Feature | Automatic daily budget per game | Medium | Proposal | Standard |
-| F-005 | Feature | Critical ST8 needs: posts on a shared ship, targeted messages, snapshots for rejoin | Medium | Idea; first real user (2026-11-15) | Strong, high |
-| F-006 | Feature | Host-run rooms: one player's browser runs the game, the server relays, and another player takes over if the host drops | Medium | Idea | Strong, high |
-| F-007 | Feature | Room-wide pause and a grace period before a lost player counts as gone | Medium | Idea | Standard |
+| F-005 | Feature | Critical ST8 needs: posts on a shared ship, targeted messages, snapshots for rejoin | Medium | Pågår 2026-11-15 (run A) | Strong, high |
+| F-006 | Feature | Host-run rooms: one player's browser runs the game, the server relays, and another player takes over if the host drops | Medium | Pågår 2026-11-15 (run A) | Strong, high |
+| F-007 | Feature | Room-wide pause and a grace period before a lost player counts as gone | Medium | Pågår 2026-11-15 (run A) | Standard |
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
-| D-009 | Design | Versions and updates: how games get new versions and bug fixes without breaking | High | Approved by the owner (2026-11-15); set up in the first build run | Strong, high |
+| D-009 | Design | Versions and updates: how games get new versions and bug fixes without breaking | High | Pågår 2026-11-15 (run A); approved by the owner | Strong, high |
 
 ## Done
 
