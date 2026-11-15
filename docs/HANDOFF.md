@@ -9,9 +9,12 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
   - The repo was empty when set up: no branches, pull requests, issues or earlier documentation. The plan lived in the Bricks backlog as F-007 and was moved here on 2026-11-15 (ID mapping in `docs/BACKLOG.md`).
   - Sensitive information: none yet. Secrets (Cloudflare API token) must only ever be GitHub Secrets.
   - Laws and regulations: the room server will process player names, room data and IP addresses at Cloudflare (GDPR). Each game's privacy notice must mention it; storage and cleanup rules are part of F-001 (groundwork in Buzzy #332 and #405, Bricks T-006).
-- **Publishing method:** not set up yet. Planned: a Cloudflare Worker with Durable Objects deployed from `main` by a GitHub Actions workflow, using a Cloudflare API token stored as a GitHub Secret.
+- **Publishing method:** agents push to `main` (owner decision 2026-11-15).
+  - Library: when the version in `package.json` and `src/version.js` changes on `main`, `.github/workflows/release.yml` runs the tests and creates the tag and GitHub release `vX.Y.Z`. Games take a copy of a tag (D-009, `docs/INTEGRATION.md`).
+  - Demo Worker (`examples/demo`, the example games): `.github/workflows/deploy-demo.yml` deploys it to Cloudflare from `main` and checks that a room can be created. It is skipped until the secret `CLOUDFLARE_API_TOKEN` exists (one-time action below).
+  - Tests on every push: `.github/workflows/test.yml` (unit + integration).
 - **Project language:** English for code, docs and the README; chat with the owner in Swedish.
-- **Environment:** not checked yet (no build run so far).
+- **Environment (2026-11-15, cloud agent session):** push to `main` works; Node 22, npm and `wrangler dev` (local workerd) work; Chromium with Playwright is available for `npm run test:browser`. developers.cloudflare.com is blocked by the session's network rules, so Cloudflare's limits and the EU option on the Free plan could not be read there (D-011). Local workerd has no jurisdictions: tests run with `ROOM_JURISDICTION` empty.
 
 ## Decisions
 
@@ -23,23 +26,26 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 - **Free first, paid possible (2026-11-15):** network-kit must work on a free Cloudflare account, and the owner wants to be able to pay for the account when the quota runs out. The admin page shows the usage (F-008).
 - **Versions and updates (2026-11-15, D-009):** approved by the owner. Version numbers MAJOR.MINOR.PATCH; each game keeps its own copy of a fixed version; bug-fix releases reach games as automatic update proposals that are taken in only when the game's tests pass; fixes are always made in network-kit first. Same model as geo-kit.
 - **Publishing to main (2026-11-15):** the owner allows agents to push network-kit changes directly to `main`, in this and future runs.
-- **Room cleanup (proposal 2026-11-13):** rooms are deleted automatically after 24 hours; the server keeps only nicknames. To confirm in the first build run.
+- **Room cleanup (proposal 2026-11-13, built 2026-11-15):** a room is deleted 24 hours after the last player left (not 24 hours after it was created, so a long evening's game is never cut off), and an hour after it was closed. The server keeps nicknames and a hash of each player's random key, never the key itself. The owner may still change the 24 hours.
+- **Host-run rooms first (2026-11-15, run A):** network-kit supports both host-run rooms (F-006, Critical's choice) and server-run rooms; the demo has one of each. A player's identity is kept per browser tab by default, so a reload keeps the seat and several tabs on one computer are separate players.
 
 ## Current state (2026-11-15)
 
-- Planning only, no code. Requirements are in `docs/BACKLOG.md`.
-- Next: the first build run (see *Proposed runs* in `docs/BACKLOG.md`), together with Critical ST8 F-040 (online mode).
+- **v0.1.0 built (run A):** room server core and browser client (F-001), share links with a key per role and QR codes (F-002), Critical's needs: posts, targeted messages, snapshots (F-005), host-run rooms with takeover (F-006), pause and grace period (F-007), versions and updates (D-009). 32 unit tests, 8 integration tests against local workerd and a browser test of the demo page pass.
+- **Not yet on Cloudflare:** the demo Worker deploys once `CLOUDFLARE_API_TOKEN` is added; that first deploy also shows whether EU-only rooms work on the Free plan (D-011).
+- **Next:** Critical ST8 F-040 (online mode) in `BadBagel47/critical` takes v0.1.0 in, following `docs/INTEGRATION.md`. In network-kit: see *Proposed runs* in `docs/BACKLOG.md`.
 
 ## One-time actions
 
-- Pending: add the Cloudflare API token as a GitHub Secret in this repo (same kind of token as the Bricks admin Worker uses) when the first build run asks for it.
+- Pending: add the Cloudflare API token as the GitHub Secret `CLOUDFLARE_API_TOKEN` in this repo (same kind of token as the Bricks admin Worker uses). The demo then deploys by itself. Optional: `CLOUDFLARE_ACCOUNT_ID` if the token covers several accounts.
+- Pending (owner decision): network-kit is a private repository, so each game's update workflow needs a read-only token `NETWORK_KIT_TOKEN`. Making network-kit public (it holds no secrets; geo-kit is public) removes that need. Recommendation: public.
 - Pending: a second, read-only Cloudflare API token for account analytics, as a secret for the admin page (F-008).
 
 ## Users of network-kit
 
 | Game | Repository | Status |
 | --- | --- | --- |
-| Critical ST8 | `BadBagel47/critical` (F-040, F-038) | First real user; needs F-005, F-006, F-007 |
+| Critical ST8 | `BadBagel47/critical` (F-040, F-038) | First real user; v0.1.0 has what it needs (F-005, F-006, F-007); not taken in yet |
 | Boomers | `BadBagel47/boomers` (F-002) | Second |
 | Bricks | `BadBagel47/bricks` (F-007) | Later |
 | Buzzy | `BadBagel47/buzzy` (#408, #348) | Later, last |
@@ -52,3 +58,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 | Agent rules | `AGENTS.md` (shared rules reference and project rules) |
 | Current state, decisions | this file |
 | Features, bugs, design, proposed runs | `docs/BACKLOG.md` |
+| How games use network-kit (API, options, budget, privacy) | `docs/INTEGRATION.md` |
+| Changes per version | `CHANGELOG.md` |
+| Update workflow for games | `templates/update-network-kit.yml` |
+| Example games (host-run demo page, server-run memory) | `examples/demo/` |

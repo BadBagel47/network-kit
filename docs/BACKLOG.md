@@ -10,40 +10,38 @@
 
 | ID | Type | Title | Priority | Status | Suggested model |
 | --- | --- | --- | --- | --- | --- |
-| F-001 | Feature | Room server core and browser client | Medium | Pågår 2026-11-15 (run A) | Strong, high |
-| F-002 | Feature | Secure share links: room code + key per role, QR code | Medium | Pågår 2026-11-15 (run A) | Strong, high |
 | F-003 | Feature | One admin page for all games: on/off/until, private only, emergency stop | Medium | Idea | Strong, high |
 | F-004 | Feature | Automatic daily budget per game | Medium | Proposal | Standard |
-| F-005 | Feature | Critical ST8 needs: posts on a shared ship, targeted messages, snapshots for rejoin | Medium | Pågår 2026-11-15 (run A) | Strong, high |
-| F-006 | Feature | Host-run rooms: one player's browser runs the game, the server relays, and another player takes over if the host drops | Medium | Pågår 2026-11-15 (run A) | Strong, high |
-| F-007 | Feature | Room-wide pause and a grace period before a lost player counts as gone | Medium | Pågår 2026-11-15 (run A) | Standard |
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
-| D-009 | Design | Versions and updates: how games get new versions and bug fixes without breaking | High | Pågår 2026-11-15 (run A); approved by the owner | Strong, high |
+| F-010 | Feature | Notice a host whose connection died silently (e.g. a phone that went to sleep) within seconds, so takeover does not wait for Cloudflare to close the connection | Medium | Idea (found in run A) | Strong, medium |
+| D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | Waiting for the Cloudflare token (first demo deploy) | Standard |
 
 ## Done
 
 | ID | Type | Title | Done |
 | --- | --- | --- | --- |
+| F-001 | Feature | Room server core and browser client | 2026-11-15, v0.1.0 (tested locally; not deployed yet) |
+| F-002 | Feature | Secure share links: room code + key per role, QR code | 2026-11-15, v0.1.0 |
+| F-005 | Feature | Critical ST8 needs: posts on a shared ship, targeted messages, snapshots for rejoin | 2026-11-15, v0.1.0 (Critical takes it in with its F-040) |
+| F-006 | Feature | Host-run rooms with takeover | 2026-11-15, v0.1.0 |
+| F-007 | Feature | Room-wide pause and a grace period | 2026-11-15, v0.1.0 |
+| D-009 | Design | Versions and updates | 2026-11-15, v0.1.0: release workflow, `scripts/vendor.mjs`, `templates/update-network-kit.yml` |
 
 ## Proposed runs (2026-11-15)
 
-- **A** – strong model, high level – Room server for Critical ST8
-  - F-001 – Build the room server core and browser client (rooms, codes, seats, reconnection, late join, kick and ban) on Cloudflare, so Critical ST8 can be played online and later games reuse a proven base.
-  - F-006 – Let one player's browser run the game while the server only relays, with automatic takeover if that player drops, so the free plan lasts many hours of play a day.
-  - F-005 – Add free switching between posts, messages to one player or a group, and full-state snapshots for players who join or come back, so Critical's crew play works.
-  - F-007 – Add a pause for everyone and a grace period before a dropped player counts as gone, as Critical's rules require.
-  - F-002 – Add share links with a key per role and a QR code, so rooms can be shared safely and a viewer link cannot play.
-  - D-009 – Set up version numbers, releases, the game's own copy and automatic bug-fix update proposals, so Critical and later games get fixes without breaking.
-- **B** – strong model, high level – Administration and budget
-  - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game, so each game can be closed without touching the others.
+- **A** – strong model, high level – Administration and budget
+  - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game, so each game can be closed without touching the others (the room server already has the `gate` hook for it).
   - F-004 – Give each game a share of the daily free budget that closes it for the day when used up, so one runaway game cannot stop the others.
   - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap, so you can see when it is time to pay and never get a surprise bill.
+  - D-011 – Check Cloudflare's current free limits and EU rooms on the free plan, so the budget numbers above are right (needs the Cloudflare token).
+- **B** – strong model, medium level – Faster takeover
+  - F-010 – Notice a silently dead host within seconds using the heartbeats the room already gets, so the other players are not left waiting when the host's phone sleeps.
 
-Run A together with Critical ST8 F-040 (online mode), the first real user. Boomers F-002 follows.
+Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0.1.0; run A here is not needed for it.
 
 ## Details
 
-### F-001 Room server core and browser client
+### F-001 Room server core and browser client (done 2026-11-15, v0.1.0)
 - Shape (to settle in the first run): one room = one Durable Object on Cloudflare (Workers Free plan; SQLite-backed objects only). The core is a library; each game's server plugs its own rules into it and keeps its own versioned copy, so games update on their own schedule. One shared admin service holds opening hours and budgets that every game's server checks.
 - Rooms: short codes, create, join, leave, waiting room, countdown and shared seed, rematch, cleanup of old rooms (proposal: after 24 hours; only nicknames stored).
 - Rooms sleep when nobody plays (WebSocket hibernation), so idle rooms cost nothing.
@@ -58,7 +56,7 @@ Run A together with Critical ST8 F-040 (online mode), the first real user. Boome
 - Privacy: what is stored, for how long, and cleanup of old rooms (groundwork in Buzzy #332, #405 and Bricks T-006). Rooms stored only in the EU if the free plan allows it.
 - Must also fit a turn-based game such as memory without extra work.
 
-### F-002 Secure share links
+### F-002 Secure share links (done 2026-11-15, v0.1.0)
 - Bricks already has private invitation links: a long random key in the part of the link the browser never sends to servers, expiry, revoke from admin, and the room code alone grants no access to a private room.
 - The core generalizes this: one key per role (player, viewer/big screen, host), so a viewer link cannot play; each room chooses whether the code is enough (open room) or the key is required (private room); the host can renew a key, which stops old links at once while people already inside stay; optional expiry; QR code for the link.
 - Covers Buzzy #348 (secret, renewable viewer link) and relates to Buzzy #331 (host sign-in).
@@ -74,7 +72,7 @@ Run A together with Critical ST8 F-040 (online mode), the first real user. Boome
 - All games share one Cloudflare account's daily free limits. Each game gets a share of the daily budget; a game that exceeds its share closes itself for the rest of the day, so one runaway game cannot take the others down.
 - The admin page shows each game's usage today.
 
-### F-005 Critical ST8 needs (updated 2026-11-15)
+### F-005 Critical ST8 needs (updated 2026-11-15; done in v0.1.0)
 - Critical ST8 (https://github.com/BadBagel47/critical, the owner's top-down co-op space game) is the first real user, decided by the owner on 2026-11-15. Its online mode is F-040 and late join F-038 there; network preparations D-060, D-061, D-062 there.
 - What the game already is (2026-11-15): playable solo end to end; up to three players online share one frigate on three posts (Captain, Gunner, Engineer) and may switch posts freely; solo starts as Captain. Boarding switches to a top-down on-foot view. Pure JavaScript without a build step, hosted on GitHub Pages, moving to Cloudflare when the engine is built in.
 - The game logic is deterministic and separate from drawing and input: the whole game is one plain object (about 25 kB, about 3 kB changes all the time, measured 2026-11-14), stepped 60 times a second, and `stepPlayers()` takes each player's requests. That fits F-006 (one player's browser runs the game).
@@ -85,14 +83,14 @@ Run A together with Critical ST8 F-040 (online mode), the first real user. Boome
 - Saved games are text and stay in the players' browsers (save, export, import already exist). Storing a crew's save on the server is not needed now; revisit if the owner wants to continue a crew's game from any device.
 - If the game later outgrows the free plan, see the plan decision in `docs/HANDOFF.md` and F-008.
 
-### F-006 Host-run rooms (2026-11-15)
+### F-006 Host-run rooms (2026-11-15; done in v0.1.0)
 - One player's browser (the host) runs the game; the server only relays: players' inputs go to the host, the host's state changes go to the others. Recommended in Critical D-060.
 - Much cheaper on the free plan than running the game on the server: the room can sleep between messages, and only messages into the server count (about 40 per second for three players, roughly 14 hours of play per day within the free limits; to be measured).
 - Host takeover: if the host drops, the server picks another player, who continues from the latest full state; everyone gets a short pause while it happens (F-007).
 - Fairness and cheating: the host could cheat; acceptable for a game among friends (same stance as Bricks).
 - Server-run rooms stay possible for games that need them; each game chooses.
 
-### F-007 Pause and grace period (2026-11-15)
+### F-007 Pause and grace period (2026-11-15; done in v0.1.0)
 - A pause button freezes the world for everyone in the room; anyone can resume (Critical: "a pause button freezes the world for all").
 - A player whose connection drops keeps their seat during a grace period; the game decides whether to pause automatically and after how long (Critical: automatic pause only after a while, limit to be tested).
 - The room reports drop, back and gone as events, so each game handles them its own way.
@@ -106,7 +104,7 @@ Run A together with Critical ST8 F-040 (online mode), the first real user. Boome
 - Warns on the admin page when use nears a limit, e.g. at 80 %.
 - Check the current Cloudflare limits and prices when building; they can change.
 
-### D-009 Versions and updates (approved by the owner 2026-11-15)
+### D-009 Versions and updates (approved by the owner 2026-11-15; set up in v0.1.0)
 - Owner's question: can network-kit keep developing after games use it, and do bug fixes reach those games, without it becoming messy? Same need for `BadBagel47/geo-kit` (shared GPS module).
 - Same model as `BadBagel47/geo-kit`, which already has version numbers, an automatic tagged release per version and projects pinned to a tag; geo-kit D-016 adds the same update proposals there.
 - Version numbers: MAJOR.MINOR.PATCH. PATCH = bug fix only, safe to take; MINOR = new features, old code keeps working; MAJOR = something changes in a way games must adapt to (rare, with a short guide).
@@ -115,3 +113,17 @@ Run A together with Critical ST8 F-040 (online mode), the first real user. Boome
 - Bug fixes: when network-kit publishes a PATCH, each game gets an automatic update proposal (a branch with the new copy); it merges by itself only if the game's own tests pass, otherwise it waits and the owner is told. MINOR and MAJOR updates are taken in a normal run in that game.
 - Order: fix in network-kit first, with a test that shows the bug; never patch the copy inside a game. A game that needs a quick workaround records it and removes it when the fix arrives.
 - Keeping it tidy: no game-specific code in network-kit; a short changelog per version that says who is affected; old functions are marked as on their way out for at least one MINOR version before they are removed; network-kit's own tests include a small example game that every release must pass.
+
+### Run A result (2026-11-15, v0.1.0)
+- Built as planned: one room = one SQLite-backed Durable Object with WebSocket hibernation; heartbeats are answered by the runtime without waking the room. The core (`src/server/room-core.js`) is independent of Cloudflare and tested in Node with a fake clock; `src/server/worker.js` is the Cloudflare glue.
+- Both kinds of rooms: host-run (Critical) and server-run (memory example with turns and a timer).
+- Not verified: Cloudflare's Free plan figures and EU rooms on the Free plan (D-011); behaviour on real phones (switching networks) is covered by the client logic carried over from Buzzy and by tests that drop connections, not by a phone test.
+- QR codes use the vendored qrcode-generator 1.4.4 (MIT, licence file next to it), the same library Buzzy uses.
+
+### F-010 Faster takeover from a silently dead host (2026-11-15)
+- When a phone goes to sleep, its connection can stay open on the server side for a long time, so the takeover after `takeoverMs` starts late.
+- Idea: the room already gets a heartbeat from every client every 20 seconds (answered for free); `getWebSocketAutoResponseTimestamp` tells when a socket last sent one. Players who stop receiving state could ask the room to check the host; if the host's last heartbeat is too old, the room treats the host as dropped. Must not cost room time while nothing happens.
+
+### D-011 Cloudflare limits and EU rooms on the Free plan (2026-11-15)
+- The figures in `docs/INTEGRATION.md` (100,000 requests and 13,000 GB-s a day, 20:1 billing of incoming WebSocket messages) come from earlier notes, not from Cloudflare's pages, which could not be reached from the build environment.
+- The demo is set to EU-only rooms (`ROOM_JURISDICTION=eu`). The first deploy checks that a room can be created; if EU-only rooms need a paid plan, set the variable empty and record the answer under Decisions.

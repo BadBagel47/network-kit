@@ -1,0 +1,65 @@
+# Creates the git tag and GitHub release vX.Y.Z when the version in
+# package.json changes on main (D-009). Games pin network-kit to these tags.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - src/version.js
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          code=$(sed -n "s/.*VERSION = '\(.*\)'.*/\1/p" src/version.js)
+          if [ "$version" != "$code" ]; then
+            echo "::error::package.json ($version) and src/version.js ($code) differ"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test before releasing
+        if: steps.version.outputs.exists != 'true'
+        run: |
+          npm ci
+          npm test
+          npm run test:integration
+
+      - name: Create release
+        if: steps.version.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Release notes: this version's section of CHANGELOG.md.
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[?" v "\\]?([^0-9.]|$)" { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "See CHANGELOG.md." > notes.md
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md

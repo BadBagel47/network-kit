@@ -1,0 +1,19 @@
+// Demo deployment of network-kit's example games (examples/demo).
+// Games deploy their own Worker with their own copy of network-kit (docs/INTEGRATION.md).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "network-kit-demo",
+  "main": "examples/demo/worker.js",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "examples/demo/public" },
+  "durable_objects": {
+    "bindings": [
+      { "name": "ROOMS", "class_name": "Room" },
+      { "name": "TURNS", "class_name": "TurnRoom" }
+    ]
+  },
+  // Free plan: SQLite-backed Durable Objects only.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room", "TurnRoom"] }],
+  "vars": { "ROOM_JURISDICTION": "eu" },
+  "observability": { "enabled": false }
+}

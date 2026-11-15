@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>network-kit demo</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>network-kit demo</h1>
+
+    <section id="start">
+      <label>Name <input id="name" maxlength="24" autocomplete="nickname"></label>
+      <div class="row">
+        <button id="create">Create room</button>
+      </div>
+      <div class="row">
+        <input id="code" placeholder="Room code" maxlength="7" autocapitalize="characters" autocomplete="off">
+        <button id="join">Join</button>
+        <button id="watch">Watch</button>
+      </div>
+      <p id="start-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="game" hidden>
+      <div class="row bar">
+        <strong>Room <span id="room-code"></span></strong>
+        <span id="status" class="status"></span>
+        <span id="role"></span>
+        <button id="share">Share</button>
+        <button id="leave">Leave</button>
+      </div>
+      <div class="row">
+        <button id="start-game" hidden>Start</button>
+        <button id="pause">Pause</button>
+        <span id="phase"></span>
+      </div>
+      <div id="posts" class="row"></div>
+      <div class="stage">
+        <canvas id="canvas" width="600" height="360"></canvas>
+        <div id="overlay" hidden></div>
+      </div>
+      <p class="hint">Move with the arrow keys or WASD.</p>
+      <ul id="players"></ul>
+      <ul id="log"></ul>
+    </section>
+
+    <dialog id="share-dialog">
+      <h2>Join the game</h2>
+      <div id="qr" class="qr"></div>
+      <p>Room code <strong id="share-code"></strong></p>
+      <p><a id="player-link" href="#">Player link</a> · <a id="viewer-link" href="#">Viewer link</a></p>
+      <div class="row">
+        <button id="renew-player">New player link</button>
+        <button id="renew-viewer">New viewer link</button>
+        <button id="close-share">Close</button>
+      </div>
+    </dialog>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

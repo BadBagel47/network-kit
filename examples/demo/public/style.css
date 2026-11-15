@@ -1,0 +1,21 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
+main { max-width: 640px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.3rem; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+button, input { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: inherit; }
+button:hover { background: #21262d; }
+button[aria-pressed="true"] { background: #1f6feb; border-color: #1f6feb; }
+.error { color: #ff7b72; min-height: 1.2em; }
+.status { font-size: 0.9rem; color: #8b949e; }
+.status[data-status="online"] { color: #3fb950; }
+.status[data-status="reconnecting"], .status[data-status="offline"] { color: #d29922; }
+.stage { position: relative; }
+canvas { width: 100%; background: #010409; border: 1px solid #30363d; border-radius: 6px; touch-action: none; }
+#overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgb(1 4 9 / 70%); font-size: 1.4rem; border-radius: 6px; }
+.hint { color: #8b949e; font-size: 0.9rem; }
+#players, #log { padding-left: 18px; font-size: 0.9rem; }
+#log { color: #8b949e; max-height: 8em; overflow: auto; }
+dialog { background: #161b22; color: inherit; border: 1px solid #30363d; border-radius: 8px; }
+.qr { width: 220px; height: 220px; background: #fff; padding: 8px; }
+.qr svg { width: 100%; height: 100%; }
+a { color: #58a6ff; }

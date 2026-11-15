@@ -1,0 +1,118 @@
+# network-kit updates for a game (D-009). Copy to .github/workflows/ in the game.
+#
+# Every day it looks for a newer network-kit bug-fix release (same MAJOR.MINOR,
+# higher PATCH) than the copy in VENDOR_DIR. It copies the new version, runs
+# the game's own tests and, only if they pass, pushes the update to main.
+# If the tests fail it pushes a branch and opens an issue, so the owner is told.
+# MINOR and MAJOR versions are taken in a normal run in the game; starting this
+# workflow by hand with a version prepares such an update as a branch + issue.
+#
+# Settings: VENDOR_DIR, TEST_COMMAND and SETUP_COMMAND below. If network-kit is
+# private, add a repository secret NETWORK_KIT_TOKEN (read-only access to
+# BadBagel47/network-kit contents).
+name: Update network-kit
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to prepare, e.g. 0.2.0 (empty: latest bug fix)'
+        required: false
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  VENDOR_DIR: vendor/network-kit
+  SETUP_COMMAND: npm ci
+  TEST_COMMAND: npm test
+  NETWORK_KIT_REPO: github.com/BadBagel47/network-kit.git
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find a newer version
+        id: find
+        env:
+          TOKEN: ${{ secrets.NETWORK_KIT_TOKEN }}
+          WANTED: ${{ github.event.inputs.version }}
+        run: |
+          remote="https://$NETWORK_KIT_REPO"
+          [ -n "$TOKEN" ] && remote="https://x-access-token:$TOKEN@$NETWORK_KIT_REPO"
+          echo "::add-mask::$remote"
+          echo "remote=$remote" >> "$GITHUB_OUTPUT"
+          current=$(tr -d '[:space:]' < "$VENDOR_DIR/VERSION")
+          tags=$(git ls-remote --tags --refs "$remote" 'v*' | sed 's#.*refs/tags/v##' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+          if [ -n "$WANTED" ]; then
+            echo "$tags" | grep -qx "$WANTED" || { echo "::error::network-kit v$WANTED does not exist"; exit 1; }
+            target="$WANTED"
+          else
+            line=$(echo "$current" | cut -d. -f1,2)
+            target=$(echo "$tags" | grep -E "^${line//./\\.}\.[0-9]+$" | tail -1)
+          fi
+          if [ -z "$target" ] || [ "$target" = "$current" ] || \
+             [ "$(printf '%s\n%s\n' "$current" "$target" | sort -V | tail -1)" = "$current" ]; then
+            echo "network-kit $current is up to date"
+            exit 0
+          fi
+          kind=patch
+          [ "$(echo "$target" | cut -d. -f1,2)" != "$(echo "$current" | cut -d. -f1,2)" ] && kind=feature
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+
+      - name: Copy the new version
+        if: steps.find.outputs.target
+        env:
+          TARGET: ${{ steps.find.outputs.target }}
+          REMOTE: ${{ steps.find.outputs.remote }}
+        run: |
+          git clone --quiet --depth 1 --branch "v$TARGET" "$REMOTE" "$RUNNER_TEMP/network-kit"
+          node "$RUNNER_TEMP/network-kit/scripts/vendor.mjs" "$VENDOR_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "network-kit/v$TARGET"
+          git add -A "$VENDOR_DIR"
+          git commit -m "Update network-kit to v$TARGET" -m "Automatic update proposal (network-kit D-009)."
+
+      - name: Run the game's tests
+        id: tests
+        if: steps.find.outputs.target
+        continue-on-error: true
+        run: |
+          $SETUP_COMMAND
+          $TEST_COMMAND
+
+      - name: Take the bug fix
+        if: steps.find.outputs.target && steps.find.outputs.kind == 'patch' && steps.tests.outcome == 'success' && !github.event.inputs.version
+        run: |
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
+
+      - name: Wait for the owner
+        if: steps.find.outputs.target && (steps.find.outputs.kind != 'patch' || steps.tests.outcome != 'success' || github.event.inputs.version)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT: ${{ steps.find.outputs.current }}
+          TARGET: ${{ steps.find.outputs.target }}
+          TESTS: ${{ steps.tests.outcome }}
+        run: |
+          branch="network-kit/v$TARGET"
+          git push --force origin "HEAD:$branch"
+          title="network-kit v$TARGET is ready to take in"
+          if gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number' | grep -q .; then
+            echo "An issue already exists"; exit 0
+          fi
+          body="network-kit v$TARGET (now v$CURRENT) is on the branch \`$branch\`.
+          Game tests: $TESTS. It was not taken in automatically because it is a feature update, it was started by hand, or the tests failed.
+          See the network-kit changelog for what changed and who is affected."
+          gh issue create --title "$title" --body "$body"
