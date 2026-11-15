@@ -225,7 +225,7 @@ test('quiz: the leader does not play, and nobody takes over when the leader is l
   const question = Promise.all([next(a, 'message'), next(b, 'message'), next(tv, 'message')]);
   leader.send({ type: 'question', text: 'What is 6 × 7?' });
   await question;
-  leader.sendSnapshot({ answer: 42, scores: {} });
+  leader.sendSnapshot({ answer: 'xyzzy-secret', scores: {} });
   const buzz = next(leader, 'message');
   b.send({ type: 'buzz' });
   assert.equal((await buzz).from, b.me, 'the leader gets the buzz, in the order the room received it');
@@ -244,7 +244,7 @@ test('quiz: the leader does not play, and nobody takes over when the leader is l
   const again = await join(leader.code, 'Leader', { ...quiz, ownerKey, on: { host: (e) => hostEvents.push(e) } });
   assert.equal(again.role, 'leader');
   await until(() => hostEvents.length === 1);
-  assert.deepEqual(hostEvents[0].snapshot, { answer: 42, scores: {} });
+  assert.deepEqual(hostEvents[0].snapshot, { answer: 'xyzzy-secret', scores: {} });
   await until(() => a.room.paused === null && a.room.hostId === again.me);
-  assert.ok(!everything.some((text) => text.includes('42')), 'the answer never reached a participant');
+  assert.ok(!everything.some((text) => text.includes('xyzzy')), 'the answer never reached a participant');
 });

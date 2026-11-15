@@ -53,10 +53,11 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 ## Current state (2026-11-15)
 
 - **v0.2.0 (runs A and B):** the faults from the independent review of v0.1.0 are fixed and the shape games build on is settled: owner and host are separate, a lost host is waited for unless the game turns takeover on, roles and places are defined by the game, limits keep one room or one connection from using up the free plan, and updates reach games as proposals on a branch. v0.1.0 must not be used.
+- **v0.2.1:** a fix to the shipped smoke test only (a timing race that showed on GitHub's test run right after v0.2.0). Games take v0.2.1.
 - **Checked before release:** an independent reviewer went through the release candidate and found two serious and about ten medium faults in the rewrite; they were fixed or recorded before the release (`docs/reviews/2026-11-15-v0.2.0-check.md`). Those last fixes have tests but were not checked again independently.
 - **Tests:** 107 unit tests (room logic, and the real client against it), 12 integration tests in local workerd (the three example games, a flooding connection, a long resend, a room that really sleeps), the demo page in Chromium, the compatibility check and the smoke test that ships with every copy.
 - **Not verified:** nothing has been tried on real phones (D-025); Cloudflare's free-plan figures (D-011), so the default limits are estimates.
-- **Next:** Critical ST8 F-040 (online mode) in `BadBagel47/critical` builds on v0.2.0, following `docs/INTEGRATION.md`. In network-kit: *Proposed runs* in `docs/BACKLOG.md`. Waiting for the owner: D-025 (two phones) and D-028 (how Boomers runs its game).
+- **Next:** Critical ST8 F-040 (online mode) in `BadBagel47/critical` builds on v0.2.1, following `docs/INTEGRATION.md`. In network-kit: *Proposed runs* in `docs/BACKLOG.md`. Waiting for the owner: D-025 (two phones) and D-028 (how Boomers runs its game).
 - **Latest entries:** v0.2.0 hardening and shape, with an independent check before release (2026-11-15) · games pass D-012 (2026-11-15) · independent review of v0.1.0 (2026-11-15) · demo on Cloudflare, EU rooms confirmed (2026-11-15) · v0.1.0 (2026-11-15).
 
 ## One-time actions
@@ -69,7 +70,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 | Game | Repository | Status |
 | --- | --- | --- |
-| Critical ST8 | `BadBagel47/critical` (F-040, F-038) | First real user; builds on v0.2.0 (host-run with takeover, as the crew example) |
+| Critical ST8 | `BadBagel47/critical` (F-040, F-038) | First real user; builds on v0.2.1 (host-run with takeover, as the crew example) |
 | Boomers | `BadBagel47/boomers` (F-002) | Second; fits host-run with takeover, but its documents say server-run (D-028) |
 | Bricks | `BadBagel47/bricks` (F-007) | Later; fits a host-run room as a relay; needs F-029 and the gate at round start (F-003) |
 | Buzzy | `BadBagel47/buzzy` (#408, #348) | Later, last; fits a server-run room with a non-playing leader |

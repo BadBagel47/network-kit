@@ -65,7 +65,7 @@
 
 Owner tasks: D-025 (try the demo on two real phones) and D-028 (decide how Boomers runs its game).
 
-Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.2.0 following `docs/INTEGRATION.md`. Neither run here is needed for it.
+Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.2.1 following `docs/INTEGRATION.md`. Neither run here is needed for it.
 
 ## Details
 
@@ -250,6 +250,7 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.2.0 f
 - The faults from the review have regression tests: `tests/unit/hardening.test.js`, `tests/unit/host-owner.test.js`, `tests/unit/client.test.js` (the real client against the real room logic) and `tests/integration/sleep.test.mjs` (a room that really sleeps in local workerd). 107 unit tests, 12 integration tests, the browser test of the demo and the kit's smoke test pass.
 - Before the release an independent reviewer checked the candidate: [docs/reviews/2026-11-15-v0.2.0-check.md](reviews/2026-11-15-v0.2.0-check.md). It found two serious and about ten medium faults in the rewrite (a reconnect with a long queue got the client thrown out; the owner's second tab took the room from the first). All were fixed or recorded before the release, with tests named `V-B…`. **Those last fixes were tested by the building agent but not checked again independently.**
 - Not done from the review: finding 15 (the gate) is part of F-003; the rest is in F-032.
+- v0.2.1 followed at once: GitHub's test run on v0.2.0 showed two tests that depended on timing or on random ids; one of them was a race in the shipped smoke test, fixed in v0.2.1 (the room server and the client are unchanged).
 - Not verified: behaviour on real phones (D-025); Cloudflare's free-plan figures (D-011), so the default caps (40 messages a second per connection, 600,000 a day per room) are estimates.
 
 ### D-012 results: the games pass (2026-11-15)

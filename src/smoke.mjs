@@ -43,6 +43,13 @@ const say = (text) => {
 
 function fail(message) {
   console.error(`network-kit smoke test FAILED while: ${step}\n  ${message}`);
+  try {
+    const st = core.state;
+    const people = Object.values(st.players).map((p) => `${p.name} (${p.role}, ${p.status}${p.id === st.hostId ? ', host' : ''}${p.id === st.ownerId ? ', owner' : ''})`);
+    console.error(`  room: phase ${st.phase}, paused ${st.paused?.reason ?? 'no'}, participants: ${people.join('; ') || 'none'}`);
+  } catch {
+    // the room was not there yet
+  }
   process.exit(1);
 }
 
@@ -179,6 +186,7 @@ const hostRun = core.options.mode === 'host';
 let last = owner;
 /** Let time pass for the room and fire its timer. */
 async function skip(ms) {
+  await world.chain; // what has already happened is handled at the old time
   world.skew += ms;
   await run(() => core.alarm());
 }

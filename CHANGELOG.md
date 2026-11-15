@@ -10,6 +10,12 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.2.1 (2026-11-15)
+
+Affects: nobody yet (take 0.2.1 rather than 0.2.0). No change to the room server or the client.
+
+- Fixed: the smoke test that ships with every copy (`smoke.mjs`) could time out in its takeover step on a busy machine, because the test moved its clock before the room had handled the host's disconnect. A failing smoke test now also prints the state of the room.
+
 ## 0.2.0 (2026-11-15)
 
 Hardening after the independent review of v0.1.0 and the shape games will build on (runs A and B: B-014 to B-017, F-018, B-020, B-022, F-024, B-027, D-012, D-019, F-013, F-010, D-023, D-021). Affects: nobody (no game had taken v0.1.0 in). **v0.1.0 should not be used.**

@@ -367,18 +367,18 @@ test('quiz leader: players never get the game, even if the leader is gone for go
   const tv = await connect(world, core, { name: 'TV', role: 'viewer' });
   await cmd(core, owner, 'start');
   await world.advance(4_000);
-  await send(core, owner, { t: 'snap', d: { answer: 42 } });
+  await send(core, owner, { t: 'snap', d: { answer: 'xyzzy-secret' } });
   await drop(core, owner);
   await world.advance(3600_000);
   for (const ws of [a, tv]) {
     assert.equal(ws.messages('host').length, 0);
     assert.equal(ws.room.hostId, null);
     assert.equal(ws.room.paused.reason, 'host-away');
-    assert.ok(!JSON.stringify(ws.sent).includes('42'));
+    assert.ok(!JSON.stringify(ws.sent).includes('xyzzy'));
   }
   const leader = await connect(world, core, { name: 'Leader', pk: owner.pk, owner: created.ownerKey, sid: 'later' });
   assert.equal(leader.last('welcome').you.role, 'leader');
-  assert.deepEqual(leader.last('host').snapshot, { answer: 42 });
+  assert.deepEqual(leader.last('host').snapshot, { answer: 'xyzzy-secret' });
 });
 
 test('server-run rooms: the owner leads; an absent owner can always come back and start', async () => {
@@ -426,14 +426,14 @@ test('the owner moving to another device takes the seat and the game along at on
   const { world, core, created, owner } = await setup(QUIZ);
   const a = await connect(world, core, { name: 'A' });
   await cmd(core, owner, 'start');
-  await send(core, owner, { t: 'snap', d: { answer: 42 } });
+  await send(core, owner, { t: 'snap', d: { answer: 'xyzzy-secret' } });
   await drop(core, owner); // the leader's computer dies; the seat is held for the grace period
   const moved = await connect(world, core, { name: 'Leader', pk: 'the-leaders-phone-key-xx', owner: created.ownerKey, sid: 'phone' });
   assert.equal(moved.last('welcome').you.role, 'leader');
   assert.equal(a.room.ownerId, moved.id);
   assert.equal(a.room.hostId, moved.id);
   assert.deepEqual(a.room.players.filter((p) => p.role === 'leader').map((p) => p.id), [moved.id], 'one leader, not two');
-  assert.deepEqual(moved.last('host').snapshot, { answer: 42 });
+  assert.deepEqual(moved.last('host').snapshot, { answer: 'xyzzy-secret' });
   await cmd(core, moved, 'host-ready');
   assert.equal(a.room.paused, null);
   await world.advance(120_000);
