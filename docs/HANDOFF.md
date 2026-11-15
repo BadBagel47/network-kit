@@ -31,7 +31,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 ## Current state (2026-11-15)
 
-- **v0.1.0 built (run A):** room server core and browser client (F-001), share links with a key per role and QR codes (F-002), Critical's needs: posts, targeted messages, snapshots (F-005), host-run rooms with takeover (F-006), pause and grace period (F-007), versions and updates (D-009). 32 unit tests, 8 integration tests against local workerd and a browser test of the demo page pass.
+- **v0.1.0 built (run A):** room server core and browser client (F-001), share links with a key per role and QR codes (F-002), Critical's needs: posts, targeted messages, snapshots (F-005), host-run rooms with takeover (F-006), pause and grace period (F-007), versions and updates (D-009). 32 unit tests, 8 integration tests against local workerd and a browser test of the demo page pass. Released as tag `v0.1.0` by the release workflow; the Test and Release workflows passed on GitHub on 2026-11-15. The demo deploy ran and skipped itself (no token yet).
 - **Not yet on Cloudflare:** the demo Worker deploys once `CLOUDFLARE_API_TOKEN` is added; that first deploy also shows whether EU-only rooms work on the Free plan (D-011).
 - **Next:** Critical ST8 F-040 (online mode) in `BadBagel47/critical` takes v0.1.0 in, following `docs/INTEGRATION.md`. In network-kit: see *Proposed runs* in `docs/BACKLOG.md`.
 
