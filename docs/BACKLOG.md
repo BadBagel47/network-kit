@@ -14,7 +14,10 @@
 | F-002 | Feature | Secure share links: room code + key per role, QR code | Medium | Idea | Strong, high |
 | F-003 | Feature | One admin page for all games: on/off/until, private only, emergency stop | Medium | Idea | Strong, high |
 | F-004 | Feature | Automatic daily budget per game | Medium | Proposal | Standard |
-| F-005 | Feature | Space-game extensions: roles on a shared ship, areas, server simulation, saved progress | Low | Idea; build when the space game needs it | Strong, high |
+| F-005 | Feature | Critical ST8 needs: posts on a shared ship, targeted messages, snapshots for rejoin | Medium | Idea; first real user (2026-11-15) | Strong, high |
+| F-006 | Feature | Host-run rooms: one player's browser runs the game, the server relays, and another player takes over if the host drops | Medium | Idea | Strong, high |
+| F-007 | Feature | Room-wide pause and a grace period before a lost player counts as gone | Medium | Idea | Standard |
+| F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
 
 ## Done
 
@@ -23,15 +26,18 @@
 
 ## Proposed runs (2026-11-15)
 
-- **A** – strong model, high level – Room server for Boomers
-  - F-001 – Build the room server core and browser client (rooms, codes, seats, reconnection, late join, kick and ban) on Cloudflare, so Boomers can play online and later games reuse a proven base.
-  - F-002 – Add share links with a key per role and a QR code, so rooms can be shared safely and a big-screen link cannot play.
+- **A** – strong model, high level – Room server for Critical ST8
+  - F-001 – Build the room server core and browser client (rooms, codes, seats, reconnection, late join, kick and ban) on Cloudflare, so Critical ST8 can be played online and later games reuse a proven base.
+  - F-006 – Let one player's browser run the game while the server only relays, with automatic takeover if that player drops, so the free plan lasts many hours of play a day.
+  - F-005 – Add free switching between posts, messages to one player or a group, and full-state snapshots for players who join or come back, so Critical's crew play works.
+  - F-007 – Add a pause for everyone and a grace period before a dropped player counts as gone, as Critical's rules require.
+  - F-002 – Add share links with a key per role and a QR code, so rooms can be shared safely and a viewer link cannot play.
+- **B** – strong model, high level – Administration and budget
   - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game, so each game can be closed without touching the others.
   - F-004 – Give each game a share of the daily free budget that closes it for the day when used up, so one runaway game cannot stop the others.
+  - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap, so you can see when it is time to pay and never get a surprise bill.
 
-Run together with Boomers F-002 (online play), which is the first real user.
-
-Not yet proposed: F-005 (when the space game needs it).
+Run A together with Critical ST8 F-040 (online mode), the first real user. Boomers F-002 follows.
 
 ## Details
 
@@ -66,11 +72,34 @@ Not yet proposed: F-005 (when the space game needs it).
 - All games share one Cloudflare account's daily free limits. Each game gets a share of the daily budget; a game that exceeds its share closes itself for the rest of the day, so one runaway game cannot take the others down.
 - The admin page shows each game's usage today.
 
-### F-005 Space-game extensions (owner brief 2026-11-14)
-- The owner's top-down co-op space game: several players crew one ship (steering, systems, shooting), upgrade it in a shop, board other ships and take over bases. Boarding switches to a top-down on-foot view where several players loot together against enemies and turrets. Repository not linked here yet.
-- Roles on a shared object: players take stations (pilot, gunner, systems) on one ship; the server decides who controls what.
-- Several areas in one session: some players on the ship while others board another ship or base. Each player only receives updates for the area they are in, which also saves the daily budget.
-- Many moving things (enemies, turrets, shots): the server runs the simulation and sends compact changes, not full state.
-- Progress that outlives a room: credits, upgrades and captured bases saved per crew between sessions.
-- Heaviest user of the daily free budget: inputs only when they change; F-004 matters most here. If it outgrows the free plan, see the plan decision in `docs/HANDOFF.md`.
-- F-001 must be designed so these fit later without rework; build them only when the space game needs them.
+### F-005 Critical ST8 needs (updated 2026-11-15)
+- Critical ST8 (https://github.com/BadBagel47/critical, the owner's top-down co-op space game) is the first real user, decided by the owner on 2026-11-15. Its online mode is F-040 and late join F-038 there; network preparations D-060, D-061, D-062 there.
+- What the game already is (2026-11-15): playable solo end to end; up to three players online share one frigate on three posts (Captain, Gunner, Engineer) and may switch posts freely; solo starts as Captain. Boarding switches to a top-down on-foot view. Pure JavaScript without a build step, hosted on GitHub Pages, moving to Cloudflare when the engine is built in.
+- The game logic is deterministic and separate from drawing and input: the whole game is one plain object (about 25 kB, about 3 kB changes all the time, measured 2026-11-14), stepped 60 times a second, and `stepPlayers()` takes each player's requests. That fits F-006 (one player's browser runs the game).
+- Posts on a shared ship: a seat can be a post; players claim and switch posts freely, a post is held by at most one player, and the room tells everyone who holds what.
+- Messages to one player or a group, not only to everyone: players on the ship and players boarding a station see different things, and the host decides who gets what. This also saves the daily budget.
+- Snapshots for join and rejoin: a player who joins mid-game or comes back gets the full state once (about 25 kB), then only changes (F-038 there).
+- Viewer seat for a big screen that watches without controlling (F-137 there), using the viewer role from F-001 and F-002.
+- Saved games are text and stay in the players' browsers (save, export, import already exist). Storing a crew's save on the server is not needed now; revisit if the owner wants to continue a crew's game from any device.
+- If the game later outgrows the free plan, see the plan decision in `docs/HANDOFF.md` and F-008.
+
+### F-006 Host-run rooms (2026-11-15)
+- One player's browser (the host) runs the game; the server only relays: players' inputs go to the host, the host's state changes go to the others. Recommended in Critical D-060.
+- Much cheaper on the free plan than running the game on the server: the room can sleep between messages, and only messages into the server count (about 40 per second for three players, roughly 14 hours of play per day within the free limits; to be measured).
+- Host takeover: if the host drops, the server picks another player, who continues from the latest full state; everyone gets a short pause while it happens (F-007).
+- Fairness and cheating: the host could cheat; acceptable for a game among friends (same stance as Bricks).
+- Server-run rooms stay possible for games that need them; each game chooses.
+
+### F-007 Pause and grace period (2026-11-15)
+- A pause button freezes the world for everyone in the room; anyone can resume (Critical: "a pause button freezes the world for all").
+- A player whose connection drops keeps their seat during a grace period; the game decides whether to pause automatically and after how long (Critical: automatic pause only after a while, limit to be tested).
+- The room reports drop, back and gone as events, so each game handles them its own way.
+
+### F-008 Usage on the admin page (2026-11-15)
+- The owner wants network-kit to work on a free Cloudflare account, with the option to pay when the quota runs out.
+- Two sources: the server's own counters per game (exact, live: messages, connections, active room time) and Cloudflare's own usage numbers through its analytics API (official, a few minutes behind; needs an API token with read access to account analytics, stored as a secret, never in the code).
+- Plan setting on the admin page: Free or Paid.
+  - Free: today's use against the daily limits (100,000 requests and 13,000 GB-s of room time per day for the whole account, reset at midnight UTC), per game and in total, with the per-game budget from F-004.
+  - Paid: this month's use against what is included (1 million requests and 400,000 GB-s per month), an estimated cost so far, and an optional monthly spending cap of the owner's choosing that closes games before it is passed. Cloudflare's own usage notifications as a second guard.
+- Warns on the admin page when use nears a limit, e.g. at 80 %.
+- Check the current Cloudflare limits and prices when building; they can change.

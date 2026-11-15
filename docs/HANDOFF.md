@@ -19,26 +19,28 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 - **Platform (2026-11-13):** Cloudflare, because the owner trusts Cloudflare more than Google. One room = one Durable Object. Rooms are stored only in the EU if the free plan allows it (check during the build).
 - **Shared core, own game rules (2026-11-13):** the core is shared; each game plugs in its own rules and keeps its own copy of the client.
 - **Plan (2026-11-14):** start on the Workers Free plan (daily limits shared by all games on the account). Move to Workers Paid (5 USD/month per account, small pay-as-you-go beyond what is included, no shutdown at the limits) only when a game actually hits the free limits, and only with the owner's approval. Same code on both plans. Guards against surprise costs: rooms sleep when nobody plays, the per-game budget (F-004) and usage notifications in Cloudflare.
-- **Order (2026-11-13):** Boomers is the first user. Bricks stays on Firebase until network-kit is proven with Boomers; Buzzy moves last (Buzzy #408).
+- **Order (2026-11-15):** Critical ST8 (`BadBagel47/critical`) is the first real user, chosen by the owner. Boomers follows (earlier plan, 2026-11-13: Boomers first). Bricks stays on Firebase until network-kit is proven; Buzzy moves last (Buzzy #408).
+- **Free first, paid possible (2026-11-15):** network-kit must work on a free Cloudflare account, and the owner wants to be able to pay for the account when the quota runs out. The admin page shows the usage (F-008).
 - **Room cleanup (proposal 2026-11-13):** rooms are deleted automatically after 24 hours; the server keeps only nicknames. To confirm in the first build run.
 
 ## Current state (2026-11-15)
 
 - Planning only, no code. Requirements are in `docs/BACKLOG.md`.
-- Next: the first build run (see *Proposed runs* in `docs/BACKLOG.md`), together with Boomers F-002 (online play).
+- Next: the first build run (see *Proposed runs* in `docs/BACKLOG.md`), together with Critical ST8 F-040 (online mode).
 
 ## One-time actions
 
 - Pending: add the Cloudflare API token as a GitHub Secret in this repo (same kind of token as the Bricks admin Worker uses) when the first build run asks for it.
+- Pending: a second, read-only Cloudflare API token for account analytics, as a secret for the admin page (F-008).
 
 ## Users of network-kit
 
 | Game | Repository | Status |
 | --- | --- | --- |
-| Boomers | `BadBagel47/boomers` (F-002) | First user |
-| Bricks | `BadBagel47/bricks` (F-007) | Later, after Boomers |
+| Critical ST8 | `BadBagel47/critical` (F-040, F-038) | First real user; needs F-005, F-006, F-007 |
+| Boomers | `BadBagel47/boomers` (F-002) | Second |
+| Bricks | `BadBagel47/bricks` (F-007) | Later |
 | Buzzy | `BadBagel47/buzzy` (#408, #348) | Later, last |
-| Space game | not linked yet | Later; needs F-005 |
 | Memory-type turn-based game | idea | Should fit without extra work |
 
 ## Documentation map
