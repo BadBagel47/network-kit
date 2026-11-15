@@ -37,7 +37,8 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 - **v0.1.0 built (run A):** room server core and browser client (F-001), share links with a key per role and QR codes (F-002), Critical's needs: posts, targeted messages, snapshots (F-005), host-run rooms with takeover (F-006), pause and grace period (F-007), versions and updates (D-009). 32 unit tests, 8 integration tests against local workerd and a browser test of the demo page pass. Released as tag `v0.1.0` by the release workflow; the Test and Release workflows passed on GitHub on 2026-11-15. The demo deploy ran and skipped itself (no token yet).
 - **Demo on Cloudflare (2026-11-15):** https://network-kit-demo.l8p1.workers.dev (host-run demo page; the memory example under `/turns`). Deployed by `deploy-demo.yml`, whose check passed: the Worker answers and a room can be created with EU-only storage on the owner's account. Not yet opened on a phone.
-- **Next:** Critical ST8 F-040 (online mode) in `BadBagel47/critical` takes v0.1.0 in, following `docs/INTEGRATION.md`. In network-kit: see *Proposed runs* in `docs/BACKLOG.md`.
+- **Reviewed (2026-11-15):** an independent review of v0.1.0 found real faults (state lost when a room sleeps, reconnect faults, a client stuck offline, no protection against uninvited connections or runaway cost) and design points to settle before games depend on them. Report: `docs/reviews/2026-11-15-v0.1.0.md`; tracked as B-014 to B-027 in `docs/BACKLOG.md`. **v0.1.0 should not go live in a game.**
+- **Next:** runs A (fix the faults) and B (settle the shape) in `docs/BACKLOG.md`, then a release. Critical ST8 F-040 may start its integration work in parallel but should not go live before that. Decisions waiting for the owner: D-019 (owner and host) and D-021 (version policy and update workflow).
 
 ## One-time actions
 
@@ -49,7 +50,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 | Game | Repository | Status |
 | --- | --- | --- |
-| Critical ST8 | `BadBagel47/critical` (F-040, F-038) | First real user; v0.1.0 has what it needs (F-005, F-006, F-007); not taken in yet |
+| Critical ST8 | `BadBagel47/critical` (F-040, F-038) | First real user; integration can start with v0.1.0, go live only after runs A and B (review 2026-11-15) |
 | Boomers | `BadBagel47/boomers` (F-002) | Second |
 | Bricks | `BadBagel47/bricks` (F-007) | Later |
 | Buzzy | `BadBagel47/buzzy` (#408, #348) | Later, last |
@@ -64,5 +65,6 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 | Features, bugs, design, proposed runs | `docs/BACKLOG.md` |
 | How games use network-kit (API, options, budget, privacy) | `docs/INTEGRATION.md` |
 | Changes per version | `CHANGELOG.md` |
+| Reviews and their proof scripts | `docs/reviews/` |
 | Update workflow for games | `templates/update-network-kit.yml` |
 | Example games (host-run demo page, server-run memory) | `examples/demo/` |

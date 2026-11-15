@@ -17,31 +17,63 @@
 | D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | EU rooms confirmed 2026-11-15 (first demo deploy); the Free plan figures are still unchecked | Standard |
 | D-012 | Design | Check Boomers', Bricks' and Buzzy's needs against the core before they move here, and collect what is missing as general features | Medium | Approved by the owner 2026-11-15 | Strong, high |
 | F-013 | Feature | Game-master host: a host without a player seat (e.g. a quiz host), a choice between takeover and waiting for the host when its connection drops, and roles defined by the game | Medium | Approved by the owner 2026-11-15 | Strong, medium |
+| B-014 | Bug | A sleeping room loses the latest game state and its duplicate protection | High | Found in the review 2026-11-15 (reproduced) | Strong, high |
+| B-015 | Bug | Reconnects: old messages replayed after a long absence, host messages lost on a silent reconnect, the takeover message never repeated, queued messages crossing the host/player roles | High | Found in the review 2026-11-15 (reproduced) | Strong, high |
+| B-016 | Bug | The client gets stuck "offline" after a short network blip, and joining never gives up when the server cannot be reached | High | Found in the review 2026-11-15 (reproduced) | Strong, high |
+| B-017 | Bug | Uninvited connections can flood a room, stop its cleanup for good and create ghost seats; ids are not validated | High | Found in the review 2026-11-15 (reproduced) | Strong, high |
+| F-018 | Feature | Limits on what one room can cost: rate cap per connection, daily cap per room, no sending to an empty room, pause when alone | High | Proposal from the review 2026-11-15 | Strong, high |
+| D-019 | Design | Separate the room's owner (rights, keys, closing) from the host (the browser that runs the game) | High | Proposal from the review 2026-11-15; needs the owner's decision | Strong, high |
+| B-020 | Bug | Rights and lockouts: viewers and waiting players can pause, an automatic pause can get stuck, admitted players are locked out after the grace period, a ban is bypassed with a new tab | Medium | Found in the review 2026-11-15 (reproduced) | Strong, high |
+| D-021 | Design | Version policy while the kit is 0.x, and a safer update workflow for games | High | Proposal from the review 2026-11-15; needs the owner's decision | Strong, high |
+| B-022 | Bug | Server-run rooms: a storage write for every message, and the public seed reveals hidden cards in the example game | Medium | Found in the review 2026-11-15 (reproduced) | Strong, high |
+| D-023 | Design | API details to settle before the first game depends on them (naming of posts, phase, host event, message targets, storage keys) | Medium | Proposal from the review 2026-11-15 | Strong, high |
+| F-024 | Feature | Tests that were missing: client unit tests, a real sleep test, the browser test in CI and before a release | Medium | Proposal from the review 2026-11-15 | Strong, high |
+| D-025 | Design | Try the demo on two real phones: lock screen, wifi to mobile data, tab in the background | Medium | Owner task; never done | – |
+| F-026 | Feature | Operations: what players see when the daily quota is used up, a budget for the public demo, logging in production | Low | Proposal from the review 2026-11-15 | Standard |
+| B-027 | Bug | Documentation disagrees with the code in several places | Low | Found in the review 2026-11-15 | Standard |
 
 ## Done
 
 | ID | Type | Title | Done |
 | --- | --- | --- | --- |
-| F-001 | Feature | Room server core and browser client | 2026-11-15, v0.1.0 (tested locally; not deployed yet) |
+| F-001 | Feature | Room server core and browser client | 2026-11-15, v0.1.0 (demo deployed 2026-11-15; faults found in the review, see B-014 to B-017) |
 | F-002 | Feature | Secure share links: room code + key per role, QR code | 2026-11-15, v0.1.0 |
 | F-005 | Feature | Critical ST8 needs: posts on a shared ship, targeted messages, snapshots for rejoin | 2026-11-15, v0.1.0 (Critical takes it in with its F-040) |
 | F-006 | Feature | Host-run rooms with takeover | 2026-11-15, v0.1.0 |
 | F-007 | Feature | Room-wide pause and a grace period | 2026-11-15, v0.1.0 |
 | D-009 | Design | Versions and updates | 2026-11-15, v0.1.0: release workflow, `scripts/vendor.mjs`, `templates/update-network-kit.yml` |
 
-## Proposed runs (2026-11-15)
+## Proposed runs (2026-11-15, after the review of v0.1.0)
 
-- **A** – strong model, high level – Administration and budget
-  - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game, so each game can be closed without touching the others (the room server already has the `gate` hook for it).
-  - F-004 – Give each game a share of the daily free budget that closes it for the day when used up, so one runaway game cannot stop the others.
-  - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap, so you can see when it is time to pay and never get a surprise bill.
-  - D-011 – Check Cloudflare's current free limits (EU rooms are already confirmed), so the budget numbers above are right.
-- **B** – strong model, high level – Host options and fit for the other games
-  - D-012 – Go through Boomers', Bricks' and Buzzy's needs against the core and list what is missing as general features, so moving them later needs no rework.
-  - F-013 – Add a host who leads without playing, a choice to wait for a lost host instead of handing over, and roles that each game defines itself, so a quiz like Buzzy works without players seeing the answers and a new role such as a referee later is only a setting.
-  - F-010 – Notice a silently dead host within seconds using the heartbeats the room already gets, so the other players are not left waiting when the host's phone sleeps.
+The review ([docs/reviews/2026-11-15-v0.1.0.md](reviews/2026-11-15-v0.1.0.md)) recommends runs A and B before any game goes live on network-kit.
 
-Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0.1.0; neither run here is needed for it.
+- **A** – strong model, high level – Fix the faults from the review
+  - B-014 – Save the latest game state and the message counters so a room that has slept continues from the right place, instead of rolling back or delivering inputs twice.
+  - B-015 – Make reconnects safe: no replay of old messages, the host is told to resend state, the takeover message is repeated until it arrives, and queued messages never cross roles.
+  - B-016 – Bring the client back to "online" after a short blip and let joining give up with a clear message, so players are not left hanging and forgotten tabs do not spend the quota.
+  - B-017 – Close connections that do not introduce themselves, cap connections per room and validate ids, so a stranger cannot flood a room, fill its seats or keep it stored for ever.
+  - F-018 – Add a rate cap per connection, a daily cap per room and a stop for sending to an empty room, so one forgotten tab cannot use up the day's free quota.
+  - B-020 – Let only admitted players pause, lift automatic pauses when their cause ends, let known players back in after the grace period and make a ban hold.
+  - B-022 – Write server-run rooms to storage only when the game changed, and keep the seed secret where rules run on the server, so hidden cards stay hidden.
+  - F-024 – Add client unit tests, a real sleep test and the browser test to CI and releases, so these faults cannot come back unnoticed.
+  - B-027 – Bring the documents in line with the code.
+- **B** – strong model, high level – Settle the shape before games depend on it
+  - D-012 – Go through Boomers', Bricks' and Buzzy's needs against the core first, so the decisions below fit all games.
+  - D-019 – Separate the room's owner from the host that runs the game, so a short glitch never moves the rights and keys to someone else for good.
+  - F-013 – Add a host who leads without playing, a choice to wait for a lost host, and roles that each game defines itself.
+  - F-010 – Let players report a silent host and the room check it within seconds, so a sleeping phone does not freeze the game.
+  - D-023 – Settle the remaining API details (naming of posts, phase, host event, message targets, storage keys) while changing them is free.
+  - D-021 – Set the version policy for 0.x and make the update workflow safe (a kit smoke test, a waiting time, branch plus issue by default).
+- **C** – strong model, high level – Administration and budget
+  - D-011 – Check Cloudflare's current free limits first, so the numbers below are right.
+  - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap.
+  - F-004 – Give each game a share of the daily free budget that closes it for the day when used up.
+  - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game; the stop is checked inside the room, not only at the door.
+  - F-026 – Show players a clear message when the quota is used up, give the public demo a budget and turn on logging.
+
+Owner task: D-025 (try the demo on two real phones).
+
+Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start its integration work with v0.1.0, but should not go live before runs A and B are released, and should not turn on the automatic update workflow before D-021 is done.
 
 ## Details
 
@@ -66,6 +98,7 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0
 - Covers Buzzy #348 (secret, renewable viewer link) and relates to Buzzy #331 (host sign-in).
 
 ### F-003 Administration
+- Review 2026-11-15 (finding 15): the `gate` hook in v0.1.0 runs on every connection, also when an admitted player reconnects, so "running games finish" would break at the first glitch after Off; and running rooms cannot be reached for an emergency stop. Check new joins inside the room and give rooms a cheap stop flag read on hello and alarm. Until then `gate` is experimental.
 - One admin page for all games, building on today's Bricks admin Worker (opening hours, private invitations, sign-in by email link for approved addresses, no passwords; only the owner to begin with).
 - One row per game (Boomers, Bricks, Buzzy, …) with On / Off / Until, plus a "private rooms only" mode where only invitation links work.
 - Off: the server refuses new rooms and joins for that game at the first step, before any room is created, and the game shows "closed" instead of the button. Running games finish, as in Bricks today.
@@ -73,6 +106,7 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0
 - An Off game costs almost nothing (one small refused request per attempt). Fully zero needs the game's route switched off in Cloudflare (manual).
 
 ### F-004 Daily budget per game (proposal 2026-11-13)
+- Review 2026-11-15: each game is its own Worker, so Cloudflare's per-script usage numbers may give per-game usage without extra storage writes (unverified; needs the read-only token). Enforcement is a flag the gate reads with a cache. Messages inside a room never pass the gate, so the caps per room (F-018) are the real guard against a runaway game.
 - All games share one Cloudflare account's daily free limits. Each game gets a share of the daily budget; a game that exceeds its share closes itself for the rest of the day, so one runaway game cannot take the others down.
 - The admin page shows each game's usage today.
 
@@ -126,7 +160,8 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0
 
 ### F-010 Faster takeover from a silently dead host (2026-11-15)
 - When a phone goes to sleep, its connection can stay open on the server side for a long time, so the takeover after `takeoverMs` starts late.
-- Idea: the room already gets a heartbeat from every client every 20 seconds (answered for free); `getWebSocketAutoResponseTimestamp` tells when a socket last sent one. Players who stop receiving state could ask the room to check the host; if the host's last heartbeat is too old, the room treats the host as dropped. Must not cost room time while nothing happens.
+- Review 2026-11-15 (finding 16): a 20-second heartbeat, slowed further in background tabs, cannot give "within seconds". Better: players report after N seconds without data from the host; the room then pings the host and takes over if nothing comes back in about 3 seconds. Do it by the first game's first playtest.
+- Earlier idea: the room already gets a heartbeat from every client every 20 seconds (answered for free); `getWebSocketAutoResponseTimestamp` tells when a socket last sent one. Players who stop receiving state could ask the room to check the host; if the host's last heartbeat is too old, the room treats the host as dropped. Must not cost room time while nothing happens.
 
 ### D-011 Cloudflare limits and EU rooms on the Free plan (2026-11-15)
 - The figures in `docs/INTEGRATION.md` (100,000 requests and 13,000 GB-s a day, 20:1 billing of incoming WebSocket messages) come from earlier notes, not from Cloudflare's pages, which could not be reached from the build environment.
@@ -136,6 +171,7 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0
 ### D-012 Fit for the other games (2026-11-15)
 - The owner wants network-kit to work for any game and be reused, not tailored to one project (project rule in `AGENTS.md`).
 - Go through Boomers (F-002 there), Bricks (F-007 there, its 2 Players mode and private invitations) and Buzzy (#408, #348, #331 there) and compare with v0.1.0: roles, host behaviour, late join, timers, rematch, admin needs.
+- Review 2026-11-15: do this as a short paper pass before D-019, F-013 and D-023, since its value is finding API changes while they are free.
 - Output: a short list in this section of what already fits and what is missing, each missing piece written as a general feature with its own ID. Nothing game-specific goes into network-kit.
 
 ### F-013 Game-master host (2026-11-15)
@@ -144,3 +180,64 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0
 - General options, each with a default that keeps today's behaviour: a host without a player seat (not counted among players and posts), and `takeover` on (today) or off (pause and wait for the host during the grace period; what happens after the grace period is chosen too).
 - Also useful for e.g. a party game with a game master. Covered by an example game's tests.
 - Roles defined by the game (owner decision 2026-11-15): instead of only the built-in `player` and `viewer`, a game lists its own kinds of participants with their seat limits and rights (e.g. plays or not, may pause, may become host, gets the invitation keys, has its own share link). `player` and `viewer` stay as the default, so games written for v0.1.0 keep working (a MINOR version). This makes a later role such as a referee a setting instead of a change to the core. No referee is built now: it waits until a game needs it.
+
+### Review of v0.1.0 (2026-11-15)
+- An independent reviewer went through the code, tests, docs and plans. Report with all 27 findings, line numbers and scenarios: [docs/reviews/2026-11-15-v0.1.0.md](reviews/2026-11-15-v0.1.0.md). Proof scripts that demonstrate the faults: `docs/reviews/2026-11-15-proofs/` (they pass while a fault exists; reverse the assertion when it is fixed).
+- The items below group the findings; the numbers in brackets are the report's finding numbers.
+
+### B-014 A sleeping room loses state (findings 1, 2, 24)
+- The latest snapshot is kept only in memory until the next timed save, so a room that goes quiet and sleeps hands an older state to the next host. The message counter for duplicate protection is not stored either, so after sleep plus a network switch inputs are delivered twice.
+- Also: the snapshot save is not awaited, and the error for an oversized message does not say which message it was.
+
+### B-015 Reconnect faults (findings 3, 4, 13)
+- A player who was away past the grace period and returns in the same page resends up to 500 old messages and commands (old pause commands flip the pause for everyone).
+- When a connection is replaced without the server seeing a drop, nobody is told, so the host does not resend state; reliable delivery only covers client to room.
+- If the takeover message lands on a dead connection, the new host never gets the state and the room stays paused.
+- Messages queued as host are delivered as player input after a role change, and the reverse.
+
+### B-016 Client stuck offline; join never gives up (findings 5, 14)
+- After the browser reports offline and online again while the connection survived, the client stays "offline" and holds back everything it sends.
+- When the server cannot be reached, `join()` neither succeeds nor fails and retries for ever (thousands of requests a day from one forgotten tab).
+
+### B-017 Uninvited connections (findings 7, 8, 23)
+- A connection that never introduces itself is never closed, can send junk without limit, and one such connection stops the 24-hour cleanup for good.
+- A very long session id makes a seat that looks online with nobody in it, for good; a few of these fill an open room.
+- Ids such as `__proto__` are accepted in commands.
+
+### F-018 Limits on what one room can cost (finding 6)
+- A host alone in a started game keeps the room awake all day; nothing caps messages per connection or per room. With the unverified free-plan figures, one forgotten tab can use most of a day's quota. The public demo is open to this.
+- Proposal: the client does not send when nobody else is online; a rate cap per connection and a daily cap per room that close with a clear final code; automatic pause when one participant has been alone for some minutes. All as options with sensible defaults.
+
+### D-019 Owner and host (finding 9)
+- Today "host" means three things at once: the creator with the rights, the browser that runs the game, and the holder of the keys. A 6-second glitch for the creator moves all three to the next player for good, that player leaving closes the room for everyone, the host key can never be renewed, and a server-run room can end up with no host at all.
+- Proposal: an owner (the creator: rights, keys, closing; gets them back on return) separate from the host (runs the game; may move on takeover). The host key is never sent to a stand-in. To decide by the owner before F-013 is built.
+
+### B-020 Rights and lockouts (findings 12, 18, 19, 20)
+- Viewers and waiting players can pause; a viewer's messages reach the host.
+- An automatic pause is not lifted when the player returns or is gone, and with `pauseBy: 'nobody'` it can never be lifted.
+- A player who was admitted is refused after the grace period when late join is off or the invitation key was renewed.
+- A ban is bypassed by opening the same invitation link in a new tab.
+
+### D-021 Version policy and update workflow (findings 10, 11, 27)
+- The changelog promises that a MINOR version never breaks games, but several fixes from the review change behaviour. Proposal: while the kit is 0.x, a MINOR version may require changes in the game (with a short guide) and only PATCH versions are taken automatically; add a test of the previous release's client against the new server.
+- The update workflow for games pushes straight to the game's `main` when the game's own tests pass, but those tests normally do not exercise the kit, the push may not start the game's deploy, and a bad release would reach every game within a day. Proposal: a kit smoke test the game runs, a waiting time of some days before a patch is taken, and branch plus issue as the default until the model is trusted. To decide by the owner.
+- Smaller workflow fixes are listed under finding 27.
+
+### B-022 Server-run rooms (findings 17, 21)
+- Every message to a server-run room causes a storage write, even ignored ones; every snapshot while paused too.
+- The seed is sent to every client, and the memory example shuffles its hidden cards from it, so a player can work out the cards.
+
+### D-023 API details to settle now (finding 22)
+- `posts` is described with one game's words and allows one holder per post; `room.phase` stays "countdown" on clients; `isHost` is false inside the host event; `to: 'all'` echoes to the sender; rules cannot be asynchronous; storage keys are shared between games on the same site.
+
+### F-024 Missing tests (finding 25)
+- No unit tests of the client, no test with a real sleeping room, the browser test is not part of CI or releases; several flows are untested (gate on join, cleanup with connections present, silent replacement).
+
+### D-025 Demo on two real phones
+- Lock the screen, switch from wifi to mobile data, put the tab in the background; note how long each recovery takes. Never done so far.
+
+### F-026 Operations (the review's list of missing items)
+- What a player sees when the daily quota is used up; a budget or gate for the public demo; logging in production (`observability` is off in `wrangler.jsonc`).
+
+### B-027 Documentation disagrees with the code (finding 26)
+- `AGENTS.md` says "Boomers first" and lists opening hours and administration as existing (changing project rules needs the owner's approval; approved with this item); gaps in `docs/INTEGRATION.md` (events, options, what is stored); a wrong file name in a code comment.
