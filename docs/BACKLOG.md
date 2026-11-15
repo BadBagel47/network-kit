@@ -18,7 +18,7 @@
 | F-006 | Feature | Host-run rooms: one player's browser runs the game, the server relays, and another player takes over if the host drops | Medium | Idea | Strong, high |
 | F-007 | Feature | Room-wide pause and a grace period before a lost player counts as gone | Medium | Idea | Standard |
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
-| D-009 | Design | Versions and updates: how games get new versions and bug fixes without breaking | High | Proposal (2026-11-15); decide before the first build run | Strong, high |
+| D-009 | Design | Versions and updates: how games get new versions and bug fixes without breaking | High | Approved by the owner (2026-11-15); set up in the first build run | Strong, high |
 
 ## Done
 
@@ -33,6 +33,7 @@
   - F-005 – Add free switching between posts, messages to one player or a group, and full-state snapshots for players who join or come back, so Critical's crew play works.
   - F-007 – Add a pause for everyone and a grace period before a dropped player counts as gone, as Critical's rules require.
   - F-002 – Add share links with a key per role and a QR code, so rooms can be shared safely and a viewer link cannot play.
+  - D-009 – Set up version numbers, releases, the game's own copy and automatic bug-fix update proposals, so Critical and later games get fixes without breaking.
 - **B** – strong model, high level – Administration and budget
   - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game, so each game can be closed without touching the others.
   - F-004 – Give each game a share of the daily free budget that closes it for the day when used up, so one runaway game cannot stop the others.
@@ -105,7 +106,7 @@ Run A together with Critical ST8 F-040 (online mode), the first real user. Boome
 - Warns on the admin page when use nears a limit, e.g. at 80 %.
 - Check the current Cloudflare limits and prices when building; they can change.
 
-### D-009 Versions and updates (proposal 2026-11-15)
+### D-009 Versions and updates (approved by the owner 2026-11-15)
 - Owner's question: can network-kit keep developing after games use it, and do bug fixes reach those games, without it becoming messy? Same need for `BadBagel47/geo-kit` (shared GPS module).
 - Same model as `BadBagel47/geo-kit`, which already has version numbers, an automatic tagged release per version and projects pinned to a tag; geo-kit D-016 adds the same update proposals there.
 - Version numbers: MAJOR.MINOR.PATCH. PATCH = bug fix only, safe to take; MINOR = new features, old code keeps working; MAJOR = something changes in a way games must adapt to (rare, with a short guide).
