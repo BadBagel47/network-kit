@@ -26,18 +26,19 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 - **Free first, paid possible (2026-11-15):** network-kit must work on a free Cloudflare account, and the owner wants to be able to pay for the account when the quota runs out. The admin page shows the usage (F-008).
 - **Versions and updates (2026-11-15, D-009):** approved by the owner. Version numbers MAJOR.MINOR.PATCH; each game keeps its own copy of a fixed version; bug-fix releases reach games as automatic update proposals that are taken in only when the game's tests pass; fixes are always made in network-kit first. Same model as geo-kit.
 - **Publishing to main (2026-11-15):** the owner allows agents to push network-kit changes directly to `main`, in this and future runs.
+- **EU-only rooms (2026-11-15, D-011):** work on the owner's Cloudflare account: the first demo deploy created a room with `jurisdiction('eu')`. Games set `jurisdiction: 'eu'` (empty in local tests).
 - **Room cleanup (proposal 2026-11-13, built 2026-11-15):** a room is deleted 24 hours after the last player left (not 24 hours after it was created, so a long evening's game is never cut off), and an hour after it was closed. The server keeps nicknames and a hash of each player's random key, never the key itself. The owner may still change the 24 hours.
 - **Host-run rooms first (2026-11-15, run A):** network-kit supports both host-run rooms (F-006, Critical's choice) and server-run rooms; the demo has one of each. A player's identity is kept per browser tab by default, so a reload keeps the seat and several tabs on one computer are separate players.
 
 ## Current state (2026-11-15)
 
 - **v0.1.0 built (run A):** room server core and browser client (F-001), share links with a key per role and QR codes (F-002), Critical's needs: posts, targeted messages, snapshots (F-005), host-run rooms with takeover (F-006), pause and grace period (F-007), versions and updates (D-009). 32 unit tests, 8 integration tests against local workerd and a browser test of the demo page pass. Released as tag `v0.1.0` by the release workflow; the Test and Release workflows passed on GitHub on 2026-11-15. The demo deploy ran and skipped itself (no token yet).
-- **Not yet on Cloudflare:** the demo Worker deploys once `CLOUDFLARE_API_TOKEN` is added; that first deploy also shows whether EU-only rooms work on the Free plan (D-011).
+- **Demo on Cloudflare (2026-11-15):** https://network-kit-demo.l8p1.workers.dev (host-run demo page; the memory example under `/turns`). Deployed by `deploy-demo.yml`, whose check passed: the Worker answers and a room can be created with EU-only storage on the owner's account. Not yet opened on a phone.
 - **Next:** Critical ST8 F-040 (online mode) in `BadBagel47/critical` takes v0.1.0 in, following `docs/INTEGRATION.md`. In network-kit: see *Proposed runs* in `docs/BACKLOG.md`.
 
 ## One-time actions
 
-- Pending: add the Cloudflare API token as the GitHub Secret `CLOUDFLARE_API_TOKEN` in this repo (same kind of token as the Bricks admin Worker uses). The demo then deploys by itself. Optional: `CLOUDFLARE_ACCOUNT_ID` if the token covers several accounts.
+- Done (2026-11-15): Cloudflare API token (template "Edit Cloudflare Workers") added as the GitHub Secret `CLOUDFLARE_API_TOKEN`; the demo deploys from `main` by itself.
 - Pending (owner decision): network-kit is a private repository, so each game's update workflow needs a read-only token `NETWORK_KIT_TOKEN`. Making network-kit public (it holds no secrets; geo-kit is public) removes that need. Recommendation: public.
 - Pending: a second, read-only Cloudflare API token for account analytics, as a secret for the admin page (F-008).
 

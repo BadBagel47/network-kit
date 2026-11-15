@@ -14,7 +14,7 @@
 | F-004 | Feature | Automatic daily budget per game | Medium | Proposal | Standard |
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
 | F-010 | Feature | Notice a host whose connection died silently (e.g. a phone that went to sleep) within seconds, so takeover does not wait for Cloudflare to close the connection | Medium | Idea (found in run A) | Strong, medium |
-| D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | Waiting for the Cloudflare token (first demo deploy) | Standard |
+| D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | EU rooms confirmed 2026-11-15 (first demo deploy); the Free plan figures are still unchecked | Standard |
 
 ## Done
 
@@ -33,7 +33,7 @@
   - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game, so each game can be closed without touching the others (the room server already has the `gate` hook for it).
   - F-004 – Give each game a share of the daily free budget that closes it for the day when used up, so one runaway game cannot stop the others.
   - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap, so you can see when it is time to pay and never get a surprise bill.
-  - D-011 – Check Cloudflare's current free limits and EU rooms on the free plan, so the budget numbers above are right (needs the Cloudflare token).
+  - D-011 – Check Cloudflare's current free limits (EU rooms are already confirmed), so the budget numbers above are right.
 - **B** – strong model, medium level – Faster takeover
   - F-010 – Notice a silently dead host within seconds using the heartbeats the room already gets, so the other players are not left waiting when the host's phone sleeps.
 
@@ -126,4 +126,5 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start now with v0
 
 ### D-011 Cloudflare limits and EU rooms on the Free plan (2026-11-15)
 - The figures in `docs/INTEGRATION.md` (100,000 requests and 13,000 GB-s a day, 20:1 billing of incoming WebSocket messages) come from earlier notes, not from Cloudflare's pages, which could not be reached from the build environment.
-- The demo is set to EU-only rooms (`ROOM_JURISDICTION=eu`). The first deploy checks that a room can be created; if EU-only rooms need a paid plan, set the variable empty and record the answer under Decisions.
+- EU-only rooms: confirmed on 2026-11-15. The first demo deploy created a room with `ROOM_JURISDICTION=eu` (recorded under Decisions in `docs/HANDOFF.md`).
+- Still open: the Free plan figures, best read from the account's own usage numbers in F-008.
