@@ -24,7 +24,7 @@
 | F-018 | Feature | Limits on what one room can cost: rate cap per connection, daily cap per room, no sending to an empty room, pause when alone | High | Proposal from the review 2026-11-15 | Strong, high |
 | D-019 | Design | Separate the room's owner (rights, keys, closing) from the host (the browser that runs the game) | High | Proposal from the review 2026-11-15; needs the owner's decision | Strong, high |
 | B-020 | Bug | Rights and lockouts: viewers and waiting players can pause, an automatic pause can get stuck, admitted players are locked out after the grace period, a ban is bypassed with a new tab | Medium | Found in the review 2026-11-15 (reproduced) | Strong, high |
-| D-021 | Design | Version policy while the kit is 0.x, and a safer update workflow for games | High | Proposal from the review 2026-11-15; needs the owner's decision | Strong, high |
+| D-021 | Design | Version policy while the kit is 0.x, and a safer update workflow for games | High | Approved by the owner 2026-11-15; built in run B | Strong, high |
 | B-022 | Bug | Server-run rooms: a storage write for every message, and the public seed reveals hidden cards in the example game | Medium | Found in the review 2026-11-15 (reproduced) | Strong, high |
 | D-023 | Design | API details to settle before the first game depends on them (naming of posts, phase, host event, message targets, storage keys) | Medium | Proposal from the review 2026-11-15 | Strong, high |
 | F-024 | Feature | Tests that were missing: client unit tests, a real sleep test, the browser test in CI and before a release | Medium | Proposal from the review 2026-11-15 | Strong, high |
@@ -223,6 +223,10 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start its integra
 - The changelog promises that a MINOR version never breaks games, but several fixes from the review change behaviour. Proposal: while the kit is 0.x, a MINOR version may require changes in the game (with a short guide) and only PATCH versions are taken automatically; add a test of the previous release's client against the new server.
 - The update workflow for games pushes straight to the game's `main` when the game's own tests pass, but those tests normally do not exercise the kit, the push may not start the game's deploy, and a bad release would reach every game within a day. Proposal: a kit smoke test the game runs, a waiting time of some days before a patch is taken, and branch plus issue as the default until the model is trusted. To decide by the owner.
 - Smaller workflow fixes are listed under finding 27.
+- Decided by the owner 2026-11-15, both parts:
+  1. While the kit is 0.x, a MINOR version may require changes in the game and comes with a short guide; a PATCH never does. At 1.0 (when the kit has proven stable in a couple of games) the full promise applies: MINOR never breaks games.
+  2. Bug fixes reach a game as a proposal on a branch with a notice to the owner, not directly on the game's `main`; they are taken only some days after the release and after a kit smoke test (create a room, join, send, reconnect) has passed in the game. Switching to fully automatic is a later decision, once the smoke test exists and the first updates have gone well.
+- To build in run B: the changelog header and `docs/INTEGRATION.md` text, the smoke test, the waiting time and branch-plus-issue as the template's only path for now, one dry run to see whether a workflow push starts a game's publishing, and the fixes under finding 27.
 
 ### B-022 Server-run rooms (findings 17, 21)
 - Every message to a server-run room causes a storage write, even ignored ones; every snapshot while paused too.
