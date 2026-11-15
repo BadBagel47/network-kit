@@ -289,7 +289,7 @@ function draw() {
     const why = { 'host-away': 'Waiting for the host…', 'host-change': 'Switching host…', 'player-away': `Waiting for ${nameOf(r.paused.id)}…` };
     text = why[r.paused.reason] ?? `Paused${r.paused.id ? ` (${nameOf(r.paused.id)})` : ''}`;
   } else if (r?.phase === 'lobby') {
-    text = room.isHost ? 'Press Start' : 'Waiting for the host to start';
+    text = room.isHost || room.isOwner ? 'Press Start' : 'Waiting for the host to start';
   } else if (r?.phase === 'countdown') {
     text = String(Math.max(1, Math.ceil((r.startsAt - room.serverNow()) / 1000)));
   }

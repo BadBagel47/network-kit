@@ -156,6 +156,7 @@ test('takeover with nobody online: the next eligible participant to connect take
   const { world, core, owner } = await setup();
   const a = await connect(world, core, { name: 'A', pk: 'late-key-xxxxxxxxxxxxxxx' });
   const tv = await connect(world, core, { name: 'TV', role: 'viewer' });
+  await cmd(core, owner, 'start');
   await send(core, owner, { t: 'snap', d: { s: 1 } });
   await drop(core, a);
   await drop(core, owner);
@@ -438,4 +439,79 @@ test('the owner moving to another device takes the seat and the game along at on
   assert.equal(a.room.paused, null);
   await world.advance(120_000);
   assert.equal(a.room.hostId, moved.id, 'the old seat\'s grace timer does nothing any more');
+});
+
+// ---- B-034: the host role outside a game ---------------------------------
+
+test('B-034: in the lobby a short absence of the host moves nothing, even with takeover on', async () => {
+  const { world, core, created, owner } = await setup();
+  const b = await connect(world, core, { name: 'B' });
+  await drop(core, owner); // the owner's phone switches to another app
+  await world.advance(30_000);
+  assert.equal(b.room.hostId, owner.id);
+  assert.equal(b.messages('host').length, 0);
+  assert.equal(b.room.paused, null, 'nothing is running, so nothing is paused');
+  const c = await connect(world, core, { name: 'C' });
+  assert.equal(c.room.hostId, owner.id, 'nor does someone who connects meanwhile get it');
+  const back = await connect(world, core, { name: 'Owner', pk: owner.pk, owner: created.ownerKey });
+  assert.equal(back.room.hostId, back.id);
+  assert.equal(back.messages('host').length, 0, 'same page: it still has everything');
+});
+
+test('B-034: the owner back between games gets the host role back, with the kept state', async () => {
+  const { world, core, created, owner } = await setup();
+  const b = await connect(world, core, { name: 'B' });
+  await cmd(core, owner, 'start');
+  await world.advance(4_000);
+  await drop(core, owner);
+  await world.advance(6_000);
+  assert.equal(b.room.hostId, b.id, 'during the game B took over');
+  await cmd(core, b, 'host-ready');
+  await send(core, b, { t: 'snap', d: { series: 'B leads 1-0' } });
+  await cmd(core, b, 'end');
+  const back = await connect(world, core, { name: 'Owner', pk: owner.pk, owner: created.ownerKey });
+  assert.equal(back.room.hostId, back.id);
+  assert.deepEqual(back.last('host').snapshot, { series: 'B leads 1-0' }, 'the next round continues the series');
+  assert.equal(b.room.hostId, back.id);
+  await cmd(core, back, 'host-ready');
+  assert.equal(b.room.paused, null);
+});
+
+test('B-034: the owner back during a game leaves it where it runs', async () => {
+  const { world, core, created, owner } = await setup();
+  const b = await connect(world, core, { name: 'B' });
+  await cmd(core, owner, 'start');
+  await world.advance(4_000);
+  await drop(core, owner);
+  await world.advance(6_000);
+  await cmd(core, b, 'host-ready');
+  const back = await connect(world, core, { name: 'Owner', pk: owner.pk, owner: created.ownerKey });
+  assert.equal(back.room.hostId, b.id);
+  assert.equal(back.room.ownerId, back.id);
+});
+
+test('B-034: in the lobby a host gone for good is replaced, so the others can still start', async () => {
+  const { world, core, owner } = await setup();
+  const b = await connect(world, core, { name: 'B' });
+  await drop(core, owner);
+  await world.advance(61_000); // past the grace period
+  assert.equal(b.room.hostId, b.id);
+  await cmd(core, b, 'start');
+  assert.equal(b.room.round, 1);
+});
+
+test('B-034: starting while the host is away starts the wait for a takeover', async () => {
+  const { world, core, created, owner } = await setup({ ...CREW, ownerLeave: 'pass' });
+  const b = await connect(world, core, { name: 'B' });
+  const c = await connect(world, core, { name: 'C' });
+  await cmd(core, owner, 'handover', { id: b.id });
+  await cmd(core, b, 'host-ready');
+  await drop(core, b); // the host steps away in the lobby
+  await world.advance(10_000);
+  assert.equal(c.room.hostId, b.id);
+  await cmd(core, owner, 'start');
+  assert.equal(c.room.paused.reason, 'host-away');
+  await world.advance(5_100);
+  assert.notEqual(c.room.hostId, b.id, 'now there is a game to continue');
+  assert.ok(created.ownerKey);
 });

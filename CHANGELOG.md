@@ -10,6 +10,14 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.2.3 (2026-11-16)
+
+Affects: games with `takeover: true` (Critical ST8 will be one); a bug fix, no change needed in games (take 0.2.3). Found in the owner's phone test (B-034).
+
+- Fixed: with takeover on, the host role moved to another participant in the lobby when the host's phone switched app for a few seconds (phones close a background tab's connection quickly), and stayed there when the owner came back. Now a lost host is only replaced while a game is in progress (countdown or playing, also paused); in the lobby and between rounds the room waits. A host gone for good (past the grace period) is still replaced, so the others can start. An owner who comes back while no game is in progress gets the host role back, with the kept state. Starting a round while the host is away starts the wait for a takeover.
+- Demo: the owner is told to press Start instead of to wait for the host.
+- The shipped smoke test starts a game before it checks the takeover.
+
 ## 0.2.2 (2026-11-15)
 
 Affects: every game using the default `identity: 'tab'`; a bug fix, no change needed in games (take 0.2.2). Found in the owner's first phone test (B-033).

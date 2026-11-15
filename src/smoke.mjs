@@ -240,7 +240,9 @@ if (hostRun) {
   last = reloaded;
 
   if (core.options.takeover && core.options.roles[guest.role]?.canHost) {
-    say('losing the host and letting the other participant take over');
+    say('losing the host during a game and letting the other participant take over');
+    reloaded.start();
+    await until(() => guest.phase !== 'lobby', 'the game starting');
     reloaded.sendSnapshot({ smoke: 'later state' }, { force: true });
     await sleep(20);
     await world.chain;

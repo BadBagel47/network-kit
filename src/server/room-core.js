@@ -757,9 +757,13 @@ export class RoomCore {
         s.hostId = player.id; // the owner runs the game until someone else does
         s.hostEver = true;
         s.hostPending = true;
-      } else if (o.takeover && s.hostEver && this.canHost(player) && !this.hasTimer('takeover')
+      } else if (o.takeover && s.hostEver && this.inGame() && this.canHost(player) && !this.hasTimer('takeover')
         && (!hostPlayer || hostPlayer.status === 'away')) {
-        tookOver = true; // the host is missing and nobody is waiting to take over
+        tookOver = true; // a game is running, the host is missing and nobody is waiting to take over
+      } else if (player.id === s.ownerId && hostPlayer && hostPlayer.id !== player.id && !this.inGame()
+        && this.canHost(player)) {
+        // The owner is back between games: the owner's browser runs the next one (B-034).
+        tookOver = true;
       }
       if (player.id === s.hostId) {
         this.clearTimer('takeover');
@@ -839,7 +843,9 @@ export class RoomCore {
       await this.saveSnapshot();
       this.cancelHostCheck();
       if (this.inGame() && !s.paused) s.paused = { reason: 'host-away', id: p.id, at: this.host.now() };
-      if (o.takeover) this.setTimer('takeover', o.takeoverMs);
+      // Only a running game needs someone to continue it; in the lobby and
+      // between rounds the room waits for the host (B-034).
+      if (o.takeover && this.inGame()) this.setTimer('takeover', o.takeoverMs);
       else if (o.closeAfterHostAwayMs !== null) this.setTimer('hostaway', o.closeAfterHostAwayMs);
     }
     this.touch();
@@ -1229,6 +1235,11 @@ export class RoomCore {
         if (s.paused && s.paused.reason !== 'host-change' && s.paused.reason !== 'host-away') s.paused = null;
         await this.admitWaiting();
         if (o.mode === 'server') await this.callRules('onStart');
+        if (o.mode === 'host' && o.takeover && !this.hasTimer('takeover')) {
+          // Started while the host is away: now there is a game to continue.
+          const hostPlayer = this.player(s.hostId);
+          if (!hostPlayer || hostPlayer.status === 'away') this.setTimer('takeover', o.takeoverMs);
+        }
         break;
       }
       case 'cancel': {

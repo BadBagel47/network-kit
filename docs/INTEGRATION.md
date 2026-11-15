@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.2** (0.2.2).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.2** (0.2.3).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -95,7 +95,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `pauseBy` | `'anyone'` | Who may pause and resume: `'anyone'` (whose role may pause), `'host'` (host and owner only) or `'nobody'`. |
 | `graceMs` | 60 s | How long a dropped participant keeps the seat and place. |
 | `autoPauseMs` | off | Pause the room when a playing participant has been away this long; lifted when they are back or gone. |
-| `takeover` | `false` | Host-run rooms: may another participant continue a lost host's game? Off: the room waits for the host. |
+| `takeover` | `false` | Host-run rooms: may another participant continue a lost host's game? Only while a game is in progress (countdown or playing); in the lobby and between rounds the room waits, unless the host is gone past the grace period. Off: the room always waits for the host. |
 | `takeoverMs` | 5 s | With takeover: how long to wait for the host first. |
 | `hostCheckMs` | 3 s | How long a host has to answer when others report it silent. |
 | `closeAfterHostAwayMs` | off | Without takeover: close the room after waiting this long for its host. |
@@ -150,6 +150,8 @@ Every role has its own invitation key, so a viewer link can never play. In an op
 - **When the host's connection is lost**, the room pauses (`paused.reason` `'host-away'`).
   - Default: it **waits** for the host. No participant can become host, and the kept state is never sent to anyone else.
   - With `takeover: true`: after `takeoverMs` another participant who may host continues from the latest snapshot (`'host-change'` until it confirms). The owner is preferred, then whoever has been in the room longest.
+  - Phones close the connection of a tab in the background within seconds, so during a game a host who switches app for longer than `takeoverMs` hands the game over. Raise `takeoverMs` if that is too eager for the game.
+  - An owner who comes back while no game is in progress gets the host role back, with the kept state; during a game, the game stays where it runs.
   - A host that looks connected but has gone silent (a phone asleep) is found when others report it (`hostSilentMs` on the client): the room asks it to answer within `hostCheckMs`.
 - **Snapshot**: the full game state the host gives the room to keep. It is private to the host seat: the room only sends it back to whoever runs the game (the host after a reload, or the next host). What newcomers may see is sent as normal messages.
 - **Places**: named spots (posts, sides, teams) with a capacity. A playing participant holds at most one; everyone sees who holds what.
