@@ -22,7 +22,7 @@
 | B-016 | Bug | The client gets stuck "offline" after a short network blip, and joining never gives up when the server cannot be reached | High | Found in the review 2026-11-15 (reproduced) | Strong, high |
 | B-017 | Bug | Uninvited connections can flood a room, stop its cleanup for good and create ghost seats; ids are not validated | High | Found in the review 2026-11-15 (reproduced) | Strong, high |
 | F-018 | Feature | Limits on what one room can cost: rate cap per connection, daily cap per room, no sending to an empty room, pause when alone | High | Proposal from the review 2026-11-15 | Strong, high |
-| D-019 | Design | Separate the room's owner (rights, keys, closing) from the host (the browser that runs the game) | High | Proposal from the review 2026-11-15; needs the owner's decision | Strong, high |
+| D-019 | Design | Separate the room's owner (rights, keys, closing) from the host (the browser that runs the game) | High | Approved by the owner 2026-11-15; built in run B | Strong, high |
 | B-020 | Bug | Rights and lockouts: viewers and waiting players can pause, an automatic pause can get stuck, admitted players are locked out after the grace period, a ban is bypassed with a new tab | Medium | Found in the review 2026-11-15 (reproduced) | Strong, high |
 | D-021 | Design | Version policy while the kit is 0.x, and a safer update workflow for games | High | Approved by the owner 2026-11-15; built in run B | Strong, high |
 | B-022 | Bug | Server-run rooms: a storage write for every message, and the public seed reveals hidden cards in the example game | Medium | Found in the review 2026-11-15 (reproduced) | Strong, high |
@@ -211,7 +211,13 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can start its integra
 
 ### D-019 Owner and host (finding 9)
 - Today "host" means three things at once: the creator with the rights, the browser that runs the game, and the holder of the keys. A 6-second glitch for the creator moves all three to the next player for good, that player leaving closes the room for everyone, the host key can never be renewed, and a server-run room can end up with no host at all.
-- Proposal: an owner (the creator: rights, keys, closing; gets them back on return) separate from the host (runs the game; may move on takeover). The host key is never sent to a stand-in. To decide by the owner before F-013 is built.
+- Decided by the owner 2026-11-15:
+  - The owner is whoever created the room: kick and ban, renew links, settings, closing the room. Ownership never moves automatically; the owner gets everything back on return, at any time and also from another device with the secret owner key. That key is never sent to anyone else.
+  - The host is the browser that runs the game. In games that turn takeover on, the host role can move to another player; that player may run the game (start and end rounds, admit waiting players) but gets none of the owner's rights or keys. From the start the owner is also the host.
+  - Longer absence, games with takeover: short pause, another player runs the game after `takeoverMs`; the owner's seat and post are freed after the grace period like any player's, ownership stays; when the owner returns the game keeps running where it is (no new pause).
+  - Longer absence, games without takeover: the room stays paused and waits; seats are kept; nothing but leaving is possible until the host is back.
+  - If the owner never returns: the room lives until everyone has left and is cleaned up 24 hours later. Options a game may turn on, both off by default: ownership passes to the current host after a long absence (games with takeover), or the room closes with a clear message after a waiting time (games without takeover).
+  - The owner may hand ownership over voluntarily.
 
 ### B-020 Rights and lockouts (findings 12, 18, 19, 20)
 - Viewers and waiting players can pause; a viewer's messages reach the host.
