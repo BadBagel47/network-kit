@@ -1,18 +1,19 @@
-// network-kit demo: a host-run room. The host's browser moves everyone's
-// ship; players send their keys only when they change; the host sends
-// positions often and a full snapshot now and then (and to anyone joining).
+// network-kit demo: a host-run room with takeover. The host's browser moves
+// everyone's ship; the others send their keys only when they change; the
+// host sends positions often and gives the room a full snapshot now and then.
 import {
   NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg,
 } from './network-kit/client/index.js';
 
 const SERVER = location.origin;
-const POSTS = ['captain', 'gunner', 'engineer'];
+const OPTIONS = { hostSilentMs: 4_000 }; // report a host that has gone quiet
+const PLACES = ['captain', 'gunner', 'engineer'];
 const COLORS = ['#58a6ff', '#3fb950', '#d29922', '#f778ba', '#a5d6ff', '#ff7b72', '#d2a8ff'];
 const $ = (id) => document.getElementById(id);
 
 let room = null;
 let world = { ships: {}, tick: 0 };
-const inputs = {}; // host only: latest keys per player
+let inputs = {}; // host only: latest keys per participant
 let myKeys = { up: false, down: false, left: false, right: false };
 
 // ------------------------------------------------------------ start screen
@@ -43,17 +44,14 @@ async function enter(promise) {
   }
 }
 
-$('create').onclick = () => enter(NetworkRoom.create(SERVER, { name: nameValue() }));
-$('join').onclick = () => enter(NetworkRoom.join(SERVER, {
-  code: $('code').value, name: nameValue(), key: link?.key,
-}));
-$('watch').onclick = () => enter(NetworkRoom.join(SERVER, {
-  code: $('code').value, name: nameValue(), key: link?.key, role: 'viewer',
-}));
+const joinOptions = (extra = {}) => ({ ...OPTIONS, code: $('code').value, name: nameValue(), key: link?.key, ...extra });
+$('create').onclick = () => enter(NetworkRoom.create(SERVER, { ...OPTIONS, name: nameValue() }));
+$('join').onclick = () => enter(NetworkRoom.join(SERVER, joinOptions()));
+$('watch').onclick = () => enter(NetworkRoom.join(SERVER, joinOptions({ role: 'viewer' })));
 
-// Coming back after a reload keeps the same seat (same tab, same player key).
+// Coming back after a reload keeps the same seat (same tab, same identity).
 const saved = sessionStorage.getItem('demo:room');
-if (saved && !link) enter(NetworkRoom.join(SERVER, { code: saved, name: nameValue() }));
+if (saved && (!link || link.code === saved)) enter(NetworkRoom.join(SERVER, { ...OPTIONS, code: saved, name: nameValue() }));
 
 // ------------------------------------------------------------- game screen
 
@@ -75,7 +73,6 @@ function showGame() {
 
   room.on('status', renderStatus);
   room.on('room', render);
-  room.on('role', ({ isHost }) => log(isHost ? 'You run the game now.' : 'Another player runs the game.'));
   room.on('closed', ({ text }) => {
     sessionStorage.removeItem('demo:room');
     $('overlay').hidden = false;
@@ -83,37 +80,46 @@ function showGame() {
   });
   room.on('error', ({ code }) => log(`Not possible: ${code}`));
 
-  room.on('peer', ({ event, id }) => {
-    const words = { join: 'joined', back: 'is back', drop: 'lost the connection', gone: 'left', host: 'runs the game', waiting: 'is waiting' };
-    log(`${nameOf(id)} ${words[event] ?? event}.`);
-    if (!room.isHost) return;
-    if (event === 'join' || event === 'back') {
-      ensureShips();
-      room.sendSnapshot(world, { to: [id] });
-    }
-    if (event === 'gone') {
-      delete world.ships[id];
-      delete inputs[id];
-    }
-  });
-
-  // Host side.
-  room.on('message', ({ from, data }) => {
-    if (room.isHost && data?.type === 'input') inputs[from] = data.keys;
-    if (!room.isHost && data?.type === 'pos') applyPositions(data.p, data.tick);
-  });
+  // This browser runs the game now: from the room's kept state, or from scratch.
   room.on('host', ({ snapshot }) => {
-    if (snapshot) world = snapshot;
+    world = snapshot ?? { ships: {}, tick: 0 };
+    inputs = { [room.me]: myKeys };
     ensureShips();
-    log('Continuing the game from the latest state.');
+    log(snapshot ? 'You run the game now, from the latest state.' : 'You run the game.');
+  });
+  room.on('role', ({ isHost }) => {
+    if (!isHost) inputs = {};
   });
 
-  // Player side.
-  room.on('snapshot', ({ data }) => {
-    world = data;
+  room.on('peer', ({ event, id }) => {
+    const words = { join: 'joined', back: 'is back', drop: 'lost the connection', gone: 'left', host: 'runs the game', waiting: 'is waiting', owner: 'owns the room' };
+    log(`${nameOf(id)} ${words[event] ?? event}.`);
+    if (room.isHost) {
+      if (event === 'join' || event === 'back') {
+        ensureShips();
+        room.send({ type: 'full', world }, { to: [id] }); // what a newcomer needs to see
+      }
+      if (event === 'gone') {
+        delete world.ships[id];
+        delete inputs[id];
+      }
+    } else if ((event === 'host' || (event === 'back' && id === room.room.hostId)) && room.self?.role === 'player') {
+      // A new host does not know which keys are held, and inputs sent while
+      // the host was away were dropped.
+      room.send({ type: 'input', keys: myKeys });
+    }
   });
 
-  if (room.isHost) ensureShips();
+  room.on('message', ({ from, data }) => {
+    if (room.isHost) {
+      if (data?.type === 'input') inputs[from] = data.keys;
+    } else if (data?.type === 'pos') {
+      applyPositions(data.p, data.tick);
+    } else if (data?.type === 'full') {
+      world = data.world;
+    }
+  });
+
   renderStatus(room.status);
   render(room.room);
 }
@@ -127,24 +133,25 @@ function renderStatus(status) {
 function render(r) {
   if (!r) return;
   const me = room.self;
-  $('role').textContent = room.isHost ? '(host)' : me?.role === 'viewer' ? '(viewer)' : '';
-  $('start-game').hidden = !room.isHost;
+  const tags = [room.isOwner && 'owner', room.isHost && 'host', me?.role === 'viewer' && 'viewer'].filter(Boolean);
+  $('role').textContent = tags.length ? `(${tags.join(', ')})` : '';
+  $('start-game').hidden = !(room.isHost || room.isOwner);
   $('start-game').textContent = r.phase === 'lobby' ? 'Start' : 'Restart';
   $('pause').textContent = r.paused ? 'Resume' : 'Pause';
-  $('pause').hidden = me?.role !== 'player';
+  $('pause').hidden = me?.role !== 'player' || me.waiting;
   $('phase').textContent = me?.waiting ? 'Waiting for the next round…' : '';
 
-  const posts = $('posts');
-  posts.replaceChildren();
-  if (me?.role === 'player') {
-    for (const post of POSTS) {
-      const holder = r.posts[post];
+  const places = $('posts');
+  places.replaceChildren();
+  if (me?.role === 'player' && !me.waiting) {
+    for (const place of PLACES) {
+      const holder = r.places[place][0];
       const b = document.createElement('button');
-      b.textContent = holder ? `${post}: ${nameOf(holder)}` : post;
+      b.textContent = holder ? `${place}: ${nameOf(holder)}` : place;
       b.setAttribute('aria-pressed', String(holder === room.me));
       b.disabled = Boolean(holder && holder !== room.me);
-      b.onclick = () => (holder === room.me ? room.releasePost() : room.claimPost(post));
-      posts.append(b);
+      b.onclick = () => (holder === room.me ? room.leavePlace() : room.takePlace(place));
+      places.append(b);
     }
   }
 
@@ -152,10 +159,10 @@ function render(r) {
   list.replaceChildren();
   for (const p of r.players) {
     const li = document.createElement('li');
-    const tags = [p.id === r.hostId && 'host', p.role === 'viewer' && 'viewer', p.status === 'away' && 'away', p.waiting && 'waiting', p.post]
+    const notes = [p.id === r.ownerId && 'owner', p.id === r.hostId && 'host', p.role === 'viewer' && 'viewer', p.status === 'away' && 'away', p.waiting && 'waiting', p.place]
       .filter(Boolean).join(', ');
-    li.textContent = `${p.name}${p.id === room.me ? ' (you)' : ''}${tags ? ` – ${tags}` : ''} `;
-    if (room.isHost && p.id !== room.me) {
+    li.textContent = `${p.name}${p.id === room.me ? ' (you)' : ''}${notes ? ` – ${notes}` : ''} `;
+    if (room.isOwner && p.id !== room.me) {
       const kick = document.createElement('button');
       kick.textContent = 'Remove';
       kick.onclick = () => room.kick(p.id);
@@ -178,7 +185,7 @@ $('leave').onclick = () => {
 // ------------------------------------------------------------------- share
 
 function fillShare() {
-  const keys = room.inviteKeys;
+  const keys = room.inviteKeys; // only the owner has them
   const playerUrl = shareLink(location.href, room.code, keys?.player.k);
   const viewerUrl = keys ? shareLink(location.href, room.code, keys.viewer.k) : null;
   $('share-code').textContent = room.code;
@@ -229,13 +236,8 @@ function applyPositions(p, tick) {
   world.tick = tick;
 }
 
-function running() {
-  const r = room?.room;
-  return r && (r.phase === 'playing' || (r.phase === 'countdown' && room.serverNow() >= r.startsAt)) && !r.paused;
-}
-
 setInterval(() => {
-  if (!room?.isHost || !running()) return;
+  if (!room?.isHost || !room.running) return;
   world.tick += 1;
   for (const [id, ship] of Object.entries(world.ships)) {
     const k = inputs[id] ?? {};
@@ -244,13 +246,14 @@ setInterval(() => {
     ship.x = Math.max(10, Math.min(590, ship.x + ship.vx));
     ship.y = Math.max(10, Math.min(350, ship.y + ship.vy));
   }
-  // Positions 15 times a second; dropped while offline because the next one replaces them.
+  // Positions 15 times a second; not worth resending, the next one replaces them.
+  // (Nothing is sent while the host is alone in the room.)
   if (world.tick % 2 === 0) {
     const p = Object.entries(world.ships).map(([id, s]) => [id, Math.round(s.x), Math.round(s.y)]);
     room.send({ type: 'pos', tick: world.tick, p }, { reliable: false });
   }
-  // A full snapshot every 3 seconds, kept by the room for takeover and rejoin.
-  if (world.tick % 90 === 0) room.sendSnapshot(world);
+  // The full state every 3 seconds, kept by the room for a reload or a takeover.
+  if (world.tick % 90 === 1) room.sendSnapshot(world);
 }, 1000 / 30);
 
 // ------------------------------------------------------------------ render
@@ -272,9 +275,14 @@ function draw() {
   }
   if (room.status === 'closed') return;
   let text = '';
-  if (r?.paused) text = r.paused.reason === 'host-change' ? 'Switching host…' : `Paused${r.paused.id ? ` (${nameOf(r.paused.id)})` : ''}`;
-  else if (r?.phase === 'lobby') text = room.isHost ? 'Press Start' : 'Waiting for the host to start';
-  else if (r?.phase === 'countdown' && room.serverNow() < r.startsAt) text = String(Math.ceil((r.startsAt - room.serverNow()) / 1000));
+  if (r?.paused) {
+    const why = { 'host-away': 'Waiting for the host…', 'host-change': 'Switching host…', 'player-away': `Waiting for ${nameOf(r.paused.id)}…` };
+    text = why[r.paused.reason] ?? `Paused${r.paused.id ? ` (${nameOf(r.paused.id)})` : ''}`;
+  } else if (r?.phase === 'lobby') {
+    text = room.isHost ? 'Press Start' : 'Waiting for the host to start';
+  } else if (r?.phase === 'countdown') {
+    text = String(Math.max(1, Math.ceil((r.startsAt - room.serverNow()) / 1000)));
+  }
   $('overlay').hidden = !text;
   $('overlay').textContent = text;
 }

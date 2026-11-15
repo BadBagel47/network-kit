@@ -31,4 +31,5 @@ test('bad room codes and other paths answer 404 without waking a room', async ()
 test('bad options fail early', () => {
   assert.throws(() => createRoomServer({ mode: 'peer' }), /unknown mode/);
   assert.throws(() => createRoomServer({ mode: 'server' }), /needs rules/);
+  assert.throws(() => createRoomServer({ ownerRole: 'nobody' }), /ownerRole/);
 });

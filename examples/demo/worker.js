@@ -1,41 +1,29 @@
-// network-kit demo Worker: the example games behind https://<demo>/ .
-//   /rooms  host-run rooms (a player's browser runs the game), used by the demo page
-//   /turns  server-run memory game (rules in memory-rules.js)
+// network-kit demo Worker: the example games every release must pass.
+//   /rooms  a crew game: one participant's browser runs it, another takes over if it is lost
+//   /turns  a turn-based memory game with its rules in the room (memory-rules.js)
+//   /quiz   a quiz: the leader runs it without playing, and nobody may take over
 import { createRoomServer } from '../../src/server/index.js';
-import { memoryRules } from './memory-rules.js';
+import { crew, turns, quiz } from './options.js';
 
+// Rooms are kept in the EU where the variable says so (not available in local workerd).
 const jurisdiction = (env) => env.ROOM_JURISDICTION || null;
 
-const rooms = createRoomServer({
-  mode: 'host',
-  posts: ['captain', 'gunner', 'engineer'],
-  limits: { player: 3, viewer: 4 },
-  graceMs: 60_000,
-  autoPauseMs: 15_000,
-  takeoverMs: 4_000,
-  jurisdiction,
-});
+const crewRooms = createRoomServer({ ...crew, jurisdiction });
+const turnRooms = createRoomServer({ ...turns, binding: 'TURNS', basePath: '/turns', jurisdiction });
+const quizRooms = createRoomServer({ ...quiz, binding: 'QUIZ', basePath: '/quiz', jurisdiction });
 
-const turns = createRoomServer({
-  binding: 'TURNS',
-  basePath: '/turns',
-  mode: 'server',
-  rules: memoryRules,
-  limits: { player: 4, viewer: 2 },
-  lateJoin: 'never',
-  lateJoinChoices: ['never'],
-  hostLeave: 'handover',
-  countdownMs: 0,
-  jurisdiction,
-});
+export const Room = crewRooms.RoomObject;
+export const TurnRoom = turnRooms.RoomObject;
+export const QuizRoom = quizRooms.RoomObject;
 
-export const Room = rooms.RoomObject;
-export const TurnRoom = turns.RoomObject;
+const routes = [['/turns', turnRooms], ['/quiz', quizRooms]];
 
 export default {
   fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
-    if (pathname === '/turns' || pathname.startsWith('/turns/')) return turns.fetch(request, env, ctx);
-    return rooms.fetch(request, env, ctx);
+    for (const [prefix, server] of routes) {
+      if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return server.fetch(request, env, ctx);
+    }
+    return crewRooms.fetch(request, env, ctx);
   },
 };

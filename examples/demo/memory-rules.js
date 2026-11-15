@@ -1,5 +1,6 @@
 // A tiny turn-based memory game with its rules on the server (mode: 'server').
-// It is network-kit's example game: every release must pass its tests.
+// One of network-kit's example games: every release must pass its tests.
+// The cards are shuffled from room.seed, which server-run rooms keep secret.
 
 function mulberry32(seed) {
   let a = seed >>> 0;

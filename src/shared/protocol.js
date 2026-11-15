@@ -2,7 +2,7 @@
 // Both sides of one game always use the same network-kit version (D-009),
 // so the protocol number only guards against mixed copies.
 
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 
 // Room codes: no 0/O or 1/I so codes are easy to read out loud.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -23,7 +23,13 @@ export const CLOSE = Object.freeze({
   VERSION: 4009,
   BAD_REQUEST: 4010,
   LEFT: 4011,
+  RATE: 4012,
+  BUDGET: 4013,
 });
+
+// Not final: the server gave up on a connection that stopped answering.
+// A client that is in fact alive reconnects.
+export const CLOSE_UNRESPONSIVE = 4014;
 
 export const FINAL_CLOSE_CODES = new Set(Object.values(CLOSE));
 
@@ -41,6 +47,8 @@ export const CLOSE_TEXT = Object.freeze({
   [CLOSE.VERSION]: 'Please reload the page to get the latest version.',
   [CLOSE.BAD_REQUEST]: 'Could not join the room.',
   [CLOSE.LEFT]: 'You left the room.',
+  [CLOSE.RATE]: 'Too many messages were sent. Please reload the page.',
+  [CLOSE.BUDGET]: 'This room has used up its time for today.',
 });
 
 /** Upper-case a typed room code and drop spaces and dashes. */

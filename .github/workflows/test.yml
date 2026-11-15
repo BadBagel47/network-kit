@@ -1,4 +1,6 @@
-# Unit tests and integration tests (demo Worker in local workerd) on every push.
+# Every push: unit tests, the compatibility check, integration tests against
+# the demo Worker in local workerd (including a room that really sleeps), and
+# the demo page in Chromium.
 name: Test
 
 on:
@@ -14,10 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the compatibility check needs the release tags
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: npm run test:compat
       - run: npm run test:integration
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser

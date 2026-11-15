@@ -2,13 +2,13 @@
 // around RoomCore. A game's own Worker uses it like this:
 //
 //   import { createRoomServer } from './vendor/network-kit/server/index.js';
-//   const rooms = createRoomServer({ mode: 'host', posts: ['captain', 'gunner'] });
+//   const rooms = createRoomServer({ mode: 'host', takeover: true, places: ['captain', 'gunner'] });
 //   export const Room = rooms.RoomObject;          // class_name in wrangler config
 //   export default { fetch: rooms.fetch };
 //
 // HTTP API (prefix `basePath`, default /rooms):
-//   POST /rooms               create a room → { code, hostKey, keys }
-//   GET  /rooms/CODE          room info → { code, phase, access, players, ... }
+//   POST /rooms               create a room → { code, ownerKey, keys }
+//   GET  /rooms/CODE          room info → { code, phase, access, participants }
 //   GET  /rooms/CODE/ws       WebSocket into the room (first message: hello)
 
 import { CLOSE, isValidCode, normalizeCode } from '../shared/protocol.js';
@@ -21,7 +21,7 @@ const SERVER_OPTIONS = {
   basePath: '/rooms',
   allowedOrigins: '*', // '*' or a list such as ['https://badbagel47.github.io']
   jurisdiction: null, // 'eu' keeps rooms in the EU; may be a function (env) => 'eu' | null
-  gate: null, // async ({ request, env, action }) => true | { open: false, reason }
+  gate: null, // experimental: async ({ request, env, action }) => true | { open: false, reason }
   fallback: null, // async (request, env, ctx) => Response for other paths
 };
 
@@ -157,6 +157,12 @@ export function createRoomServer(gameOptions = {}) {
           deleteAll: () => ctx.storage.deleteAll(),
         },
         setAlarm: (at) => (at === null ? ctx.storage.deleteAlarm() : ctx.storage.setAlarm(at)),
+        // A pending timer keeps the room in memory, so this is only for short waits.
+        defer(ms, fn) {
+          const timer = setTimeout(() => ctx.waitUntil(Promise.resolve().then(fn).catch(() => {})), ms);
+          return () => clearTimeout(timer);
+        },
+        env,
         sockets: () => ctx.getWebSockets(),
         getAttachment(ws) {
           if (!attachments.has(ws)) attachments.set(ws, ws.deserializeAttachment() ?? null);

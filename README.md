@@ -1,27 +1,30 @@
 # network-kit
 
-A shared multiplayer room server and browser client for small browser games, running on Cloudflare.
+A shared multiplayer room server and browser client for small browser games, running on Cloudflare (Workers Free plan).
 
-- Rooms with short codes, secure share links and QR codes.
-- Seats and roles (players, spectators, big screens), posts on a shared ship, late join, kick and ban.
-- Host-run rooms (one player's browser runs the game, another player takes over if it drops) or server-run rooms.
-- Messages to everyone, one player or a group; full-state snapshots for players who join or come back.
-- Pause for everyone and a grace period before a lost player counts as gone.
-- Automatic reconnection when a phone switches networks or a tab comes back.
+- Rooms with short codes, share links with a key per role, and QR codes.
+- Roles defined by each game (players, viewers, a quiz leader, a referee …), seats per role, places such as posts or teams, late join, kick and ban.
+- Host-run rooms (one participant's browser runs the game) or server-run rooms (the game's rules run in the room).
+- An owner who keeps the rights to the room, and a host who runs the game. A lost host is waited for, or replaced by another participant where the game allows it.
+- Messages to everyone, chosen participants, a role or a place; a kept game state for a host that reloads or is replaced.
+- Pause for everyone, a grace period before a lost participant counts as gone, automatic reconnection.
+- Limits that keep one room from using up the free plan.
 - Coming: one admin page for all games (on/off/until, private rooms only, emergency stop, a daily budget per game).
 
 Each game keeps its own rules and its own copy of a fixed network-kit version.
 
-**How to use it in a game:** [docs/INTEGRATION.md](docs/INTEGRATION.md). Changes per version: [CHANGELOG.md](CHANGELOG.md).
+**How to use it in a game:** [docs/INTEGRATION.md](docs/INTEGRATION.md). Changes per version: [CHANGELOG.md](CHANGELOG.md). Demo: https://network-kit-demo.l8p1.workers.dev
 
 ## Development
 
 ```sh
 npm install
-npm test                   # unit tests
-npm run test:integration   # demo Worker in local workerd + real WebSocket clients
-npm run test:browser       # demo page in Chromium (needs Playwright)
+npm test                   # unit tests: the room logic and the real client, in Node
+npm run test:integration   # the example games in local workerd with real WebSocket clients
+npm run test:browser       # the demo page in Chromium (Playwright)
+npm run test:compat        # the previous patch release's client against this version
+npm run smoke              # the smoke test that ships with every copy
 npm run dev                # demo at http://localhost:8787
 ```
 
-Plain JavaScript (ES modules), no runtime dependencies. `src/client` runs in the browser, `src/server` in a Cloudflare Worker with Durable Objects, `examples/demo` is the example game every release must pass.
+Plain JavaScript (ES modules), no runtime dependencies. `src/client` runs in the browser, `src/server` in a Cloudflare Worker with Durable Objects (`room-core.js` is the room logic, free of Cloudflare; `worker.js` is the glue). `examples/demo` holds the three example games every release must pass: a crew game with takeover, a turn-based memory game and a quiz with a non-playing leader.

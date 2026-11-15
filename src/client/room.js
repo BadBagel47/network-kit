@@ -5,10 +5,11 @@
 //   room.on('message', ({ from, data }) => ...);
 //   room.send({ fire: true });
 //
-// Connection recovery follows Buzzy's proven pattern: reconnect with a
-// growing delay, react at once to network changes, the tab coming back and
-// the browser going online, and a cheap heartbeat that the server answers
-// without waking the room.
+// Connection recovery: reconnect with a growing delay, react at once to
+// network changes, the tab coming back and the browser going online, and a
+// cheap heartbeat that the server answers without waking the room. A client
+// that cannot reach the server slows down and finally gives up, so a
+// forgotten tab does not keep knocking for ever.
 
 import { PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, normalizeCode } from '../shared/protocol.js';
 
@@ -45,9 +46,11 @@ function apiBase(server, basePath) {
   return `${String(server).replace(/\/$/, '')}${basePath}`;
 }
 
+const UNREACHABLE = 'Could not reach the room. Check your connection and try again.';
+
 export class RoomError extends Error {
   constructor(code, reason, text) {
-    super(text || CLOSE_TEXT[code] || reason || 'Could not reach the room.');
+    super(text || CLOSE_TEXT[code] || UNREACHABLE);
     this.code = code;
     this.reason = reason;
   }
@@ -59,65 +62,97 @@ export class NetworkRoom {
    * @param {string} o.server  base URL of the game's room Worker
    * @param {string} o.code    room code
    * @param {string} [o.name]  nickname
-   * @param {'player'|'viewer'} [o.role]
+   * @param {string} [o.role]  wanted role in an open room (default: the game's default)
    * @param {string} [o.key]   invitation key from a share link
-   * @param {string} [o.hostKey]
-   * @param {'tab'|'device'} [o.identity] keep the player per tab (default) or per device
+   * @param {string} [o.ownerKey]
+   * @param {'tab'|'device'} [o.identity] keep the participant per tab (default) or per device
+   * @param {string} [o.slot] a separate identity in the same browser, e.g. 'screen'
+   * @param {object} [o.on] event handlers to register before connecting, e.g. { host: fn }
    * @param {{getItem, setItem, removeItem}} [o.storage] replaces sessionStorage/localStorage
+   * @param {number} [o.hostSilentMs] host-run games: report the host when it has sent nothing for this long
    */
   constructor(o) {
     this.server = o.server;
     this.basePath = o.basePath ?? '/rooms';
     this.code = normalizeCode(o.code);
     this.name = o.name ?? 'Player';
-    this.role = o.role ?? 'player';
+    this.role = o.role ?? null;
     this.key = o.key ?? null;
     this.WebSocket = o.WebSocket ?? globalThis.WebSocket;
     this.win = o.window ?? (typeof window !== 'undefined' ? window : null);
     this.doc = o.document ?? (typeof document !== 'undefined' ? document : null);
     this.minDelayMs = o.minDelayMs ?? 500;
     this.maxDelayMs = o.maxDelayMs ?? 15_000;
+    this.slowDelayMs = o.slowDelayMs ?? 60_000; // retry pace after slowAfterMs or in a hidden tab
+    this.slowAfterMs = o.slowAfterMs ?? 120_000;
+    this.giveUpMs = o.giveUpMs ?? 30 * 60_000; // stop reconnecting after failing this long
+    this.connectTimeoutMs = o.connectTimeoutMs ?? 15_000; // the first connect must succeed within this
     this.heartbeatMs = o.heartbeatMs ?? 20_000;
     this.pongTimeoutMs = o.pongTimeoutMs ?? 8_000;
     this.autoHostReady = o.autoHostReady ?? true;
-    this.maxQueue = o.maxQueue ?? 500;
+    this.maxQueue = o.maxQueue ?? 200;
+    this.maxQueueAgeMs = o.maxQueueAgeMs ?? 60_000; // game messages older than this are not resent
+    this.aloneSnapshotMs = o.aloneSnapshotMs ?? 300_000; // a host alone in the room stores state this seldom
+    this.hostSilentMs = o.hostSilentMs ?? null;
+    this.maxMessageBytes = o.maxMessageBytes ?? 64 * 1024;
+    this.maxSnapshotBytes = o.maxSnapshotBytes ?? 512 * 1024;
 
-    // `storage` replaces both browser stores (tests, embedded views).
+    // Keys are kept per game server, so games on the same site do not share them.
+    // `slot` keeps a separate identity in the same browser (e.g. a big-screen window).
+    const prefix = `network-kit:${apiBase(this.server, this.basePath)}:${o.slot ? `${o.slot}:` : ''}`;
     const keyStore = o.storage ?? pickStorage(o.identity === 'device' ? 'localStorage' : 'sessionStorage');
-    this.hostStore = o.storage ?? pickStorage('localStorage');
-    this.playerKey = o.playerKey ?? keyStore.getItem('network-kit:player-key');
+    this.ownerStore = o.storage ?? pickStorage('localStorage');
+    this.playerKey = o.playerKey ?? keyStore.getItem(`${prefix}player-key`);
     if (!this.playerKey) {
       this.playerKey = randomKey();
-      keyStore.setItem('network-kit:player-key', this.playerKey);
+      keyStore.setItem(`${prefix}player-key`, this.playerKey);
     }
-    this.hostKeyName = `network-kit:host:${this.code}`;
-    this.hostKey = o.hostKey ?? this.hostStore.getItem(this.hostKeyName);
-    if (o.hostKey) this.hostStore.setItem(this.hostKeyName, o.hostKey);
+    this.ownerKeyName = `${prefix}owner:${this.code}`;
+    this.ownerKey = o.ownerKey ?? this.ownerStore.getItem(this.ownerKeyName);
+    if (o.ownerKey) this.ownerStore.setItem(this.ownerKeyName, o.ownerKey);
 
     this.sid = randomKey(8); // one page session; resets duplicate protection on reload
-    this.n = 0;
-    this.queue = []; // numbered messages not yet confirmed by a welcome
-    this.pendingSnapshot = null;
     this.listeners = new Map();
+    // Handlers given here are in place before the first message arrives.
+    for (const [type, fn] of Object.entries(o.on ?? {})) this.on(type, fn);
+    this.n = 0;
+    this.queue = []; // numbered messages kept for resending: { n, text, at, kind }
+    // The room accepts a limited pace from one connection; the client stays under it.
+    this.rate = 40;
+    this.tokens = this.rate;
+    this.tokensAt = Date.now();
+    this.outbox = []; // messages held back by the pace, in order
+    this.outboxTimer = null;
+    this.leaveTimer = null;
+    this.pendingSnapshot = null;
     this.status = 'idle';
     this.ws = null;
+    this.socketWelcomed = false;
     this.me = null;
     this.room = null;
     this.clockOffset = 0;
     this.welcomed = false;
     this.stopped = false;
     this.attempt = 0;
+    this.failingSince = null;
     this.retryTimer = null;
+    this.connectTimer = null;
     this.heartbeatTimer = null;
     this.pongTimer = null;
+    this.phaseTimer = null;
+    this.silentTimer = null;
     this.hiddenAt = 0;
     this.wasHost = false;
+    this.wasOwner = false;
+    this.wasRunning = false;
+    this.lastHostData = 0;
+    this.lastSnapshotAt = 0;
     this.firstWelcome = null;
   }
 
   // -------------------------------------------------------------- creating
 
-  /** Create a room and connect to it as its host. */
+  /** Create a room and connect to it as its owner. */
   static async create(server, options = {}) {
     const basePath = options.basePath ?? '/rooms';
     let res;
@@ -132,11 +167,10 @@ export class NetworkRoom {
     }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const closed = body.error === 'game-closed';
-      throw new RoomError(closed ? CLOSE.GAME_CLOSED : 0, body.error, closed ? CLOSE_TEXT[CLOSE.GAME_CLOSED] : null);
+      const closed = res.status === 503 && body.error !== 'no-free-code';
+      throw new RoomError(closed ? CLOSE.GAME_CLOSED : 0, body.error ?? 'network');
     }
-    const room = new NetworkRoom({ ...options, server, code: body.code, hostKey: body.hostKey });
-    room.keys = body.keys;
+    const room = new NetworkRoom({ ...options, server, code: body.code, ownerKey: body.ownerKey });
     await room.connect();
     return room;
   }
@@ -148,7 +182,7 @@ export class NetworkRoom {
     return room;
   }
 
-  /** Look up a room without joining: { code, phase, access, players, ... } or null. */
+  /** Look up a room without joining: { code, phase, access, participants } or null. */
   static async info(server, code, { basePath = '/rooms' } = {}) {
     const res = await fetch(`${apiBase(server, basePath)}/${encodeURIComponent(normalizeCode(code))}`);
     if (res.status === 404) return null;
@@ -184,7 +218,16 @@ export class NetworkRoom {
 
   // ------------------------------------------------------------ connection
 
-  /** Connect; resolves on the first welcome, rejects if the room refuses. */
+  /** True when messages can be sent right now. */
+  get ready() {
+    return Boolean(this.ws && this.ws.readyState === 1 && this.socketWelcomed);
+  }
+
+  get hidden() {
+    return Boolean(this.doc?.hidden);
+  }
+
+  /** Connect; resolves on the first welcome, rejects if the room refuses or cannot be reached. */
   connect() {
     if (this.firstWelcome) return this.firstWelcome.promise;
     let resolve;
@@ -194,6 +237,9 @@ export class NetworkRoom {
       reject = rej;
     });
     this.firstWelcome = { promise, resolve, reject, done: false };
+    this.connectTimer = setTimeout(() => {
+      if (!this.welcomed) this.finish(0, 'timeout');
+    }, this.connectTimeoutMs);
     this.watch();
     this.open();
     return promise;
@@ -213,18 +259,29 @@ export class NetworkRoom {
       return;
     }
     this.ws = ws;
+    this.socketWelcomed = false;
+    this.outbox = [];
+    this.tokens = this.rate;
+    this.tokensAt = Date.now();
     let denied = null;
     ws.onopen = () => {
-      this.rawSend({
-        t: 'hello', v: PROTOCOL, pk: this.playerKey, sid: this.sid,
-        name: this.name, role: this.role, key: this.key, hk: this.hostKey,
-      });
+      if (this.ws !== ws) return;
+      try {
+        ws.send(JSON.stringify({
+          t: 'hello', v: PROTOCOL, pk: this.playerKey, sid: this.sid,
+          name: this.name, role: this.role, key: this.key, owner: this.ownerKey,
+        }));
+      } catch {
+        // onclose follows
+      }
       this.startHeartbeat();
     };
     ws.onmessage = (event) => {
+      if (this.ws !== ws) return;
       if (event.data === 'pong') {
         clearTimeout(this.pongTimer);
         this.pongTimer = null;
+        if (this.ready) this.setStatus('online'); // the connection survived a blip
         return;
       }
       let msg;
@@ -239,6 +296,7 @@ export class NetworkRoom {
     ws.onclose = (event) => {
       if (this.ws !== ws) return;
       this.ws = null;
+      this.socketWelcomed = false;
       this.stopHeartbeat();
       const code = denied?.code ?? event.code;
       if (FINAL_CLOSE_CODES.has(code)) {
@@ -255,6 +313,7 @@ export class NetworkRoom {
   dropSocket() {
     const ws = this.ws;
     this.ws = null;
+    this.socketWelcomed = false;
     this.stopHeartbeat();
     if (ws) {
       ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
@@ -268,9 +327,18 @@ export class NetworkRoom {
 
   scheduleRetry() {
     if (this.stopped) return;
-    const offline = this.win?.navigator?.onLine === false || globalThis.navigator?.onLine === false;
+    const now = Date.now();
+    this.failingSince ??= now;
+    const failingFor = now - this.failingSince;
+    if (this.welcomed && failingFor > this.giveUpMs) {
+      this.finish(0, 'unreachable');
+      return;
+    }
+    const offline = this.win?.navigator?.onLine === false;
     this.setStatus(offline ? 'offline' : this.welcomed ? 'reconnecting' : 'connecting');
-    const base = Math.min(this.maxDelayMs, this.minDelayMs * 2 ** this.attempt);
+    // Slow down in a hidden tab and after a long failure.
+    const cap = this.hidden || failingFor > this.slowAfterMs ? this.slowDelayMs : this.maxDelayMs;
+    const base = Math.min(cap, this.minDelayMs * 2 ** Math.min(this.attempt, 20));
     const delay = base * (0.75 + Math.random() * 0.5);
     this.attempt += 1;
     clearTimeout(this.retryTimer);
@@ -286,6 +354,8 @@ export class NetworkRoom {
       this.open();
     } else if (force) {
       this.probe(3_000);
+    } else if (this.ready) {
+      this.setStatus('online');
     }
   }
 
@@ -295,7 +365,8 @@ export class NetworkRoom {
     try {
       this.ws.send('ping');
     } catch {
-      this.recover();
+      this.attempt = 0;
+      this.open();
       return;
     }
     this.pongTimer = setTimeout(() => {
@@ -320,6 +391,9 @@ export class NetworkRoom {
   watch() {
     const win = this.win;
     const doc = this.doc;
+    if (this.hostSilentMs) {
+      this.silentTimer = setInterval(() => this.checkHostSilent(), Math.max(250, this.hostSilentMs / 2));
+    }
     if (!win) return;
     const online = () => this.recover(true);
     const offline = () => this.setStatus('offline');
@@ -348,16 +422,27 @@ export class NetworkRoom {
     };
   }
 
-  finish(code, reason) {
-    this.stopped = true;
+  stopTimers() {
     clearTimeout(this.retryTimer);
+    clearTimeout(this.connectTimer);
+    clearTimeout(this.phaseTimer);
+    clearTimeout(this.outboxTimer);
+    clearTimeout(this.leaveTimer);
+    clearInterval(this.silentTimer);
+    this.outbox = [];
     this.dropSocket();
     this.unwatch?.();
+  }
+
+  finish(code, reason) {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.stopTimers();
     this.setStatus('closed');
-    if (code === CLOSE.ROOM_CLOSED || code === CLOSE.KICKED || code === CLOSE.BANNED) {
-      this.hostStore.removeItem(this.hostKeyName);
+    if ([CLOSE.ROOM_CLOSED, CLOSE.KICKED, CLOSE.BANNED, CLOSE.BUDGET, CLOSE.LEFT, CLOSE.NOT_FOUND].includes(code)) {
+      this.ownerStore.removeItem(this.ownerKeyName);
     }
-    const detail = { code, reason, text: CLOSE_TEXT[code] ?? 'The connection was closed.' };
+    const detail = { code, reason, text: CLOSE_TEXT[code] ?? UNREACHABLE };
     if (this.firstWelcome && !this.firstWelcome.done) {
       this.firstWelcome.done = true;
       this.firstWelcome.reject(new RoomError(code, reason));
@@ -367,11 +452,14 @@ export class NetworkRoom {
 
   /** Stop without leaving: the seat is kept for the grace period. */
   disconnect() {
+    if (this.stopped) return;
     this.stopped = true;
-    clearTimeout(this.retryTimer);
-    this.dropSocket();
-    this.unwatch?.();
+    this.stopTimers();
     this.setStatus('closed');
+    if (this.firstWelcome && !this.firstWelcome.done) {
+      this.firstWelcome.done = true;
+      this.firstWelcome.reject(new RoomError(0, 'disconnected'));
+    }
   }
 
   // -------------------------------------------------------------- incoming
@@ -382,16 +470,25 @@ export class NetworkRoom {
         this.me = msg.you.id;
         this.role = msg.you.role;
         this.welcomed = true;
+        this.socketWelcomed = true;
         this.attempt = 0;
+        this.failingSince = null;
+        clearTimeout(this.connectTimer);
+        if (Number.isFinite(msg.room?.settings?.rate)) this.rate = msg.room.settings.rate;
+        this.tokens = this.rate;
+        this.tokensAt = Date.now();
+        this.lastHostData = Date.now();
         this.applyRoom(msg.room);
-        // Resend what the room has not seen; it ignores anything already counted.
-        this.queue = this.queue.filter((m) => m.n > msg.lastN);
-        if (this.queue.length === 0 && this.n < msg.lastN) this.n = msg.lastN;
-        for (const m of this.queue) this.ws.send(m.text);
-        if (this.pendingSnapshot && this.isHost) {
-          this.rawSend(this.pendingSnapshot);
-          this.pendingSnapshot = null;
-        }
+        // Resend what the room has not counted yet; old game messages are not worth resending.
+        const now = Date.now();
+        this.queue = this.queue.filter(
+          (m) => m.n > msg.lastN && (m.kind !== 'msg' || now - m.at <= this.maxQueueAgeMs),
+        );
+        if (this.n < msg.lastN) this.n = msg.lastN;
+        // The newest state first, so a queued handover or leave passes on the right one.
+        if (this.pendingSnapshot && this.isHost) this.transmit(this.pendingSnapshot);
+        this.pendingSnapshot = null;
+        for (const m of this.queue) this.transmit(m.text);
         this.setStatus('online');
         this.emit('welcome', this.room);
         if (!this.firstWelcome.done) {
@@ -404,14 +501,20 @@ export class NetworkRoom {
         this.applyRoom(msg.room);
         break;
       case 'msg':
+        if (msg.from === this.room?.hostId) this.lastHostData = Date.now();
         this.emit('message', { from: msg.from, data: msg.d });
         break;
-      case 'snap':
-        this.emit('snapshot', { from: msg.from, data: msg.d });
-        break;
       case 'host':
+        // This client runs the game now: continue from the snapshot (null: start fresh).
         this.emit('host', { snapshot: msg.snapshot });
-        if (this.autoHostReady) this.command('host-ready');
+        if (this.autoHostReady) this.hostReady();
+        break;
+      case 'owner':
+        this.ownerKey = msg.key;
+        this.ownerStore.setItem(this.ownerKeyName, msg.key);
+        break;
+      case 'check':
+        this.rawSend({ t: 'cmd', c: 'alive' });
         break;
       case 'ev':
         this.emit('peer', { event: msg.e, id: msg.id, why: msg.why, player: this.player(msg.id) });
@@ -429,25 +532,61 @@ export class NetworkRoom {
   }
 
   applyRoom(room) {
-    if (room.keys) this.keys = room.keys;
-    if (room.hostKey && room.hostKey !== this.hostKey) {
-      this.hostKey = room.hostKey;
-      this.hostStore.setItem(this.hostKeyName, room.hostKey);
-    }
     this.clockOffset = room.now - Date.now();
     this.room = room;
-    this.emit('room', room);
-    const isHost = this.isHost;
-    if (isHost !== this.wasHost) {
-      this.wasHost = isHost;
-      this.emit('role', { isHost });
+    // Nothing is sent when a countdown ends, so the phase is advanced here.
+    clearTimeout(this.phaseTimer);
+    if (room.phase === 'countdown' && room.startsAt !== null) {
+      this.phaseTimer = setTimeout(() => {
+        if (this.room !== room) return;
+        this.room = { ...room, phase: 'playing' };
+        if (!room.paused) {
+          this.lastHostData = Date.now();
+          this.wasRunning = true;
+        }
+        this.emit('room', this.room);
+      }, Math.max(0, room.startsAt - this.serverNow()));
     }
+    const isHost = this.isHost;
+    const isOwner = this.isOwner;
+    if (isHost !== this.wasHost) {
+      // Messages queued in the old role must not be delivered in the new one.
+      this.queue = this.queue.filter((m) => m.kind !== 'msg');
+      this.pendingSnapshot = null;
+      this.lastHostData = Date.now();
+    }
+    if (this.wasOwner && !isOwner && room.ownerId && room.ownerId !== this.me) {
+      // This client gave the room to someone else: its key no longer works.
+      this.ownerKey = null;
+      this.ownerStore.removeItem(this.ownerKeyName);
+    }
+    const running = room.phase === 'playing' && !room.paused;
+    if (running && !this.wasRunning) this.lastHostData = Date.now(); // the host has had no reason to send until now
+    this.wasRunning = running;
+    const changed = isHost !== this.wasHost || isOwner !== this.wasOwner;
+    this.wasHost = isHost;
+    this.wasOwner = isOwner;
+    this.emit('room', room);
+    if (changed) this.emit('role', { isHost, isOwner });
+  }
+
+  checkHostSilent() {
+    const room = this.room;
+    if (!this.ready || !room || room.mode !== 'host' || this.isHost || !this.running || this.self?.waiting) return;
+    if (this.player(room.hostId)?.status !== 'online') return;
+    if (Date.now() - this.lastHostData < this.hostSilentMs) return;
+    this.lastHostData = Date.now();
+    this.reportHostSilent();
   }
 
   // --------------------------------------------------------------- queries
 
   get isHost() {
     return Boolean(this.room && this.me && this.room.hostId === this.me);
+  }
+
+  get isOwner() {
+    return Boolean(this.room && this.me && this.room.ownerId === this.me);
   }
 
   get players() {
@@ -462,9 +601,28 @@ export class NetworkRoom {
     return this.player(this.me);
   }
 
+  get phase() {
+    return this.room?.phase ?? null;
+  }
+
+  /** True while the game is being played: started, countdown over, not paused. */
+  get running() {
+    return this.room?.phase === 'playing' && !this.room.paused;
+  }
+
+  /** Other participants who are connected right now. */
+  get othersOnline() {
+    return this.players.filter((p) => p.id !== this.me && p.status === 'online');
+  }
+
   /** Server time in ms, for countdowns (room.startsAt). */
   serverNow() {
     return Date.now() + this.clockOffset;
+  }
+
+  /** Invitation keys (owner only): { role: { k, exp } }. */
+  get inviteKeys() {
+    return this.isOwner ? this.room.keys ?? null : null;
   }
 
   // -------------------------------------------------------------- outgoing
@@ -479,77 +637,147 @@ export class NetworkRoom {
     }
   }
 
-  numbered(msg) {
+  tooLarge(text, limit, command) {
+    if (text.length <= limit / 3 || new TextEncoder().encode(text).length <= limit) return false;
+    this.emit('error', { code: 'too-large', command });
+    return true;
+  }
+
+  takeToken() {
+    if (!this.rate) return true; // the room sets no limit
+    const now = Date.now();
+    this.tokens = Math.min(this.rate, this.tokens + ((now - this.tokensAt) / 1000) * this.rate * 0.8);
+    this.tokensAt = now;
+    if (this.tokens < 1) return false;
+    this.tokens -= 1;
+    return true;
+  }
+
+  /**
+   * Send at a pace the room accepts. Faster than that, messages that must
+   * arrive are held back in order, and droppable ones are dropped.
+   */
+  transmit(text, droppable = false) {
+    if (!this.ready) return false;
+    if (this.outbox.length === 0 && this.takeToken()) return this.rawSend(text);
+    if (droppable) return false;
+    this.outbox.push(text);
+    this.outboxTimer ??= setTimeout(() => this.drain(), 50);
+    return true;
+  }
+
+  drain() {
+    this.outboxTimer = null;
+    while (this.outbox.length > 0 && this.ready && this.takeToken()) this.rawSend(this.outbox.shift());
+    if (this.outbox.length > 0 && this.ready) this.outboxTimer = setTimeout(() => this.drain(), 50);
+  }
+
+  numbered(msg, kind) {
     this.n += 1;
     const text = JSON.stringify({ ...msg, n: this.n });
-    this.queue.push({ n: this.n, text });
+    this.queue.push({ n: this.n, text, at: Date.now(), kind });
     if (this.queue.length > this.maxQueue) this.queue.shift();
-    if (this.welcomed && this.status === 'online') this.rawSend(text);
+    if (this.ready) this.transmit(text);
     return this.n;
   }
 
   /**
    * Send game data. Host-run rooms: from the host to `to` (default: everyone
-   * else); from a player to the host. Server-run rooms: to the game rules.
-   * `to`: 'others' | 'all' | 'players' | 'viewers' | [ids].
-   * `reliable: false` drops the message while disconnected (for data that is
-   * replaced by the next message anyway).
+   * else); from anyone else to the host. Server-run rooms: to the game rules.
+   * `to`: 'all' | [ids] | { role } | { place }.
+   * `reliable: false` drops the message while disconnected (for data that the
+   * next message replaces anyway).
+   * Returns false when the message was not sent: nobody is there to get it
+   * (a host alone in the room, or the host is away), or it is too large.
    */
   send(data, { to, reliable = true } = {}) {
+    const room = this.room;
+    if (room && !this.isHost) {
+      // Only roles that send may; someone still waiting to be admitted may not.
+      if (this.self?.waiting || room.roles?.[this.role]?.sends === false) return false;
+    }
+    if (room?.mode === 'host') {
+      if (this.isHost ? this.othersOnline.length === 0 : this.player(room.hostId)?.status !== 'online') return false;
+    }
     const msg = { t: 'msg', d: data };
     if (to !== undefined) msg.to = to;
-    if (reliable) return this.numbered(msg);
-    return this.welcomed && this.status === 'online' ? this.rawSend(msg) : false;
+    if (this.tooLarge(JSON.stringify(msg), this.maxMessageBytes, 'send')) return false;
+    if (reliable) return this.numbered(msg, 'msg');
+    return this.transmit(JSON.stringify(msg), true);
   }
 
   /**
-   * Host only: send the full game state. The room keeps the latest one for
-   * players who join or come back and for a new host after a takeover.
-   * `to` also delivers it to those players now.
+   * Host only: give the room the full game state to keep. It is private to
+   * the host seat: the room only ever sends it back to whoever runs the game
+   * (this host after a reload, or the next host after a takeover or handover).
+   * State for participants who join or come back is sent with send(..., { to: [id] }).
+   * While the host is alone in the room, snapshots are kept seldom
+   * (aloneSnapshotMs) unless `force` is set.
    */
-  sendSnapshot(data, { to } = {}) {
-    const msg = { t: 'snap', d: data };
-    if (to !== undefined) msg.to = to;
-    if (!this.rawSend(msg)) this.pendingSnapshot = msg;
+  sendSnapshot(data, { force = false } = {}) {
+    if (!this.isHost) return false;
+    const now = Date.now();
+    if (!force && this.othersOnline.length === 0 && now - this.lastSnapshotAt < this.aloneSnapshotMs) return false;
+    const text = JSON.stringify({ t: 'snap', d: data });
+    if (this.tooLarge(text, this.maxSnapshotBytes, 'snapshot')) return false;
+    this.lastSnapshotAt = now;
+    if (this.ready) return this.transmit(text);
+    this.pendingSnapshot = text; // delivered after the reconnect
+    return true;
   }
 
   command(c, args = {}) {
-    return this.numbered({ t: 'cmd', c, ...args });
+    return this.numbered({ t: 'cmd', c, ...args }, 'cmd');
   }
 
-  claimPost(post) { return this.command('claim', { post }); }
-  releasePost() { return this.command('release'); }
-  assignPost(id, post) { return this.command('assign', { id, post }); }
+  /** Take a place (a post, a team, a side). */
+  takePlace(place) { return this.command('take', { place }); }
+  leavePlace() { return this.command('leave-place'); }
   pause() { return this.command('pause'); }
   resume() { return this.command('resume'); }
+
+  // Host (and owner): running the game.
   start() { return this.command('start'); }
+  cancelStart() { return this.command('cancel'); }
   end() { return this.command('end'); }
+  /** Small shared data everyone sees in room.data (lobby choices, the chosen map, ...). */
+  setData(data) { return this.command('data', { d: data }); }
   admitWaiting() { return this.command('admit'); }
-  kick(id, { ban = false } = {}) { return this.command('kick', { id, ban }); }
-  renewKey(role, { ttlMs } = {}) { return this.command('renew', { role, ttlMs }); }
-  setSettings(settings) { return this.command('settings', settings); }
+  assignPlace(id, place) { return this.command('assign', { id, place }); }
   hostReady() { return this.command('host-ready'); }
 
-  /** Host only: hand the game to another player. Sends `snapshot` first if given. */
+  /** Hand the game to another participant. Sends `snapshot` first if given. */
   handover(id, snapshot) {
-    if (snapshot !== undefined) this.sendSnapshot(snapshot);
+    if (snapshot !== undefined) this.sendSnapshot(snapshot, { force: true });
     return this.command('handover', { id });
   }
 
-  /** Leave on purpose. A host leaving closes the room unless the game hands over. */
+  // Owner: the room itself.
+  kick(id, { ban = false } = {}) { return this.command('kick', { id, ban }); }
+  renewKey(role, { ttlMs } = {}) { return this.command('renew', { role, ttlMs }); }
+  setSettings(settings) { return this.command('settings', settings); }
+  giveOwnership(id) { return this.command('owner', { id }); }
+
+  /** Owner only: close the room for everyone. */
+  close() { return this.command('close'); }
+
+  /** Tell the room that the host seems to have stopped; it checks and acts within seconds. */
+  reportHostSilent() {
+    return this.rawSend({ t: 'cmd', c: 'host-check' });
+  }
+
+  /**
+   * Leave on purpose. An owner leaving closes the room unless the game passes
+   * ownership on. A host may pass a last `snapshot` for whoever continues.
+   */
   leave(snapshot) {
-    if (snapshot !== undefined && this.isHost) this.sendSnapshot(snapshot);
+    if (this.stopped) return;
+    if (snapshot !== undefined && this.isHost) this.sendSnapshot(snapshot, { force: true });
     this.command('leave');
-    this.hostStore.removeItem(this.hostKeyName);
-  }
-
-  /** Host only: close the room for everyone. */
-  close() {
-    return this.command('close');
-  }
-
-  /** Invitation keys (host only): { player: { k, exp }, viewer: { k, exp } }. */
-  get inviteKeys() {
-    return this.isHost ? this.keys ?? null : null;
+    // Not connected right now: keep trying for a moment so the room hears about
+    // it. If it does not, the seat is simply held for the grace period (and an
+    // owner keeps the key, to come back and close the room properly).
+    if (!this.ready) this.recover();
+    this.leaveTimer = setTimeout(() => this.disconnect(), 10_000);
   }
 }

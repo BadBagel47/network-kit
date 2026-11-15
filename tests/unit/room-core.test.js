@@ -1,343 +1,260 @@
+// Rooms, seats, roles, places, relaying and keys.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FakeWorld, connect, send, drop } from './fake-host.js';
+import { connect, send, cmd, drop } from './fake-host.js';
+import { setup, CREW, QUIZ } from './setup.js';
 import { CLOSE } from '../../src/shared/protocol.js';
 import { memoryRules } from '../../examples/demo/memory-rules.js';
 
-const HOST_OPTS = {
-  mode: 'host',
-  posts: ['captain', 'gunner', 'engineer'],
-  limits: { player: 3, viewer: 2 },
-  graceMs: 60_000,
-  takeoverMs: 5_000,
-  autoPauseMs: 20_000,
-};
-
-async function setup(options = HOST_OPTS, settings = {}) {
-  const world = new FakeWorld();
-  const core = await world.core(options);
-  const created = await core.create(settings, 'ABCDE');
-  const host = await connect(world, core, { name: 'Host', hk: created.hostKey });
-  return { world, core, created, host };
-}
-
-test('create, join and host role', async () => {
-  const { core, created, host } = await setup();
+test('create and join: the creator is owner and host', async () => {
+  const { core, created, owner } = await setup();
   assert.equal(created.code, 'ABCDE');
-  assert.equal(host.last('welcome').room.hostId, host.id);
-  assert.ok(host.last('welcome').room.keys, 'host sees invitation keys');
+  assert.ok(created.ownerKey);
+  assert.deepEqual(Object.keys(created.keys), ['player', 'viewer']);
+  assert.equal(owner.room.ownerId, owner.id);
+  assert.equal(owner.room.hostId, owner.id);
+  assert.ok(owner.room.keys, 'the owner sees the invitation keys');
+  assert.equal(owner.last('host').snapshot, null, 'the host is told to run the game, from scratch');
+  assert.deepEqual(await core.create({}, 'ABCDE'), { error: 'exists' });
+  assert.deepEqual(core.info().participants, { player: 1, viewer: 0 });
 });
 
-test('relay: players reach the host; the host reaches everyone or chosen players', async () => {
-  const { world, core, host } = await setup();
+test('relay: others reach the host; the host reaches everyone, chosen ids, a role or a place', async () => {
+  const { world, core, owner } = await setup();
   const a = await connect(world, core, { name: 'A' });
   const b = await connect(world, core, { name: 'B' });
-  assert.equal(a.last('welcome').room.players.length, 2);
-  assert.ok(!a.last('room').room.keys, 'players do not see keys');
+  const tv = await connect(world, core, { name: 'TV', role: 'viewer' });
+  assert.ok(!a.room.keys, 'others do not see the keys');
+  await cmd(core, b, 'take', { place: 'gunner' });
 
-  await send(core, a, { t: 'msg', n: 1, d: { fire: true } });
-  assert.deepEqual(host.last('msg'), { t: 'msg', from: a.id, d: { fire: true } });
-  assert.equal(b.messages('msg').length, 0, 'players do not see each other\'s inputs');
+  await send(core, a, { t: 'msg', d: { fire: true } });
+  assert.deepEqual(owner.last('msg'), { t: 'msg', from: a.id, d: { fire: true } });
+  assert.equal(b.messages('msg').length, 0, 'others do not see each other\'s messages');
 
-  await send(core, host, { t: 'msg', d: { all: 1 } });
-  assert.equal(a.last('msg').d.all, 1);
-  assert.equal(b.last('msg').d.all, 1);
-  assert.equal(host.messages('msg').filter((m) => m.from === host.id).length, 0);
+  await send(core, owner, { t: 'msg', d: 'all' });
+  for (const ws of [a, b, tv]) assert.equal(ws.last('msg').d, 'all');
+  assert.equal(owner.messages('msg').filter((m) => m.d === 'all').length, 0, 'never echoed to the sender');
 
-  await send(core, host, { t: 'msg', d: { secret: 1 }, to: [b.id] });
-  assert.equal(a.messages('msg').filter((m) => m.d.secret).length, 0);
-  assert.equal(b.last('msg').d.secret, 1);
+  await send(core, owner, { t: 'msg', d: 'one', to: [b.id] });
+  await send(core, owner, { t: 'msg', d: 'viewers', to: { role: 'viewer' } });
+  await send(core, owner, { t: 'msg', d: 'gunners', to: { place: 'gunner' } });
+  await send(core, owner, { t: 'msg', d: 'nobody', to: { nonsense: true } });
+  assert.deepEqual(a.messages('msg').map((m) => m.d), ['all']);
+  assert.deepEqual(b.messages('msg').map((m) => m.d), ['all', 'one', 'gunners']);
+  assert.deepEqual(tv.messages('msg').map((m) => m.d), ['all', 'viewers']);
+});
+
+test('viewers and waiting participants cannot send game messages', async () => {
+  const { world, core, owner } = await setup(CREW, { lateJoin: 'next' });
+  const tv = await connect(world, core, { name: 'TV', role: 'viewer' });
+  await cmd(core, owner, 'start');
+  const late = await connect(world, core, { name: 'Late' });
+  await send(core, tv, { t: 'msg', d: 'from viewer' });
+  await send(core, late, { t: 'msg', d: 'from waiting' });
+  assert.equal(owner.messages('msg').length, 0);
 });
 
 test('duplicate protection: a resent numbered message counts once', async () => {
-  const { world, core, host } = await setup();
-  const a = await connect(world, core, { name: 'A' });
+  const { world, core, owner } = await setup();
+  const a = await connect(world, core, { name: 'A', pk: 'dedupe-key-xxxxxxxxxxxx' });
   await send(core, a, { t: 'msg', n: 1, d: 'x' });
   await send(core, a, { t: 'msg', n: 1, d: 'x' });
   await send(core, a, { t: 'msg', n: 2, d: 'y' });
-  assert.deepEqual(host.messages('msg').map((m) => m.d), ['x', 'y']);
-  // Reconnect in the same page session: welcome reports what was counted.
+  await send(core, a, { t: 'msg', n: 2.5, d: 'bad number' });
+  assert.deepEqual(owner.messages('msg').map((m) => m.d), ['x', 'y']);
   await drop(core, a);
   const again = await connect(world, core, { name: 'A', pk: a.pk });
   assert.equal(again.last('welcome').lastN, 2);
   await send(core, again, { t: 'msg', n: 2, d: 'y' });
   await send(core, again, { t: 'msg', n: 3, d: 'z' });
-  assert.deepEqual(host.messages('msg').map((m) => m.d), ['x', 'y', 'z']);
-  // A reloaded page (new session id) starts counting again.
+  assert.deepEqual(owner.messages('msg').map((m) => m.d), ['x', 'y', 'z']);
   await drop(core, again);
   const reloaded = await connect(world, core, { name: 'A', pk: a.pk, sid: 's2' });
-  assert.equal(reloaded.last('welcome').lastN, 0);
+  assert.equal(reloaded.last('welcome').lastN, 0, 'a reloaded page starts counting again');
 });
 
-test('posts: claim, taken, switch, release, and release when gone', async () => {
-  const { world, core, host } = await setup();
-  const a = await connect(world, core, { name: 'A', pk: 'a-key-xxxxxxxxxxxxxxxx' });
-  await send(core, host, { t: 'cmd', n: 1, c: 'claim', post: 'captain' });
-  await send(core, a, { t: 'cmd', n: 1, c: 'claim', post: 'captain' });
-  assert.equal(a.last('err').code, 'post-taken');
-  await send(core, a, { t: 'cmd', n: 2, c: 'claim', post: 'gunner' });
-  let room = a.last('room').room;
-  assert.equal(room.posts.captain, host.id);
-  assert.equal(room.posts.gunner, a.id);
-  await send(core, a, { t: 'cmd', n: 3, c: 'claim', post: 'engineer' });
-  room = a.last('room').room;
-  assert.equal(room.posts.gunner, null);
-  assert.equal(room.posts.engineer, a.id);
-  await drop(core, a);
-  await world.advance(59_000);
-  assert.equal(host.last('room').room.posts.engineer, a.id, 'post kept during the grace period');
-  await world.advance(2_000);
-  assert.equal(host.last('room').room.posts.engineer, null, 'post released when gone');
-  assert.equal(host.last('ev').e, 'gone');
+test('places with one spot: take, taken, switch, leave, assign', async () => {
+  const { world, core, owner } = await setup();
+  const a = await connect(world, core, { name: 'A' });
+  const tv = await connect(world, core, { name: 'TV', role: 'viewer' });
+  await cmd(core, owner, 'take', { place: 'captain' });
+  await cmd(core, a, 'take', { place: 'captain' });
+  assert.equal(a.last('err').code, 'place-taken');
+  await cmd(core, a, 'take', { place: 'gunner' });
+  assert.deepEqual(a.room.places, { captain: [owner.id], gunner: [a.id], engineer: [] });
+  await cmd(core, a, 'take', { place: 'engineer' });
+  assert.deepEqual(a.room.places.gunner, []);
+  assert.equal(a.room.players.find((p) => p.id === a.id).place, 'engineer');
+  await cmd(core, a, 'take', { place: 'bridge' });
+  assert.equal(a.last('err').code, 'no-such-place');
+  await cmd(core, tv, 'take', { place: 'gunner' });
+  assert.equal(tv.last('err').code, 'not-allowed');
+  await cmd(core, owner, 'assign', { id: a.id, place: 'captain' });
+  assert.deepEqual(a.room.places.captain, [a.id], 'a single spot changes hands');
+  assert.equal(owner.room.players.find((p) => p.id === owner.id).place, null);
+  await cmd(core, a, 'leave-place');
+  assert.deepEqual(a.room.places.captain, []);
 });
 
-test('grace period: drop, back with the same id and post', async () => {
-  const { world, core, host } = await setup();
-  const pk = 'back-key-xxxxxxxxxxxxxxx';
-  const a = await connect(world, core, { name: 'A', pk });
-  await send(core, a, { t: 'cmd', n: 1, c: 'claim', post: 'gunner' });
+test('places with several spots work as teams', async () => {
+  const { world, core, owner } = await setup({ mode: 'host', places: { red: 2, blue: 2 } });
+  const a = await connect(world, core, { name: 'A' });
+  const b = await connect(world, core, { name: 'B' });
+  for (const ws of [owner, a]) await cmd(core, ws, 'take', { place: 'red' });
+  await cmd(core, b, 'take', { place: 'red' });
+  assert.equal(b.last('err').code, 'place-taken');
+  await cmd(core, b, 'take', { place: 'blue' });
+  assert.deepEqual(b.room.places, { red: [owner.id, a.id], blue: [b.id] });
+  assert.deepEqual(b.room.placeSizes, { red: 2, blue: 2 });
+  await cmd(core, owner, 'assign', { id: b.id, place: 'red' });
+  assert.equal(owner.last('err').code, 'place-taken', 'a full team does not push anyone out');
+});
+
+test('grace period: drop, back with the same id and place; gone afterwards', async () => {
+  const { world, core, owner } = await setup();
+  const a = await connect(world, core, { name: 'A', pk: 'grace-key-xxxxxxxxxxxxx' });
+  await cmd(core, a, 'take', { place: 'gunner' });
   await drop(core, a);
-  assert.equal(host.last('ev').e, 'drop');
-  assert.equal(host.last('room').room.players.find((p) => p.id === a.id).status, 'away');
+  assert.equal(owner.last('ev').e, 'drop');
+  assert.equal(owner.room.players.find((p) => p.id === a.id).status, 'away');
   await world.advance(30_000);
-  const a2 = await connect(world, core, { name: 'A', pk });
+  const a2 = await connect(world, core, { name: 'A', pk: a.pk });
   assert.equal(a2.id, a.id);
-  assert.equal(host.last('ev').e, 'back');
-  assert.equal(a2.last('welcome').room.posts.gunner, a.id);
-  await world.advance(120_000);
-  assert.ok(host.last('room').room.players.some((p) => p.id === a.id), 'still in the room');
-});
-
-test('pause and resume by anyone; automatic pause after a long drop', async () => {
-  const { world, core, host } = await setup();
-  const a = await connect(world, core, { name: 'A' });
-  await send(core, host, { t: 'cmd', n: 1, c: 'start' });
-  await send(core, a, { t: 'cmd', n: 1, c: 'pause' });
-  assert.equal(host.last('room').room.paused.id, a.id);
-  await send(core, host, { t: 'cmd', n: 2, c: 'resume' });
-  assert.equal(host.last('room').room.paused, null);
-  await drop(core, a);
-  await world.advance(19_000);
-  assert.equal(host.last('room').room.paused, null);
+  assert.equal(owner.last('ev').e, 'back');
+  assert.deepEqual(a2.room.places.gunner, [a.id]);
+  await drop(core, a2);
+  await world.advance(59_000);
+  assert.deepEqual(owner.room.places.gunner, [a.id], 'kept during the grace period');
   await world.advance(2_000);
-  assert.equal(host.last('room').room.paused.reason, 'player-away');
-});
-
-test('pauseBy host: players cannot pause', async () => {
-  const { world, core } = await setup({ ...HOST_OPTS, pauseBy: 'host' });
-  const a = await connect(world, core, { name: 'A' });
-  await send(core, a, { t: 'cmd', n: 1, c: 'pause' });
-  assert.equal(a.last('err').code, 'not-allowed');
-});
-
-test('host takeover: another player continues from the latest snapshot', async () => {
-  const { world, core, host } = await setup();
-  const a = await connect(world, core, { name: 'A' });
-  const b = await connect(world, core, { name: 'B' });
-  await send(core, host, { t: 'cmd', n: 1, c: 'start' });
-  await world.advance(4_000);
-  await send(core, host, { t: 'snap', d: { tick: 42 } });
-  await drop(core, host);
-  await world.advance(4_000);
-  assert.equal(a.messages('host').length, 0, 'no takeover during the short wait');
-  await world.advance(2_000);
-  const msg = a.last('host');
-  assert.deepEqual(msg.snapshot, { tick: 42 });
-  assert.equal(b.messages('host').length, 0);
-  let room = b.last('room').room;
-  assert.equal(room.hostId, a.id);
-  assert.equal(room.paused.reason, 'host-change');
-  assert.ok(a.last('room').room.keys, 'the new host sees the keys');
-  await send(core, a, { t: 'cmd', n: 1, c: 'host-ready' });
-  room = b.last('room').room;
-  assert.equal(room.paused, null);
-  // Inputs now go to the new host.
-  await send(core, b, { t: 'msg', n: 1, d: 'to-new-host' });
-  assert.equal(a.last('msg').d, 'to-new-host');
-});
-
-test('host returning within the wait keeps the role', async () => {
-  const { world, core, created, host } = await setup();
-  const a = await connect(world, core, { name: 'A' });
-  await send(core, host, { t: 'cmd', n: 1, c: 'start' });
-  await drop(core, host);
-  await world.advance(2_000);
-  const back = await connect(world, core, { name: 'Host', hk: created.hostKey, pk: host.pk });
-  assert.equal(back.id, host.id);
-  await world.advance(10_000);
-  assert.equal(a.last('room').room.hostId, host.id);
-  assert.equal(a.messages('host').length, 0);
-  assert.equal(back.messages('host').length, 0, 'same page session: no snapshot needed');
-});
-
-test('host page reload: the host gets the stored snapshot back', async () => {
-  const world = new FakeWorld();
-  const core = await world.core(HOST_OPTS);
-  const created = await core.create({}, 'ABCDE');
-  const pk = 'reload-host-xxxxxxxxxxxx';
-  const host = await connect(world, core, { name: 'Host', hk: created.hostKey, pk, sid: 'page1' });
-  await send(core, host, { t: 'snap', d: { tick: 7 } });
-  await drop(core, host);
-  const again = await connect(world, core, { name: 'Host', hk: created.hostKey, pk, sid: 'page2' });
-  assert.deepEqual(again.last('host').snapshot, { tick: 7 });
-  assert.equal(again.last('welcome').room.hostId, again.id);
-});
-
-test('takeover with nobody online: the next player to connect takes over', async () => {
-  const { world, core, host } = await setup();
-  const pk = 'late-key-xxxxxxxxxxxxxxx';
-  const a = await connect(world, core, { name: 'A', pk });
-  await send(core, host, { t: 'snap', d: { s: 1 } });
-  await drop(core, a);
-  await drop(core, host);
-  await world.advance(6_000);
-  const a2 = await connect(world, core, { name: 'A', pk });
-  assert.equal(a2.last('welcome').room.hostId === a2.id || a2.last('room').room.hostId === a2.id, true);
-  assert.deepEqual(a2.last('host').snapshot, { s: 1 });
-});
-
-test('snapshot to a joining player only', async () => {
-  const { world, core, host } = await setup();
-  const a = await connect(world, core, { name: 'A' });
-  const b = await connect(world, core, { name: 'B' });
-  await send(core, host, { t: 'snap', d: { full: true }, to: [b.id] });
-  assert.equal(a.messages('snap').length, 0);
-  assert.deepEqual(b.last('snap').d, { full: true });
-  assert.deepEqual(core.snapshot.d, { full: true });
+  assert.deepEqual(owner.room.places.gunner, []);
+  assert.deepEqual(owner.last('ev'), { t: 'ev', e: 'gone', id: a.id, why: 'gone' });
 });
 
 test('late join: now, next (admitted at the next safe point) and never', async () => {
   for (const lateJoin of ['now', 'next', 'never']) {
-    const { world, core, host } = await setup(HOST_OPTS, { lateJoin });
-    await send(core, host, { t: 'cmd', n: 1, c: 'start' });
+    const { world, core, owner } = await setup(CREW, { lateJoin });
+    await cmd(core, owner, 'start');
     const a = await connect(world, core, { name: 'A' });
     if (lateJoin === 'never') {
       assert.equal(a.closedWith.code, CLOSE.IN_PROGRESS);
+      const tv = await connect(world, core, { name: 'TV', role: 'viewer' });
+      assert.ok(tv.id, 'viewers may always join');
       continue;
     }
-    const me = a.last('welcome').room.players.find((p) => p.id === a.id);
-    assert.equal(me.waiting, lateJoin === 'next');
+    assert.equal(a.room.players.find((p) => p.id === a.id).waiting, lateJoin === 'next');
     if (lateJoin === 'next') {
-      await send(core, a, { t: 'msg', n: 1, d: 'ignored' });
-      assert.equal(host.messages('msg').length, 0, 'waiting players do not play');
-      await send(core, host, { t: 'cmd', n: 2, c: 'admit' });
-      assert.equal(host.last('ev').e, 'join');
-      assert.equal(a.last('room').room.players.find((p) => p.id === a.id).waiting, false);
+      assert.equal(owner.last('ev').e, 'waiting');
+      await cmd(core, owner, 'admit');
+      assert.equal(owner.last('ev').e, 'join');
+      assert.equal(a.room.players.find((p) => p.id === a.id).waiting, false);
     }
   }
 });
 
-test('seat limits per role; a viewer never becomes a player', async () => {
-  const { world, core, created } = await setup(HOST_OPTS, { access: 'private' });
+test('seats per role; a viewer link can never play; a new round admits those waiting', async () => {
+  const { world, core, created, owner } = await setup(CREW, { access: 'private', lateJoin: 'next' });
   const v = await connect(world, core, { name: 'TV', key: created.keys.viewer.k });
   assert.equal(v.last('welcome').you.role, 'viewer');
   const v2 = await connect(world, core, { name: 'TV2', key: created.keys.viewer.k, role: 'player' });
-  assert.equal(v2.last('welcome').you.role, 'viewer', 'a viewer link cannot play');
+  assert.equal(v2.last('welcome').you.role, 'viewer');
   const v3 = await connect(world, core, { name: 'TV3', key: created.keys.viewer.k });
   assert.equal(v3.closedWith.code, CLOSE.FULL);
   await connect(world, core, { name: 'A', key: created.keys.player.k });
-  await connect(world, core, { name: 'B', key: created.keys.player.k });
+  await cmd(core, owner, 'start');
+  const b = await connect(world, core, { name: 'B', key: created.keys.player.k });
   const c = await connect(world, core, { name: 'C', key: created.keys.player.k });
   assert.equal(c.closedWith.code, CLOSE.FULL);
-  await send(core, v, { t: 'cmd', n: 1, c: 'claim', post: 'captain' });
-  assert.equal(v.last('err').code, 'not-allowed');
+  assert.equal(b.room.players.find((p) => p.id === b.id).waiting, true);
+  await cmd(core, owner, 'start');
+  assert.equal(b.room.players.find((p) => p.id === b.id).waiting, false);
+  assert.equal(b.room.round, 2);
+});
+
+test('roles are defined by the game: a referee needs its own link and cannot play', async () => {
+  const options = {
+    mode: 'host',
+    roles: { player: { seats: 4 }, referee: { seats: 1, canPause: true }, viewer: { seats: 2 } },
+  };
+  const { world, core, created, owner } = await setup(options);
+  assert.deepEqual(owner.room.roles, {
+    player: { seats: 4, plays: true, sends: true },
+    referee: { seats: 1, plays: false, sends: false },
+    viewer: { seats: 2, plays: false, sends: false },
+  });
+  const sneaky = await connect(world, core, { name: 'X', role: 'referee' });
+  assert.equal(sneaky.closedWith.code, CLOSE.KEY, 'a role with its own link cannot be picked by name');
+  const ref = await connect(world, core, { name: 'Ref', key: created.keys.referee.k });
+  assert.equal(ref.last('welcome').you.role, 'referee');
+  await cmd(core, owner, 'start');
+  await send(core, ref, { t: 'msg', d: 'not a player' });
+  assert.equal(owner.messages('msg').length, 0);
+  await cmd(core, ref, 'pause');
+  assert.equal(owner.room.paused.id, ref.id, 'this game lets the referee pause');
+  const unknown = await connect(world, core, { name: 'Y', role: 'wizard' });
+  assert.equal(unknown.last('welcome').you.role, 'player', 'unknown roles fall back to the default');
 });
 
 test('private rooms: key required, renew stops old links, people inside stay, expiry', async () => {
-  const { world, core, created, host } = await setup(HOST_OPTS, { access: 'private' });
+  const { world, core, created, owner } = await setup(CREW, { access: 'private' });
   const none = await connect(world, core, { name: 'X' });
   assert.equal(none.closedWith.code, CLOSE.KEY);
   assert.equal(none.last('denied').reason, 'key-required');
-  const pk = 'inside-key-xxxxxxxxxxxxx';
-  const a = await connect(world, core, { name: 'A', key: created.keys.player.k, pk });
+  const a = await connect(world, core, { name: 'A', key: created.keys.player.k, pk: 'inside-key-xxxxxxxxxxxxx' });
   assert.ok(a.id);
-  await send(core, host, { t: 'cmd', n: 1, c: 'renew', role: 'player' });
-  const newKey = host.last('room').room.keys.player.k;
-  assert.notEqual(newKey, created.keys.player.k);
+  await cmd(core, owner, 'renew', { role: 'player' });
+  assert.notEqual(owner.room.keys.player.k, created.keys.player.k);
   const old = await connect(world, core, { name: 'Y', key: created.keys.player.k });
   assert.equal(old.last('denied').reason, 'key-invalid');
   await drop(core, a);
-  const a2 = await connect(world, core, { name: 'A', pk });
-  assert.equal(a2.id, a.id, 'a player inside comes back without the key');
-  await send(core, host, { t: 'cmd', n: 2, c: 'renew', role: 'viewer', ttlMs: 1_000 });
-  const viewerKey = host.last('room').room.keys.viewer.k;
+  const a2 = await connect(world, core, { name: 'A', pk: a.pk });
+  assert.equal(a2.id, a.id, 'someone inside comes back without the key');
+  await cmd(core, owner, 'renew', { role: 'viewer', ttlMs: 1_000 });
+  const viewerKey = owner.room.keys.viewer.k;
   await world.advance(2_000);
   const late = await connect(world, core, { name: 'TV', key: viewerKey });
   assert.equal(late.last('denied').reason, 'key-expired');
-  // Open room: the code is enough.
-  await send(core, host, { t: 'cmd', n: 3, c: 'settings', access: 'open' });
+  await cmd(core, owner, 'settings', { access: 'open' });
   const open = await connect(world, core, { name: 'Z' });
-  assert.ok(open.id);
+  assert.ok(open.id, 'open room: the code is enough');
+  await cmd(core, owner, 'renew', { role: '__proto__' });
+  assert.equal(owner.last('err').code, 'bad-role');
 });
 
-test('only the host may use host commands', async () => {
-  const { world, core } = await setup();
-  const a = await connect(world, core, { name: 'A' });
-  for (const c of ['start', 'kick', 'renew', 'close', 'admit']) {
-    await send(core, a, { t: 'cmd', n: Math.floor(Math.random() * 1e6) + 1, c, id: 'x', role: 'player' });
-    assert.equal(a.last('err').code, 'host-only', c);
-  }
-});
-
-test('kick and ban', async () => {
-  const { world, core, host } = await setup();
-  const pk = 'banned-key-xxxxxxxxxxxxx';
-  const a = await connect(world, core, { name: 'A', pk });
-  await send(core, host, { t: 'cmd', n: 1, c: 'kick', id: a.id, ban: true });
-  assert.equal(a.closedWith.code, CLOSE.BANNED);
-  assert.equal(host.last('room').room.players.length, 1);
-  const again = await connect(world, core, { name: 'A', pk });
-  assert.equal(again.closedWith.code, CLOSE.BANNED);
+test('kick lets someone come back; a ban holds because the links are renewed', async () => {
+  const { world, core, created, owner } = await setup({ ...CREW, roles: { player: { seats: 6 } } });
   const b = await connect(world, core, { name: 'B', pk: 'kicked-key-xxxxxxxxxxxxx' });
-  await send(core, host, { t: 'cmd', n: 2, c: 'kick', id: b.id });
+  await cmd(core, owner, 'kick', { id: b.id });
   assert.equal(b.closedWith.code, CLOSE.KICKED);
-  const b2 = await connect(world, core, { name: 'B', pk: 'kicked-key-xxxxxxxxxxxxx' });
-  assert.ok(b2.id, 'a kick without ban allows coming back');
+  assert.equal((await connect(world, core, { name: 'B', pk: b.pk })).id, b.id, 'and keeps the same id');
+
+  const a = await connect(world, core, { name: 'A', pk: 'banned-key-xxxxxxxxxxxxx', key: created.keys.player.k });
+  const stays = await connect(world, core, { name: 'S' });
+  await cmd(core, owner, 'kick', { id: a.id, ban: true });
+  assert.equal(a.closedWith.code, CLOSE.BANNED);
+  assert.equal(a.last('denied').code, CLOSE.BANNED);
+  assert.equal((await connect(world, core, { name: 'A', pk: a.pk })).closedWith.code, CLOSE.BANNED);
+  // The same person in a new tab has a new player key, but the old link and the code no longer work.
+  const newTab = await connect(world, core, { name: 'A', key: created.keys.player.k });
+  assert.equal(newTab.closedWith.code, CLOSE.KEY);
+  assert.equal(owner.room.settings.access, 'private');
+  assert.notEqual(owner.room.keys.player.k, created.keys.player.k);
+  assert.ok(stays.room.players.some((p) => p.id === stays.id), 'everyone else stays');
+  await cmd(core, owner, 'kick', { id: owner.id });
+  assert.equal(owner.last('err').code, 'no-such-participant');
 });
 
-test('same player in a new tab replaces the old connection', async () => {
-  const { world, core } = await setup();
-  const pk = 'tab-key-xxxxxxxxxxxxxxxx';
-  const a = await connect(world, core, { name: 'A', pk });
-  const a2 = await connect(world, core, { name: 'A', pk });
+test('the same participant in a new tab replaces the old connection', async () => {
+  const { world, core, owner } = await setup();
+  const a = await connect(world, core, { name: 'A', pk: 'tab-key-xxxxxxxxxxxxxxxx' });
+  const a2 = await connect(world, core, { name: 'A', pk: a.pk });
   assert.equal(a.closedWith.code, CLOSE.REPLACED);
   assert.equal(a2.id, a.id);
+  assert.equal(owner.last('ev').e, 'back', 'the host is told, so it can send the state again');
 });
 
-test('host leaving on purpose closes the room; handover option passes it on', async () => {
-  {
-    const { world, core, host } = await setup();
-    const a = await connect(world, core, { name: 'A' });
-    await send(core, host, { t: 'cmd', n: 1, c: 'leave' });
-    assert.equal(a.closedWith.code, CLOSE.ROOM_CLOSED);
-    assert.equal(a.last('closed').reason, 'host-left');
-    const late = await connect(world, core, { name: 'B' });
-    assert.equal(late.closedWith.code, CLOSE.ROOM_CLOSED);
-    assert.equal(core.info().closed, true);
-  }
-  {
-    const { world, core, host } = await setup({ ...HOST_OPTS, hostLeave: 'handover' });
-    const a = await connect(world, core, { name: 'A' });
-    await send(core, host, { t: 'snap', d: { last: 1 } });
-    await send(core, host, { t: 'cmd', n: 1, c: 'leave' });
-    assert.equal(a.last('room').room.hostId, a.id);
-    assert.deepEqual(a.last('host').snapshot, { last: 1 });
-  }
-});
-
-test('handover to a chosen player', async () => {
-  const { world, core, host } = await setup();
-  const a = await connect(world, core, { name: 'A' });
-  const b = await connect(world, core, { name: 'B' });
-  await send(core, host, { t: 'snap', d: { v: 2 } });
-  await send(core, host, { t: 'cmd', n: 1, c: 'handover', id: b.id });
-  assert.equal(a.last('room').room.hostId, b.id);
-  assert.deepEqual(b.last('host').snapshot, { v: 2 });
-});
-
-test('cleanup: a room is deleted 24 hours after the last player left', async () => {
-  const { world, core, host } = await setup();
-  await drop(core, host);
+test('cleanup: a room is deleted 24 hours after the last participant left', async () => {
+  const { world, core, owner } = await setup();
+  await drop(core, owner);
   await world.advance(23 * 3600_000);
   assert.ok(world.store.get('room'));
   await world.advance(2 * 3600_000);
@@ -345,60 +262,79 @@ test('cleanup: a room is deleted 24 hours after the last player left', async () 
   assert.equal(core.info(), null);
 });
 
-test('hibernation: a reloaded room keeps players, sockets and duplicate protection', async () => {
-  const { world, core, host } = await setup();
+test('a closed room says so for an hour and is then forgotten', async () => {
+  const { world, core, owner } = await setup();
   const a = await connect(world, core, { name: 'A' });
-  await send(core, a, { t: 'msg', n: 1, d: 'one' });
-  await send(core, host, { t: 'cmd', n: 1, c: 'pause' });
-  const woke = await world.core(HOST_OPTS);
-  assert.equal(woke.state.players[a.id].name, 'A');
-  await send(woke, a, { t: 'msg', n: 1, d: 'one again' });
-  await send(woke, a, { t: 'msg', n: 2, d: 'two' });
-  assert.deepEqual(host.messages('msg').map((m) => m.d), ['one', 'two']);
-  assert.ok(woke.state.paused);
+  await cmd(core, owner, 'close');
+  assert.equal(a.closedWith.code, CLOSE.ROOM_CLOSED);
+  assert.equal(a.last('closed').reason, 'closed-by-owner');
+  const late = await connect(world, core, { name: 'B' });
+  assert.equal(late.closedWith.code, CLOSE.ROOM_CLOSED);
+  assert.equal(core.info().closed, true);
+  await world.advance(61 * 60_000);
+  assert.equal(core.info(), null);
 });
 
-test('messages over the size limit are refused', async () => {
-  const { world, core, host } = await setup({ ...HOST_OPTS, maxMessageBytes: 100 });
-  const a = await connect(world, core, { name: 'A' });
-  await send(core, a, { t: 'msg', n: 1, d: 'x'.repeat(200) });
-  assert.equal(a.last('err').code, 'too-large');
-  assert.equal(host.messages('msg').length, 0);
-});
-
-test('names are trimmed and limited', async () => {
-  const { world, core } = await setup();
+test('messages over the size limit are refused; names are trimmed', async () => {
+  const { world, core, owner } = await setup({ ...CREW, maxMessageBytes: 100 });
   const a = await connect(world, core, { name: '  A\u0007very   long name that goes on and on  ' });
-  const me = a.last('welcome').room.players.find((p) => p.id === a.id);
-  assert.equal(me.name, 'Avery long name that goe');
+  assert.equal(a.room.players.find((p) => p.id === a.id).name, 'Avery long name that goe');
+  await send(core, a, { t: 'msg', n: 1, d: 'x'.repeat(200) });
+  assert.deepEqual(a.last('err'), { t: 'err', code: 'too-large', n: 1 });
+  assert.equal(owner.messages('msg').length, 0);
 });
 
-test('server mode: the memory example game with turns and a timer', async () => {
-  const opts = { mode: 'server', rules: memoryRules, limits: { player: 4, viewer: 2 }, lateJoin: 'never', countdownMs: 0 };
-  const { world, core, host } = await setup(opts);
+test('bad options fail early', async () => {
+  const { RoomCore } = await import('../../src/server/room-core.js');
+  assert.throws(() => new RoomCore({}, { mode: 'peer' }), /unknown mode/);
+  assert.throws(() => new RoomCore({}, { mode: 'server' }), /needs rules/);
+  assert.throws(() => new RoomCore({}, { ownerRole: 'leader' }), /ownerRole/);
+  assert.throws(() => new RoomCore({}, { roles: { 'Bad Name': {} } }), /bad role name/);
+});
+
+test('a quiz: the leader runs the game without playing', async () => {
+  const { world, core, created, owner } = await setup(QUIZ);
+  assert.equal(owner.last('welcome').you.role, 'leader');
+  assert.equal(owner.room.hostId, owner.id);
+  const a = await connect(world, core, { name: 'A' });
   const b = await connect(world, core, { name: 'B' });
-  await send(core, host, { t: 'cmd', n: 1, c: 'start' });
-  const board = host.last('msg').d;
+  assert.equal(a.last('welcome').you.role, 'player', 'the default role is the one that plays');
+  const second = await connect(world, core, { name: 'L2', role: 'leader' });
+  assert.equal(second.closedWith.code, CLOSE.KEY, 'nobody can pick the leader role by name');
+  await cmd(core, owner, 'start');
+  await send(core, a, { t: 'msg', d: 'buzz' });
+  assert.equal(owner.last('msg').from, a.id);
+  await send(core, owner, { t: 'msg', d: 'question', to: { role: 'player' } });
+  assert.equal(a.last('msg').d, 'question');
+  assert.equal(b.last('msg').d, 'question');
+  assert.deepEqual(core.info().participants, { leader: 1, player: 2, viewer: 0 });
+  assert.ok(created.keys.leader, 'every role has its own link');
+});
+
+test('server-run room: the memory example with turns, a timer and a secret seed', async () => {
+  const options = { mode: 'server', rules: memoryRules, roles: { player: { seats: 4 } }, lateJoin: 'never', countdownMs: 0 };
+  const { world, core, owner } = await setup(options);
+  const b = await connect(world, core, { name: 'B' });
+  await cmd(core, owner, 'start');
+  assert.equal(owner.room.phase, 'playing');
+  assert.equal('seed' in owner.room, false, 'the seed that shuffles the cards is not sent to clients');
+  const board = owner.last('msg').d;
   assert.equal(board.cards.length, 8);
   assert.ok(board.cards.every((c) => c === null), 'faces hidden');
-  assert.equal(board.turn, host.id);
-  // Not your turn.
-  await send(core, b, { t: 'msg', n: 1, d: { type: 'flip', index: 0 } });
+  assert.equal(board.turn, owner.id);
+  await send(core, b, { t: 'msg', d: { type: 'flip', index: 0 } }); // not B's turn
   assert.deepEqual(b.last('msg').d.cards, board.cards);
-  // Find a mismatching pair from the server state and flip it.
   const cards = core.state.game.cards;
   const j = cards.findIndex((c, i) => i > 0 && c !== cards[0]);
-  await send(core, host, { t: 'msg', n: 2, d: { type: 'flip', index: 0 } });
-  await send(core, host, { t: 'msg', n: 3, d: { type: 'flip', index: j } });
+  await send(core, owner, { t: 'msg', d: { type: 'flip', index: 0 } });
+  await send(core, owner, { t: 'msg', d: { type: 'flip', index: j } });
   assert.equal(b.last('msg').d.cards[0], cards[0]);
   await world.advance(1_000);
-  const after = b.last('msg').d;
-  assert.equal(after.cards[0], null, 'cards hidden again by the timer');
-  assert.equal(after.turn, b.id, 'turn passes on');
-  // Match a pair as B.
+  assert.equal(b.last('msg').d.cards[0], null, 'hidden again by the timer');
+  assert.equal(b.last('msg').d.turn, b.id, 'the turn passes on');
   const k = cards.findIndex((c, i) => c === cards[0] && i !== 0);
-  await send(core, b, { t: 'msg', n: 2, d: { type: 'flip', index: 0 } });
-  await send(core, b, { t: 'msg', n: 3, d: { type: 'flip', index: k } });
+  await send(core, b, { t: 'msg', d: { type: 'flip', index: 0 } });
+  await send(core, b, { t: 'msg', d: { type: 'flip', index: k } });
   assert.equal(b.last('msg').d.scores[b.id], 1);
   assert.equal(b.last('msg').d.turn, b.id, 'a match keeps the turn');
 });

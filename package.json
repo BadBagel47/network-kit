@@ -1,6 +1,6 @@
 {
   "name": "network-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Shared multiplayer room server and browser client for small browser games on Cloudflare.",
   "private": true,
   "type": "module",
@@ -12,13 +12,17 @@
     "test": "node --test \"tests/unit/*.test.js\"",
     "test:integration": "node tests/integration/run.mjs",
     "test:browser": "node tests/browser/run.mjs",
-    "demo:assets": "node scripts/vendor.mjs examples/demo/public/network-kit",
-    "dev": "npm run demo:assets && wrangler dev",
+    "test:compat": "node tests/compat/run.mjs",
+    "test:all": "npm test && npm run test:compat && npm run test:integration && npm run test:browser",
+    "smoke": "node src/smoke.mjs",
+    "demo:assets": "node scripts/vendor.mjs examples/demo/public/network-kit --client-only",
+    "dev": "npm run demo:assets && wrangler dev --var ROOM_JURISDICTION:",
     "deploy:demo": "npm run demo:assets && wrangler deploy"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261115.1",
     "jsqr": "^1.4.0",
+    "playwright": "^1.63.0",
     "wrangler": "^4.162.0"
   }
 }

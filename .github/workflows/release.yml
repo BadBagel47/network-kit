@@ -1,5 +1,7 @@
 # Creates the git tag and GitHub release vX.Y.Z when the version in
-# package.json changes on main (D-009). Games pin network-kit to these tags.
+# package.json changes on main (D-009, D-021). Games pin network-kit to these
+# tags. Before tagging it checks that the version goes up, that CHANGELOG.md
+# has a section for it, and that every test passes.
 name: Release
 
 on:
@@ -16,6 +18,8 @@ permissions:
 
 jobs:
   release:
+    # Started by hand on another branch: do nothing.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +30,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Read version
+      - name: Read and check the version
         id: version
         run: |
           version=$(node -p "require('./package.json').version")
@@ -38,7 +42,29 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "v$version already exists, nothing to do"
             echo "exists=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Higher than the latest release of its own MAJOR.MINOR line (an older
+          # line may still get bug fixes), or of all releases for a new line.
+          all=$(git tag --list 'v*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V || true)
+          line=$(echo "$version" | cut -d. -f1,2)
+          latest=$(echo "$all" | grep -E "^${line//./\\.}\.[0-9]+$" | tail -1 || true)
+          [ -n "$latest" ] || latest=$(echo "$all" | tail -1)
+          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$version" | sort -V | tail -1)" != "$version" ]; then
+            echo "::error::version $version is not higher than the release $latest"
+            exit 1
+          fi
+          # Release notes: this version's section of CHANGELOG.md.
+          awk -v v="$version" '
+            $0 ~ "^## \\[?" v "\\]?([^0-9.]|$)" { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
+            echo "::error::CHANGELOG.md has no section for $version"
+            exit 1
           fi
 
       - name: Test before releasing
@@ -46,20 +72,14 @@ jobs:
         run: |
           npm ci
           npm test
+          npm run test:compat
           npm run test:integration
+          npx playwright install --with-deps chromium
+          npm run test:browser
 
       - name: Create release
         if: steps.version.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          # Release notes: this version's section of CHANGELOG.md.
-          awk -v v="$VERSION" '
-            $0 ~ "^## \\[?" v "\\]?([^0-9.]|$)" { on = 1; next }
-            on && /^## / { exit }
-            on { print }
-          ' CHANGELOG.md > notes.md
-          [ -s notes.md ] || echo "See CHANGELOG.md." > notes.md
-          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"

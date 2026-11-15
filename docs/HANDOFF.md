@@ -10,11 +10,11 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
   - Sensitive information: none yet. Secrets (Cloudflare API token) must only ever be GitHub Secrets.
   - Laws and regulations: the room server will process player names, room data and IP addresses at Cloudflare (GDPR). Each game's privacy notice must mention it; storage and cleanup rules are part of F-001 (groundwork in Buzzy #332 and #405, Bricks T-006).
 - **Publishing method:** agents push to `main` (owner decision 2026-11-15).
-  - Library: when the version in `package.json` and `src/version.js` changes on `main`, `.github/workflows/release.yml` runs the tests and creates the tag and GitHub release `vX.Y.Z`. Games take a copy of a tag (D-009, `docs/INTEGRATION.md`).
-  - Demo Worker (`examples/demo`, the example games): `.github/workflows/deploy-demo.yml` deploys it to Cloudflare from `main` and checks that a room can be created. It is skipped until the secret `CLOUDFLARE_API_TOKEN` exists (one-time action below).
-  - Tests on every push: `.github/workflows/test.yml` (unit + integration).
+  - Library: when the version in `package.json` and `src/version.js` changes on `main`, `.github/workflows/release.yml` checks that the version goes up and that `CHANGELOG.md` has a section for it, runs every test (unit, compatibility, integration in local workerd, the demo page in Chromium) and creates the tag and GitHub release `vX.Y.Z`. Games take a copy of a tag (`docs/INTEGRATION.md`).
+  - Demo Worker (`examples/demo`, the three example games): `.github/workflows/deploy-demo.yml` deploys it to Cloudflare from `main` and checks that a room can be created. https://network-kit-demo.l8p1.workers.dev
+  - Tests on every push: `.github/workflows/test.yml`.
 - **Project language:** English for code, docs and the README; chat with the owner in Swedish.
-- **Environment (2026-11-15, cloud agent session):** push to `main` works; Node 22, npm and `wrangler dev` (local workerd) work; Chromium with Playwright is available for `npm run test:browser`. developers.cloudflare.com is blocked by the session's network rules, so Cloudflare's limits and the EU option on the Free plan could not be read there (D-011). Local workerd has no jurisdictions: tests run with `ROOM_JURISDICTION` empty.
+- **Environment (2026-11-15, cloud agent session):** push to `main` works; Node 22, npm and `wrangler dev` (local workerd) work; Chromium with Playwright is available for `npm run test:browser`. developers.cloudflare.com is blocked by the session's network rules, so Cloudflare's limits and the EU option on the Free plan could not be read there (D-011). Local workerd has no jurisdictions: tests run with `ROOM_JURISDICTION` empty. Local workerd does hibernate idle rooms, which `tests/integration/sleep.test.mjs` relies on (it takes about 30 seconds). The proxy also blocks the deployed demo's address, so the demo is checked by the deploy workflow, not from the session.
 
 ## Decisions
 
@@ -25,23 +25,39 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 - **Order (2026-11-15):** Critical ST8 (`BadBagel47/critical`) is the first real user, chosen by the owner. Boomers follows (earlier plan, 2026-11-13: Boomers first). Bricks stays on Firebase until network-kit is proven; Buzzy moves last (Buzzy #408).
 - **Free first, paid possible (2026-11-15):** network-kit must work on a free Cloudflare account, and the owner wants to be able to pay for the account when the quota runs out. The admin page shows the usage (F-008).
 - **Versions and updates (2026-11-15, D-009):** approved by the owner. Version numbers MAJOR.MINOR.PATCH; each game keeps its own copy of a fixed version; bug-fix releases reach games as automatic update proposals that are taken in only when the game's tests pass; fixes are always made in network-kit first. Same model as geo-kit.
-- **Version policy for 0.x and careful updates (2026-11-15, D-021):** replaces parts of D-009. While the kit is 0.x a MINOR version may require changes in the game (with a guide); a PATCH never does; the full "MINOR never breaks" promise starts at 1.0. Bug fixes arrive in a game as a branch plus a notice, some days after the release and after a kit smoke test, and are taken in when the owner or an agent says so; fully automatic later, by a new decision. Built in run B; the template in v0.1.0 still pushes to `main` and must not be turned on in a game.
+- **Version policy for 0.x and careful updates (2026-11-15, D-021):** replaces parts of D-009. While the kit is 0.x a MINOR version may require changes in the game (with a guide); a PATCH never does; the full "MINOR never breaks" promise starts at 1.0. Bug fixes arrive in a game as a branch plus a notice, some days after the release and after a kit smoke test, and are taken in when the owner or an agent says so; fully automatic later, by a new decision. Built in v0.2.0 (`templates/update-network-kit.yml`, `src/smoke.mjs`).
 - **Publishing to main (2026-11-15):** the owner allows agents to push network-kit changes directly to `main`, in this and future runs.
 - **General, reusable kit (2026-11-15):** the owner wants network-kit to work for any game and be reused, never tailored to a single project. Project rule in `AGENTS.md`: every feature is general, useful for at least two kinds of games, configurable with a sensible default and covered by the example games' tests; a need only one game has is solved in that game. Before Boomers, Bricks and Buzzy move here, their needs are checked against the core (D-012).
-- **Owner and host are separate (2026-11-15, D-019):** the room's owner (the creator) keeps the rights and keys and never loses them automatically, also during a long absence; the host is the browser that runs the game and may move to another player in games with takeover, without any of the owner's rights. What happens if the owner never returns is a setting per game, off by default. Details in D-019 in `docs/BACKLOG.md`. Built in run B.
-- **Waiting for the host is the default (2026-11-15):** when a host's connection is lost, the room pauses and waits; automatic takeover by another player is something a game turns on itself (Critical does). With takeover off, no player can become host and the game state is never sent to anyone but the host. Built in F-013; v0.1.0 still always takes over in host-run rooms.
+- **Owner and host are separate (2026-11-15, D-019):** the room's owner (the creator) keeps the rights and keys and never loses them automatically, also during a long absence; the host is the browser that runs the game and may move to another player in games with takeover, without any of the owner's rights. What happens if the owner never returns is a setting per game, off by default. Details in D-019 in `docs/BACKLOG.md`. Built in v0.2.0.
+- **Waiting for the host is the default (2026-11-15):** when a host's connection is lost, the room pauses and waits; automatic takeover by another player is something a game turns on itself (Critical does). With takeover off, no player can become host and the game state is never sent to anyone but the host. Built in v0.2.0.
 - **New roles when needed (2026-11-15):** no referee or other extra role is built before a game needs it; F-013 makes roles definable by each game so adding one later is a setting, not a core change.
 - **Public repository (2026-11-15):** network-kit is public (owner decision); it must never hold secrets.
 - **EU-only rooms (2026-11-15, D-011):** work on the owner's Cloudflare account: the first demo deploy created a room with `jurisdiction('eu')`. Games set `jurisdiction: 'eu'` (empty in local tests).
+- **Shape of v0.2.0 (2026-11-15, D-023; the owner left these details to the agent):**
+  - Places (named spots with a capacity: posts, sides, teams) replace posts.
+  - The host's snapshot is private to the host seat; newcomers get what they need as normal messages. (A quiz must never leak answers to joiners.)
+  - Message targets are everyone else, chosen ids, a role or a place; the sender never gets its own message. Messages to a host that is away are dropped, not queued.
+  - The creator is told to run the game through the same `host` event as a stand-in or a reloaded host, so games have one way in.
+  - Someone removed keeps their id if let in again but needs a new invitation; a ban also renews every link and makes the room private, because the same link would otherwise work from a new tab.
+  - The owner coming back with the owner key on another device takes over the owner's seat with the same participant id.
+  - Browser identities are kept per game server (and per `slot`), so games on the same site do not share them.
+  - One small shared `room.data` for lobby choices; a countdown can be called off.
+  - Default limits: 40 messages a second per connection, 600,000 messages and 12 busy hours a day per room, 8 connections that have not introduced themselves. Estimates until D-011 is done.
+  - The owner key claims the owner's seat only when that seat is not connected, so a second tab of the owner's browser joins as an ordinary participant.
+  - Someone whose connection was lost may come back without a key until the link is renewed, they are removed or someone is banned; leaving on purpose ends that standing.
+  - Without takeover, the kept game state does not pass on when ownership passes by itself.
+  - Buzzy fits a server-run room with a non-playing leader role; waiting for the host is for host-run games (D-012).
 - **Room cleanup (proposal 2026-11-13, built 2026-11-15):** a room is deleted 24 hours after the last player left (not 24 hours after it was created, so a long evening's game is never cut off), and an hour after it was closed. The server keeps nicknames and a hash of each player's random key, never the key itself. The owner may still change the 24 hours.
 - **Host-run rooms first (2026-11-15, run A):** network-kit supports both host-run rooms (F-006, Critical's choice) and server-run rooms; the demo has one of each. A player's identity is kept per browser tab by default, so a reload keeps the seat and several tabs on one computer are separate players.
 
 ## Current state (2026-11-15)
 
-- **v0.1.0 built (run A):** room server core and browser client (F-001), share links with a key per role and QR codes (F-002), Critical's needs: posts, targeted messages, snapshots (F-005), host-run rooms with takeover (F-006), pause and grace period (F-007), versions and updates (D-009). 32 unit tests, 8 integration tests against local workerd and a browser test of the demo page pass. Released as tag `v0.1.0` by the release workflow; the Test and Release workflows passed on GitHub on 2026-11-15. The demo deploy ran and skipped itself (no token yet).
-- **Demo on Cloudflare (2026-11-15):** https://network-kit-demo.l8p1.workers.dev (host-run demo page; the memory example under `/turns`). Deployed by `deploy-demo.yml`, whose check passed: the Worker answers and a room can be created with EU-only storage on the owner's account. Not yet opened on a phone.
-- **Reviewed (2026-11-15):** an independent review of v0.1.0 found real faults (state lost when a room sleeps, reconnect faults, a client stuck offline, no protection against uninvited connections or runaway cost) and design points to settle before games depend on them. Report: `docs/reviews/2026-11-15-v0.1.0.md`; tracked as B-014 to B-027 in `docs/BACKLOG.md`. **v0.1.0 should not go live in a game.**
-- **Next:** runs A (fix the faults) and B (settle the shape) in `docs/BACKLOG.md`, then a release. Critical ST8 F-040 may start its integration work in parallel but should not go live before that. D-019 and D-021 are decided; no decisions are waiting.
+- **v0.2.0 (runs A and B):** the faults from the independent review of v0.1.0 are fixed and the shape games build on is settled: owner and host are separate, a lost host is waited for unless the game turns takeover on, roles and places are defined by the game, limits keep one room or one connection from using up the free plan, and updates reach games as proposals on a branch. v0.1.0 must not be used.
+- **Checked before release:** an independent reviewer went through the release candidate and found two serious and about ten medium faults in the rewrite; they were fixed or recorded before the release (`docs/reviews/2026-11-15-v0.2.0-check.md`). Those last fixes have tests but were not checked again independently.
+- **Tests:** 107 unit tests (room logic, and the real client against it), 12 integration tests in local workerd (the three example games, a flooding connection, a long resend, a room that really sleeps), the demo page in Chromium, the compatibility check and the smoke test that ships with every copy.
+- **Not verified:** nothing has been tried on real phones (D-025); Cloudflare's free-plan figures (D-011), so the default limits are estimates.
+- **Next:** Critical ST8 F-040 (online mode) in `BadBagel47/critical` builds on v0.2.0, following `docs/INTEGRATION.md`. In network-kit: *Proposed runs* in `docs/BACKLOG.md`. Waiting for the owner: D-025 (two phones) and D-028 (how Boomers runs its game).
+- **Latest entries:** v0.2.0 hardening and shape, with an independent check before release (2026-11-15) · games pass D-012 (2026-11-15) · independent review of v0.1.0 (2026-11-15) · demo on Cloudflare, EU rooms confirmed (2026-11-15) · v0.1.0 (2026-11-15).
 
 ## One-time actions
 
@@ -53,10 +69,10 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 | Game | Repository | Status |
 | --- | --- | --- |
-| Critical ST8 | `BadBagel47/critical` (F-040, F-038) | First real user; integration can start with v0.1.0, go live only after runs A and B (review 2026-11-15) |
-| Boomers | `BadBagel47/boomers` (F-002) | Second |
-| Bricks | `BadBagel47/bricks` (F-007) | Later |
-| Buzzy | `BadBagel47/buzzy` (#408, #348) | Later, last |
+| Critical ST8 | `BadBagel47/critical` (F-040, F-038) | First real user; builds on v0.2.0 (host-run with takeover, as the crew example) |
+| Boomers | `BadBagel47/boomers` (F-002) | Second; fits host-run with takeover, but its documents say server-run (D-028) |
+| Bricks | `BadBagel47/bricks` (F-007) | Later; fits a host-run room as a relay; needs F-029 and the gate at round start (F-003) |
+| Buzzy | `BadBagel47/buzzy` (#408, #348) | Later, last; fits a server-run room with a non-playing leader |
 | Memory-type turn-based game | idea | Should fit without extra work |
 
 ## Documentation map
@@ -68,6 +84,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 | Features, bugs, design, proposed runs | `docs/BACKLOG.md` |
 | How games use network-kit (API, options, budget, privacy) | `docs/INTEGRATION.md` |
 | Changes per version | `CHANGELOG.md` |
-| Reviews and their proof scripts | `docs/reviews/` |
+| Reviews (v0.1.0 with proof scripts, the check of v0.2.0) | `docs/reviews/` |
 | Update workflow for games | `templates/update-network-kit.yml` |
-| Example games (host-run demo page, server-run memory) | `examples/demo/` |
+| Example games (crew game with takeover and its demo page, memory with rules in the room, quiz with a non-playing leader) | `examples/demo/` |
+| The smoke test that ships with every copy | `src/smoke.mjs` |

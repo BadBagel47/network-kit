@@ -12,8 +12,8 @@ Read them at the start of every session.
 
 Owner decisions behind these rules are recorded under *Decisions* in `docs/HANDOFF.md`.
 
-- network-kit is the shared multiplayer room server and client for the owner's hobby games (Boomers first, later Bricks, Buzzy and others).
-- The core handles rooms, codes, joining, seats, reconnection, share links, opening hours and administration. Game rules live in each game's own repository and plug into the core; the core never contains one game's rules.
+- network-kit is the shared multiplayer room server and client for the owner's hobby games (Critical ST8 first, then Boomers, later Bricks, Buzzy and others).
+- The core handles rooms, codes, joining, roles and seats, reconnection and share links; opening hours and administration are planned (F-003). Game rules live in each game's own repository and plug into the core; the core never contains one game's rules.
 - Every feature in network-kit must be general: described without naming a single game, useful for at least two kinds of games, configurable with a sensible default, and covered by the example games' tests. A need that only one game has is solved in that game.
 - Games use a versioned copy of the client and update when it suits them, so a change here never breaks all games at once.
 - Runs on the Cloudflare Workers Free plan. No paid plan or billing upgrade without the owner's approval.
