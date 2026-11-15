@@ -1,0 +1,19 @@
+# Agent instructions
+
+Follow the shared agent rules at
+https://raw.githubusercontent.com/BadBagel47/agent-rules/main/AGENTS.md
+(repo `BadBagel47/agent-rules`; fetch it via GitHub if the link cannot be read).
+Read them at the start of every session.
+
+- Current state, decisions and next steps: [docs/HANDOFF.md](docs/HANDOFF.md).
+- Backlog (features, bugs, design, proposed runs): [docs/BACKLOG.md](docs/BACKLOG.md).
+
+## Project rules (network-kit)
+
+Owner decisions behind these rules are recorded under *Decisions* in `docs/HANDOFF.md`.
+
+- network-kit is the shared multiplayer room server and client for the owner's hobby games (Boomers first, later Bricks, Buzzy and others).
+- The core handles rooms, codes, joining, seats, reconnection, share links, opening hours and administration. Game rules live in each game's own repository and plug into the core; the core never contains one game's rules.
+- Games use a versioned copy of the client and update when it suits them, so a change here never breaks all games at once.
+- Runs on the Cloudflare Workers Free plan. No paid plan or billing upgrade without the owner's approval.
+- Keep the daily free budget in mind in every design: rooms sleep when nobody plays, inputs are sent only when they change, and each game has its own share of the budget.
