@@ -76,6 +76,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 | Boomers | `BadBagel47/boomers` (F-002) | Second; fits host-run with takeover, but its documents say server-run (D-028) |
 | Bricks | `BadBagel47/bricks` (F-007) | Later; fits a host-run room as a relay; needs F-029 and the gate at round start (F-003) |
 | Buzzy | `BadBagel47/buzzy` (#408, #348) | Later, last; fits a server-run room with a non-playing leader |
+| Vättigt | `BadBagel47/vattigt` (D-011 there, `docs/NETWORK.md`) | Design phase; proposal: host-run room where every browser computes the same turn-based physics from the room's seed, teams as places. Fits v0.2.3 without changes |
 | Memory-type turn-based game | idea | Should fit without extra work |
 
 ## Documentation map
