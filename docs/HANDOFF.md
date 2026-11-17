@@ -4,7 +4,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 ## Shared rules and inventory
 
-- **Shared rules version:** v1.9 (2026-11-15), https://raw.githubusercontent.com/BadBagel47/agent-rules/main/AGENTS.md . The repo has followed the shared rules from the start (2026-11-15, v1.7); v1.8–v1.9 needed no change (no auto-merge workflow; agents push to main).
+- **Shared rules version:** v1.11 (2026-11-17), https://raw.githubusercontent.com/BadBagel47/agent-rules/main/AGENTS.md . The repo has followed the shared rules from the start (2026-11-15, v1.7); v1.8–v1.9 needed no change (no auto-merge workflow; agents push to main). v1.10–v1.11 (2026-11-17): reply format, "Regelkoll", open decisions listed as questions with recommendations under each proposed run group (applied to *Proposed runs* in `docs/BACKLOG.md`), choices shown as buttons; no other change needed in the repo.
 - Inventory: 2026-11-15
   - The repo was empty when set up: no branches, pull requests, issues or earlier documentation. The plan lived in the Bricks backlog as F-007 and was moved here on 2026-11-15 (ID mapping in `docs/BACKLOG.md`).
   - Sensitive information: none yet. Secrets (Cloudflare API token) must only ever be GitHub Secrets.

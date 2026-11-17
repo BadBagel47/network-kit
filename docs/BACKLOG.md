@@ -53,23 +53,30 @@
 | B-034 | Bug | The host role moves to another player in the lobby when the owner's phone switches app for a few seconds, and stays there when the owner is back; the demo then tells the owner to wait for the host although the owner can start | 2026-11-16, v0.2.3 (tested on the fake host, in local workerd and in Chromium; not yet on the owner's phone) |
 | F-035 | Feature | Room code length set by the game, 4 to 12 characters | 2026-11-17, v0.3.0; 4 characters by default from v0.4.0 (owner's decision) |
 
-## Proposed runs (2026-11-17, after v0.3.0)
+## Proposed runs (2026-11-17, rules v1.11)
 
-- **A** – strong model, high level – Administration and budget
-  - D-011 – Check Cloudflare's current free limits first, so the numbers below are right.
-  - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap.
-  - F-004 – Give each game a share of the daily free budget that closes it for the day when used up.
-  - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game; the gate is checked inside the room, also when a round starts (needed by Bricks), not on reconnects, and running rooms can be stopped.
-  - F-026 – Show players a clear message when the quota is used up, give the public demo a budget and turn on logging.
+- **A** – strong model, high level – Large states and fast-changing values
+  - F-036 – Large game states can be sent to players who join and kept for a change of host, so games with a large world (Critical ST8) work online.
+  - F-037 – The newest value of things like an aim is always sent, so the host never ends up with an old value when the client has to send less often.
+  - Question A1: How should large states be handled: split into parts, packed (compressed), or both? Recommendation: split into parts now, done by the kit for messages and snapshots without the game noticing; it works in every browser. Packing can be added later if the amount of data becomes a problem.
 - **B** – strong model, high level – Additions for Bricks and Buzzy
-  - F-029 – Let an invitation create a room nobody in it created, so two people opening the same link land in one room (Bricks).
-  - F-030 – Let the room keep a state for newcomers, so joiners and reloading participants get it without relying on the host.
+  - F-029 – A game's server can create a room that nobody in it created, so two people opening the same invitation land in one room (Bricks).
+  - F-030 – The room keeps a state for newcomers, so players who join or reload get it without the host being awake.
+  - Question B1: Who owns a room created by an invitation? Recommendation: the first participant who enters in a role that may host becomes owner and host, as in Bricks today ("the first to redeem becomes host").
+  - Question B2: Who sets the state for newcomers, and is there one per role? Recommendation: the host (or the rules, in server-run rooms) sets it; one shared state by default and optionally one per role, so a quiz can give players and screens different views.
 - **C** – standard model, medium level – Smaller additions and follow-ups
-  - F-031 – Unban and the other small additions from the games pass, so Buzzy's leader can undo a ban.
-  - F-032 – Notice a room nobody is playing in, and test the update and release workflows automatically.
-- **D** – strong model, high level – Large states and fast-changing values
-  - F-036 – Pack or split full states and snapshots that are larger than the limits, so games with a large world (Critical ST8) can let players join and a new host take over.
-  - F-037 – Keep the newest value of things like an aim when the client has to send less often, so the host never ends up with an old value.
+  - F-031 – Lifting a ban, with a list of banned people for the owner, so Buzzy's leader can undo a ban; the other small additions wait until a game needs them.
+  - F-032 – Rooms nobody is playing in are noticed, and the update and release workflows are tested automatically, so a forgotten room costs less and workflow mistakes are caught early.
+  - Question C1: Which of the small additions in F-031 now? Recommendation: only lifting a ban and the ban list (Buzzy needs them); the rest when a game asks.
+- **D** – strong model, high level – Administration and budget
+  - D-011 – Cloudflare's current free limits are checked, so the numbers below are right (needs a read-only Cloudflare token for account analytics, added by the owner as a secret).
+  - F-008 – Usage per game today and this month is shown, with plan, estimated cost and an optional spending cap.
+  - F-004 – Each game gets a share of the daily free budget and closes for the day when it is used up.
+  - F-003 – One admin page with on/off/until, private only and an emergency stop per game; checked inside the room, also when a round starts (Bricks), not on reconnects.
+  - F-026 – Players get a clear message when the quota is used up; the public demo gets a budget; logging is turned on.
+  - Question D1: How does the owner sign in to the admin page? Recommendation: Cloudflare Access in front of the page (sign-in with a one-time code by email; free for a few users, to be confirmed in D-011), so the kit needs no login code of its own.
+  - Question D2: How is the daily free budget shared between the games? Recommendation: set per game on the admin page, equal shares by default.
+  - Question D3: Should the new admin page also replace Bricks' own admin Worker? Recommendation: no, not now: it serves the games on network-kit, and Bricks moves to it when Bricks moves to network-kit.
 
 Owner tasks: D-025 (try the demo on phones; on one phone, use two different browser apps) and D-028 (decide how Boomers runs its game).
 
