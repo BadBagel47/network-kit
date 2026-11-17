@@ -226,9 +226,17 @@ function press(k, down) {
   if (room.isHost) inputs[room.me] = myKeys;
   else room.send({ type: 'input', keys: myKeys }); // only when the keys change
 }
+/** True while the player types in a field: then the keys are letters, not steering (B-041). */
+function typing(target) {
+  return target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'));
+}
 function key(event, down) {
   const k = KEYMAP[event.code];
   if (!k) return;
+  if (typing(event.target)) {
+    if (!down) press(k, false); // a key held before the field got focus is still let go
+    return;
+  }
   event.preventDefault();
   press(k, down);
 }

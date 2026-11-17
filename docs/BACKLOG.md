@@ -22,7 +22,6 @@
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
 | F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
-| B-041 | Bug | Demo: the letters W, A, S and D (and the arrow keys) cannot be typed in the name field, because the game takes them as steering keys on the whole page | High | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf). Found by the owner 2026-11-17 in the phone/iPad test (D-025); cause found | Standard |
 
 ## Done
 
@@ -56,6 +55,7 @@
 | F-037 | Feature | Values where only the latest counts (an aim that changes 60 times a second): when the client holds back sends to keep the room's pace, keep and send the newest value per kind instead of dropping it | 2026-11-17, v0.5.0: `send(data, { latest: kind })` |
 | F-038 | Feature | Demo: arrow buttons on the screen for phones and tablets | 2026-11-17 (demo only; tested in Chromium and on an emulated Pixel, not yet on the owner's devices) |
 | D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | 2026-11-17: figures checked in Cloudflare's documentation (read from its source on GitHub, since the documentation site is blocked in the agent's environment); EU rooms confirmed 2026-11-15. See the D-011 details |
+| B-041 | Bug | Demo: the letters W, A, S and D (and the arrow keys) could not be typed in the name field, because the game took them as steering keys on the whole page | 2026-11-17 (demo only; tested in Chromium, not yet on the owner's iPad) |
 
 ## Proposed runs (2026-11-17, rules v1.12)
 
@@ -316,7 +316,7 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 ### B-041 Steering keys block typing (2026-11-17)
 - Found by the owner in the test with an iPad keyboard (D-025): the letter A could not be typed in the name field; other letters worked.
 - Cause (read in the code): the demo listens for keys on the whole page and stops W, A, S, D and the arrow keys from doing anything else, also while the player types in a text field.
-- Fix: let the keys through when a text field (or another field that takes typing) has focus. Demo only; the kit is unchanged.
+- Fixed 2026-11-17: the keys are let through while a text field (or another field that takes typing) has focus; a key held before the field got focus is still let go. The browser test types the steering letters and arrow keys in the name field. Demo only; the kit is unchanged.
 
 ### F-035 Room code length (2026-11-17, v0.3.0)
 - Asked for by Buzzy (#408) and Bricks (F-007), which use four-character codes; the owner decided on 4 to 12 characters, easy for each game to set.

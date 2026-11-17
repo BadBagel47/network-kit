@@ -28,6 +28,12 @@ async function page(name) {
 try {
   const a = await page('Ada');
   await a.p.goto(`${server.base}/`);
+  // The steering keys can be typed in the name field (B-041).
+  await a.p.click('#name');
+  await a.p.keyboard.type('Wasd ArrowKeys');
+  await a.p.keyboard.press('ArrowLeft');
+  await a.p.keyboard.type('x');
+  assert.equal(await a.p.inputValue('#name'), 'Wasd ArrowKeyxs', 'letters and arrow keys work in the name field');
   await a.p.fill('#name', 'Ada');
   await a.p.click('#create');
   await a.p.waitForSelector('#game:not([hidden])');
