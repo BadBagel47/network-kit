@@ -56,30 +56,35 @@
 | F-037 | Feature | Values where only the latest counts (an aim that changes 60 times a second): when the client holds back sends to keep the room's pace, keep and send the newest value per kind instead of dropping it | 2026-11-17, v0.5.0: `send(data, { latest: kind })` |
 | F-038 | Feature | Demo: arrow buttons on the screen for phones and tablets | 2026-11-17 (demo only; tested in Chromium and on an emulated Pixel, not yet on the owner's devices) |
 
-## Proposed runs (2026-11-17, rules v1.11)
+## Proposed runs (2026-11-17, rules v1.12)
+
+Ordered for: what the games moving here next need first (Bricks, Buzzy), operations and budget after; Vättigt, the first game, needs nothing here to start.
 
 - **A** – strong model, high level – Additions for Bricks and Buzzy
   - F-029 – A game's server can create a room that nobody in it created, so two people opening the same invitation land in one room (Bricks).
   - F-030 – The room keeps a state for newcomers, so players who join or reload get it without the host being awake.
-  - Question A1: Who owns a room created by an invitation? Recommendation: the first participant who enters in a role that may host becomes owner and host, as in Bricks today ("the first to redeem becomes host").
-  - Question A2: Who sets the state for newcomers, and is there one per role? Recommendation: the host (or the rules, in server-run rooms) sets it; one shared state by default and optionally one per role, so a quiz can give players and screens different views.
+  - Question: Who owns a room created by an invitation? Recommendation: the first participant who enters in a role that may host becomes owner and host, as in Bricks today ("the first to redeem becomes host").
+  - Question: Who sets the state for newcomers, and is there one per role? Recommendation: the host (or the rules, in server-run rooms) sets it; one shared state by default and optionally one per role, so a quiz can give players and screens different views.
 - **B** – standard model, medium level – Smaller additions and follow-ups
   - F-031 – Lifting a ban, with a list of banned people for the owner, so Buzzy's leader can undo a ban; the other small additions wait until a game needs them.
   - F-032 – Rooms nobody is playing in are noticed, and the update and release workflows are tested automatically, so a forgotten room costs less and workflow mistakes are caught early.
-  - Question B1: Which of the small additions in F-031 now? Recommendation: only lifting a ban and the ban list (Buzzy needs them); the rest when a game asks.
+  - Question: Which of the small additions in F-031 now? Recommendation: only lifting a ban and the ban list (Buzzy needs them); the rest when a game asks.
 - **C** – strong model, high level – Administration and budget
   - D-011 – Cloudflare's current free limits are checked, so the numbers below are right (needs a read-only Cloudflare token for account analytics, added by the owner as a secret).
   - F-008 – Usage per game today and this month is shown, with plan, estimated cost and an optional spending cap.
   - F-004 – Each game gets a share of the daily free budget and closes for the day when it is used up.
   - F-003 – One admin page with on/off/until, private only and an emergency stop per game; checked inside the room, also when a round starts (Bricks), not on reconnects.
   - F-026 – Players get a clear message when the quota is used up; the public demo gets a budget; logging is turned on.
-  - Question C1: How does the owner sign in to the admin page? Recommendation: Cloudflare Access in front of the page (sign-in with a one-time code by email; free for a few users, to be confirmed in D-011), so the kit needs no login code of its own.
-  - Question C2: How is the daily free budget shared between the games? Recommendation: set per game on the admin page, equal shares by default.
-  - Question C3: Should the new admin page also replace Bricks' own admin Worker? Recommendation: no, not now: it serves the games on network-kit, and Bricks moves to it when Bricks moves to network-kit.
+  - Question: How does the owner sign in to the admin page? Recommendation: Cloudflare Access in front of the page (sign-in with a one-time code by email; free for a few users, to be confirmed in D-011), so the kit needs no login code of its own.
+  - Question: How is the daily free budget shared between the games? Recommendation: set per game on the admin page, equal shares by default.
+  - Question (shown in a later proposal): Should the new admin page also replace Bricks' own admin Worker? Recommendation: no, not now: it serves the games on network-kit, and Bricks moves to it when Bricks moves to network-kit.
+- **D** – standard model, medium level – Turn-based games (from Vättigt)
+  - F-039 – A playing participant can send straight to everyone, so a turn's inputs cross the room once and keep flowing while the host's phone sleeps.
+  - F-040 – The host can name who takes over first (e.g. the player whose turn it is), so takeover lands on a phone that is awake.
 
-Owner tasks: D-025 (try the demo on phones; on one phone, use two different browser apps) and D-028 (decide how Boomers runs its game).
+Owner tasks: D-025 (try the demo on phones and an iPad) and D-028 (decide how Boomers runs its game).
 
-Vättigt (first game on network-kit, owner's decision 2026-11-17) and Critical ST8 F-040 (online mode) can build on v0.5.0 following `docs/INTEGRATION.md`. None of the runs here is needed for them.
+Vättigt (first game on network-kit, owner's decision 2026-11-17) and Critical F-040 (online mode) can build on v0.5.0 following `docs/INTEGRATION.md`. None of the runs here is needed for them.
 
 ## Details
 
@@ -118,13 +123,13 @@ Vättigt (first game on network-kit, owner's decision 2026-11-17) and Critical S
 - The admin page shows each game's usage today.
 
 ### F-005 Critical ST8 needs (updated 2026-11-15; done in v0.1.0)
-- Critical ST8 (https://github.com/BadBagel47/critical, the owner's top-down co-op space game) is the first real user, decided by the owner on 2026-11-15. Its online mode is F-040 and late join F-038 there; network preparations D-060, D-061, D-062 there.
+- Critical ST8 (https://github.com/BadBagel47/critical, the owner's top-down co-op space game) was the first real user, decided by the owner on 2026-11-15 (Vättigt is first since 2026-11-17). Its online mode is Critical F-040 and late join Critical F-038; network preparations Critical D-060, D-061, D-062.
 - What the game already is (2026-11-15): playable solo end to end; up to three players online share one frigate on three posts (Captain, Gunner, Engineer) and may switch posts freely; solo starts as Captain. Boarding switches to a top-down on-foot view. Pure JavaScript without a build step, hosted on GitHub Pages, moving to Cloudflare when the engine is built in.
 - The game logic is deterministic and separate from drawing and input: the whole game is one plain object (about 25 kB, about 3 kB changes all the time, measured 2026-11-14; measured again 2026-11-17: 41 kB at the start and up to 187 kB with visited bases, see F-036), stepped 60 times a second, and `stepPlayers()` takes each player's requests. That fits F-006 (one player's browser runs the game).
 - Posts on a shared ship: a seat can be a post; players claim and switch posts freely, a post is held by at most one player, and the room tells everyone who holds what.
 - Messages to one player or a group, not only to everyone: players on the ship and players boarding a station see different things, and the host decides who gets what. This also saves the daily budget.
-- Snapshots for join and rejoin: a player who joins mid-game or comes back gets the full state once (about 25 kB), then only changes (F-038 there).
-- Viewer seat for a big screen that watches without controlling (F-137 there), using the viewer role from F-001 and F-002.
+- Snapshots for join and rejoin: a player who joins mid-game or comes back gets the full state once (about 25 kB), then only changes (Critical F-038).
+- Viewer seat for a big screen that watches without controlling (Critical F-137), using the viewer role from F-001 and F-002.
 - Saved games are text and stay in the players' browsers (save, export, import already exist). Storing a crew's save on the server is not needed now; revisit if the owner wants to continue a crew's game from any device.
 - If the game later outgrows the free plan, see the plan decision in `docs/HANDOFF.md` and F-008.
 
@@ -177,7 +182,7 @@ Vättigt (first game on network-kit, owner's decision 2026-11-17) and Critical S
 
 ### D-012 Fit for the other games (2026-11-15)
 - The owner wants network-kit to work for any game and be reused, not tailored to one project (project rule in `AGENTS.md`).
-- Go through Boomers (F-002 there), Bricks (F-007 there, its 2 Players mode and private invitations) and Buzzy (#408, #348, #331 there) and compare with v0.1.0: roles, host behaviour, late join, timers, rematch, admin needs.
+- Go through Boomers (Boomers F-002), Bricks (Bricks F-007, its 2 Players mode and private invitations) and Buzzy (Buzzy #408, #348, #331) and compare with v0.1.0: roles, host behaviour, late join, timers, rematch, admin needs.
 - Review 2026-11-15: do this as a short paper pass before D-019, F-013 and D-023, since its value is finding API changes while they are free.
 - Output: a short list in this section of what already fits and what is missing, each missing piece written as a general feature with its own ID. Nothing game-specific goes into network-kit.
 
@@ -314,7 +319,7 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 
 ### F-036 Large states (2026-11-17)
 - From a review of Critical ST8's online plans: the game's whole state is 41 kB at the start, about 154 kB with one base the crew has been inside and 187 kB after a while, and it grows with every base visited. The defaults are 64 kB per message (`maxMessageBytes`) and 512 kB per snapshot (`maxSnapshotBytes`), so a full state for a joiner does not fit in one message, and a long game would not fit as a snapshot.
-- Critical shrinks its own state (D-263 there: places rebuilt from a seed, only changes kept), but other games with a large world will meet the same limit.
+- Critical shrinks its own state (Critical D-263: places rebuilt from a seed, only changes kept), but other games with a large world will meet the same limit.
 - General options: pack messages and snapshots (browsers have `CompressionStream`; check Safari and the Worker runtime), split a large message into parts that the client puts together, or both. Large sends should not count as many messages against the per-connection pace.
 - Check Cloudflare's limit on the size of one stored value in a Durable Object before relying on 512 kB snapshots (part of D-011).
 

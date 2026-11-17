@@ -4,7 +4,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 ## Shared rules and inventory
 
-- **Shared rules version:** v1.11 (2026-11-17), https://raw.githubusercontent.com/BadBagel47/agent-rules/main/AGENTS.md . The repo has followed the shared rules from the start (2026-11-15, v1.7); v1.8–v1.9 needed no change (no auto-merge workflow; agents push to main). v1.10–v1.11 (2026-11-17): reply format, "Regelkoll", open decisions listed as questions with recommendations under each proposed run group (applied to *Proposed runs* in `docs/BACKLOG.md`), choices shown as buttons; no other change needed in the repo.
+- **Shared rules version:** v1.12 (2026-11-17), https://raw.githubusercontent.com/BadBagel47/agent-rules/main/AGENTS.md . The repo has followed the shared rules from the start (2026-11-15, v1.7); v1.8–v1.9 needed no change (no auto-merge workflow; agents push to main). v1.10–v1.11 (2026-11-17): reply format, "Regelkoll", open decisions as questions with recommendations under the proposed run groups. v1.12 (2026-11-17): the saved run proposal starts with what the order is based on, shows dependencies and keeps questions without labels; IDs from other repos are written with the repo name in front; buttons only for run choices. Applied to *Proposed runs* in `docs/BACKLOG.md` and to cross-repo references in the current docs.
 - Inventory: 2026-11-15
   - The repo was empty when set up: no branches, pull requests, issues or earlier documentation. The plan lived in the Bricks backlog as F-007 and was moved here on 2026-11-15 (ID mapping in `docs/BACKLOG.md`).
   - Sensitive information: none yet. Secrets (Cloudflare API token) must only ever be GitHub Secrets.
@@ -84,7 +84,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 | Boomers | `BadBagel47/boomers` (F-002) | Second; fits host-run with takeover, but its documents say server-run (D-028) |
 | Bricks | `BadBagel47/bricks` (F-007) | Later; fits a host-run room as a relay; needs F-029 and the gate at round start (F-003) |
 | Buzzy | `BadBagel47/buzzy` (#408, #348) | Later, last; fits a server-run room with a non-playing leader |
-| Vättigt | `BadBagel47/vattigt` (D-011 there, `docs/NETWORK.md`) | First game on network-kit (owner 2026-11-17); a local same-screen match is playable, online play not started; served from its own Worker. Plan: host-run room where every browser computes the same turn-based physics from the room's seed, teams as places. Fits v0.5.0 without changes; two non-blocking ideas recorded as F-039 and F-040 (2026-11-17) |
+| Vättigt | `BadBagel47/vattigt`, formerly `vettigt` (Vättigt D-011, its `docs/NETWORK.md`) | First game on network-kit (owner 2026-11-17); a local same-screen match is playable, online play not started; served from its own Worker. Plan: host-run room where every browser computes the same turn-based physics from the room's seed, teams as places. Fits v0.5.0 without changes; two non-blocking ideas recorded as F-039 and F-040 (2026-11-17) |
 | Memory-type turn-based game | idea | Should fit without extra work |
 
 ## Documentation map
