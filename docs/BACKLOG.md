@@ -79,7 +79,7 @@
 
 Owner tasks: D-025 (try the demo on phones; on one phone, use two different browser apps) and D-028 (decide how Boomers runs its game).
 
-Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.5.0 following `docs/INTEGRATION.md`. Neither run here is needed for it.
+Vättigt (first game on network-kit, owner's decision 2026-11-17) and Critical ST8 F-040 (online mode) can build on v0.5.0 following `docs/INTEGRATION.md`. None of the runs here is needed for them.
 
 ## Details
 
