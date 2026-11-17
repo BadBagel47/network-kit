@@ -13,7 +13,7 @@
 | F-003 | Feature | One admin page for all games: on/off/until, private only, emergency stop | Medium | Idea; must include the gate redesign (review finding 15, D-012) | Strong, high |
 | F-004 | Feature | Automatic daily budget per game | Medium | Proposal | Standard |
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | First part built 2026-11-17: admin page with usage per game against the free limits (`docs/ADMIN.md`), published at https://network-kit-admin.l8p1.workers.dev and checked against Cloudflare's real figures (all six figures arrive). Left: plan, estimated cost, spending cap | Standard |
-| D-025 | Design | Try the demo on real phones: lock screen, wifi to mobile data, tab in the background (two phones, or two browser apps on one); include an iPad, since Critical ST8's touch controls start on iPad (2026-11-17) | Medium | Owner task; started 2026-11-15 on one phone (found B-033 and B-034) | – |
+| D-025 | Design | Try the demo on real phones: lock screen, wifi to mobile data, tab in the background (two phones, or two browser apps on one); include an iPad, since Critical ST8's touch controls start on iPad (2026-11-17) | Medium | Owner task; started 2026-11-15 on one phone (found B-033 and B-034); 2026-11-17 iPad + Pixel, part 1 done (found B-041 to B-044), parts 2 and 3 left | – |
 | F-026 | Feature | Operations: what players see when the daily quota is used up, a budget for the public demo, logging in production | Low | Proposal from the review 2026-11-15 | Standard |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
 | F-029 | Feature | Rooms created by a game's server without a participating creator (e.g. an invitation two people open), with the first eligible participant leading | Medium | Idea from the games pass (D-012); needed when Bricks moves | Strong, high |
@@ -22,6 +22,9 @@
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
 | F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
+| B-042 | Bug | Demo: players who do not run the game see the ships move jerkily (about 15 steps a second), while the host sees them smooth | Medium | Found by the owner 2026-11-17 (D-025 part 1); cause found: the host sends positions 15 times a second and the others draw them as they come, without smoothing between them | Standard |
+| B-043 | Bug | "Someone joined" instead of the name: the room tells the others that a participant joined before it sends the room's new list, so the name is not known yet | Medium | Found by the owner 2026-11-17 (D-025 part 1, test 10); reproduced on the fake host | Standard |
+| B-044 | Bug | A participant away longer than the grace period (60 s; the test locked the phone for 2 min) comes back as the same participant but without the place (B lost gunner), and is announced as joined, not back | Medium | Found by the owner 2026-11-17 (D-025 part 1); reproduced on the fake host; works as built, but the place is lost. Needs the owner's answer (see Proposed runs) | Standard |
 
 ## Done
 
@@ -317,6 +320,23 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - Found by the owner in the test with an iPad keyboard (D-025): the letter A could not be typed in the name field; other letters worked.
 - Cause (read in the code): the demo listens for keys on the whole page and stops W, A, S, D and the arrow keys from doing anything else, also while the player types in a text field.
 - Fixed 2026-11-17: the keys are let through while a text field (or another field that takes typing) has focus; a key held before the field got focus is still let go. The browser test types the steering letters and arrow keys in the name field. Demo only; the kit is unchanged.
+
+### D-025 results, 2026-11-17 (iPad host with keyboard, Pixel 10 Pro as B), part 1
+- Works: joining by QR code, taking a place, steering with keys and screen arrows, takeover during a game and the owner coming back as owner.
+- Found: B-041 (steering letters could not be typed in the name field; fixed the same evening), B-042 (jerky ships for those who do not run the game), B-043 ("Someone joined" instead of the name), B-044 (after a 2-minute lock B was back without the gunner place).
+- Note: tests 2 and 10 lock the screen for 2 minutes, longer than the demo's 60-second grace period, so those participants were removed and came back as new joins; the test plan did not say so.
+
+### B-042 Jerky ships for those who do not run the game (2026-11-17)
+- The host steps the game 30 times a second and sends positions 15 times a second (`examples/demo/public/app.js`); the others set each ship to the latest position as it arrives and draw it, so they see 15 jumps a second with uneven gaps.
+- Fix (demo): draw the others' ships a little behind (about 100 ms) and move smoothly between the last two positions. The guide gets a short note that games smooth received positions themselves.
+
+### B-043 "Someone joined" (2026-11-17)
+- The room sends the event "joined" before the updated room list (`hello` and `admitWaiting` in `src/server/room-core.js`), so the client's `peer` event has no player yet and the demo prints "Someone".
+- Fix (kit, bug-fix release): send the room list first, then the event, and include the participant's name in the event.
+
+### B-044 Place lost after a long absence (2026-11-17)
+- After the grace period the participant is removed; the room remembers them (same id when they return), but not their place, so B came back without gunner and was announced as joined.
+- Choice for the owner: give the place back when the participant returns and it is still free (general: Critical's stations, Vättigt's teams), and/or a longer grace period in the demo.
 
 ### F-035 Room code length (2026-11-17, v0.3.0)
 - Asked for by Buzzy (#408) and Bricks (F-007), which use four-character codes; the owner decided on 4 to 12 characters, easy for each game to set.
