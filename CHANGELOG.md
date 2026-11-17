@@ -10,6 +10,19 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.5.0 (2026-11-17)
+
+Affects: games with large states or fast-changing values (Critical ST8 first). Nothing to change in a game that keeps its current code (F-036, F-037).
+
+- New: large messages and snapshots travel in parts and the room stores the snapshot in parts, so a game state of a few hundred kilobytes can be sent to a joiner and kept for a change of host. Default limits raised to 256 kB per message and 1 MB per snapshot. The client takes the room's limits at the welcome.
+- New: `send(data, { latest: kind })` sends only the newest value of each kind when values come faster than the pace allows, also after a reconnect. The demo sends its positions this way.
+- Wire protocol 3: client and server must both be 0.5. Snapshots stored by 0.4 are still read.
+
+### Upgrade guide from 0.4
+
+- Take the client and the server part together (as always); a page left open from before is asked to reload.
+- Optional: send positions, aims and the like with `latest` instead of `reliable: false`; with a large state, raise `snapshotSaveMs` (see *Large states* in the guide).
+
 ## 0.4.0 (2026-11-17)
 
 Affects: games that do not set `codeLength` (new rooms get four-character codes). Owner's decision (F-035).

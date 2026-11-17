@@ -256,11 +256,11 @@ setInterval(() => {
     ship.x = Math.max(10, Math.min(590, ship.x + ship.vx));
     ship.y = Math.max(10, Math.min(350, ship.y + ship.vy));
   }
-  // Positions 15 times a second; not worth resending, the next one replaces them.
-  // (Nothing is sent while the host is alone in the room.)
+  // Positions 15 times a second; only the newest counts, so the kit sends the
+  // latest one whenever the pace allows. (Nothing is sent while the host is alone.)
   if (world.tick % 2 === 0) {
     const p = Object.entries(world.ships).map(([id, s]) => [id, Math.round(s.x), Math.round(s.y)]);
-    room.send({ type: 'pos', tick: world.tick, p }, { reliable: false });
+    room.send({ type: 'pos', tick: world.tick, p }, { latest: 'pos' });
   }
   // The full state every 3 seconds, kept by the room for a reload or a takeover.
   if (world.tick % 90 === 1) room.sendSnapshot(world);

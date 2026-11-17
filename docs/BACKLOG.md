@@ -21,8 +21,6 @@
 | F-030 | Feature | A room-kept state for newcomers, optionally per role, so joiners and reloading participants get it without relying on the host | Medium | Idea from the games pass (D-012) | Strong, high |
 | F-031 | Feature | Smaller additions found in the games pass: automatic placement, ready flags, pause timeline in server time, grace period per phase, unban and ban list, admit one by one, access per role, private kept state per participant, server time on relayed messages, state saved in parts, rate caps per role | Low | Ideas from the games pass (D-012); each is added when a game needs it | Standard |
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
-| F-036 | Feature | Large states: send a full state to a joiner and keep a snapshot when the game's state is larger than the default limits, by packing (compression) and/or splitting into parts; check Cloudflare's limit on one stored value for the snapshot | Medium | Pågår 2026-11-17 (run A, split into parts per the owner's answer to question A1) | Strong, high |
-| F-037 | Feature | Values where only the latest counts (an aim that changes 60 times a second): when the client holds back sends to keep the room's pace, keep and send the newest value per kind instead of dropping it | Medium | Pågår 2026-11-17 (run A, split into parts per the owner's answer to question A1) | Strong, medium |
 
 ## Done
 
@@ -52,35 +50,33 @@
 | B-033 | Bug | A new tab opened from a game page in the same browser becomes the same participant (here: the owner and host) and closes the first tab; the demo then also skips the name | 2026-11-15, v0.2.2 (tested in Chromium and on an emulated phone; not yet on the owner's phone) |
 | B-034 | Bug | The host role moves to another player in the lobby when the owner's phone switches app for a few seconds, and stays there when the owner is back; the demo then tells the owner to wait for the host although the owner can start | 2026-11-16, v0.2.3 (tested on the fake host, in local workerd and in Chromium; not yet on the owner's phone) |
 | F-035 | Feature | Room code length set by the game, 4 to 12 characters | 2026-11-17, v0.3.0; 4 characters by default from v0.4.0 (owner's decision) |
+| F-036 | Feature | Large states: send a full state to a joiner and keep a snapshot when the game's state is larger than the default limits, by packing (compression) and/or splitting into parts; check Cloudflare's limit on one stored value for the snapshot | 2026-11-17, v0.5.0: split into parts (owner's answer to question A1), messages and stored snapshots; tested in local workerd |
+| F-037 | Feature | Values where only the latest counts (an aim that changes 60 times a second): when the client holds back sends to keep the room's pace, keep and send the newest value per kind instead of dropping it | 2026-11-17, v0.5.0: `send(data, { latest: kind })` |
 
 ## Proposed runs (2026-11-17, rules v1.11)
 
-- **A** – strong model, high level – Large states and fast-changing values
-  - F-036 – Large game states can be sent to players who join and kept for a change of host, so games with a large world (Critical ST8) work online.
-  - F-037 – The newest value of things like an aim is always sent, so the host never ends up with an old value when the client has to send less often.
-  - Question A1: How should large states be handled: split into parts, packed (compressed), or both? Recommendation: split into parts now, done by the kit for messages and snapshots without the game noticing; it works in every browser. Packing can be added later if the amount of data becomes a problem.
-- **B** – strong model, high level – Additions for Bricks and Buzzy
+- **A** – strong model, high level – Additions for Bricks and Buzzy
   - F-029 – A game's server can create a room that nobody in it created, so two people opening the same invitation land in one room (Bricks).
   - F-030 – The room keeps a state for newcomers, so players who join or reload get it without the host being awake.
-  - Question B1: Who owns a room created by an invitation? Recommendation: the first participant who enters in a role that may host becomes owner and host, as in Bricks today ("the first to redeem becomes host").
-  - Question B2: Who sets the state for newcomers, and is there one per role? Recommendation: the host (or the rules, in server-run rooms) sets it; one shared state by default and optionally one per role, so a quiz can give players and screens different views.
-- **C** – standard model, medium level – Smaller additions and follow-ups
+  - Question A1: Who owns a room created by an invitation? Recommendation: the first participant who enters in a role that may host becomes owner and host, as in Bricks today ("the first to redeem becomes host").
+  - Question A2: Who sets the state for newcomers, and is there one per role? Recommendation: the host (or the rules, in server-run rooms) sets it; one shared state by default and optionally one per role, so a quiz can give players and screens different views.
+- **B** – standard model, medium level – Smaller additions and follow-ups
   - F-031 – Lifting a ban, with a list of banned people for the owner, so Buzzy's leader can undo a ban; the other small additions wait until a game needs them.
   - F-032 – Rooms nobody is playing in are noticed, and the update and release workflows are tested automatically, so a forgotten room costs less and workflow mistakes are caught early.
-  - Question C1: Which of the small additions in F-031 now? Recommendation: only lifting a ban and the ban list (Buzzy needs them); the rest when a game asks.
-- **D** – strong model, high level – Administration and budget
+  - Question B1: Which of the small additions in F-031 now? Recommendation: only lifting a ban and the ban list (Buzzy needs them); the rest when a game asks.
+- **C** – strong model, high level – Administration and budget
   - D-011 – Cloudflare's current free limits are checked, so the numbers below are right (needs a read-only Cloudflare token for account analytics, added by the owner as a secret).
   - F-008 – Usage per game today and this month is shown, with plan, estimated cost and an optional spending cap.
   - F-004 – Each game gets a share of the daily free budget and closes for the day when it is used up.
   - F-003 – One admin page with on/off/until, private only and an emergency stop per game; checked inside the room, also when a round starts (Bricks), not on reconnects.
   - F-026 – Players get a clear message when the quota is used up; the public demo gets a budget; logging is turned on.
-  - Question D1: How does the owner sign in to the admin page? Recommendation: Cloudflare Access in front of the page (sign-in with a one-time code by email; free for a few users, to be confirmed in D-011), so the kit needs no login code of its own.
-  - Question D2: How is the daily free budget shared between the games? Recommendation: set per game on the admin page, equal shares by default.
-  - Question D3: Should the new admin page also replace Bricks' own admin Worker? Recommendation: no, not now: it serves the games on network-kit, and Bricks moves to it when Bricks moves to network-kit.
+  - Question C1: How does the owner sign in to the admin page? Recommendation: Cloudflare Access in front of the page (sign-in with a one-time code by email; free for a few users, to be confirmed in D-011), so the kit needs no login code of its own.
+  - Question C2: How is the daily free budget shared between the games? Recommendation: set per game on the admin page, equal shares by default.
+  - Question C3: Should the new admin page also replace Bricks' own admin Worker? Recommendation: no, not now: it serves the games on network-kit, and Bricks moves to it when Bricks moves to network-kit.
 
 Owner tasks: D-025 (try the demo on phones; on one phone, use two different browser apps) and D-028 (decide how Boomers runs its game).
 
-Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.4.0 following `docs/INTEGRATION.md`. Neither run here is needed for it.
+Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.5.0 following `docs/INTEGRATION.md`. Neither run here is needed for it.
 
 ## Details
 
@@ -323,3 +319,8 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - Asked by Critical ST8 (its agent, by message): its Gunner's aim changes 60 times a second, but a connection may send at most 40 messages a second. Today the client keeps the pace by holding back reliable messages and dropping `reliable: false` ones that come too fast, so the newest aim can be the one that is dropped and the host is left with an older value until the next change.
 - Proposal: `send(data, { latest: 'aim' })` keeps one pending value per kind and sends the newest one as soon as the pace allows. General: positions, aims, sliders.
 - Until then a game sends such values at most about 20 times a second itself, and sends the final value with the default (reliable) when the input stops.
+
+### Run A result (2026-11-17, v0.5.0)
+- F-036: client and room split any text above 16,000 characters into parts and join them; the room stores the snapshot in parts (meta record plus text parts) and still reads the 0.4 format. Parts count against the connection's pace; a joined message counts once against the room's daily budget. Default limits 256 kB per message and 1 MB per snapshot. Tested: unit tests, the real client against the room, and local workerd with a 190 kB state to a joiner and a 600 kB snapshot handed to a new host.
+- F-037: `send(data, { latest: kind })` keeps the newest value per kind and sends it when the pace allows, also after a reconnect; dropped on a role change. The demo's positions use it.
+- Cloudflare's own limits on one WebSocket message and one stored value are still unchecked in production (D-011); parts of 16,000 characters stay far below the values known from memory.

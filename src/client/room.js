@@ -12,8 +12,11 @@
 // forgotten tab does not keep knocking for ever.
 
 import {
-  PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, normalizeCode, isValidCode,
+  PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, normalizeCode, isValidCode, PART_CHARS, splitIntoParts, PartJoiner,
 } from '../shared/protocol.js';
+
+// The largest text a client accepts from the room (joined from parts).
+const MAX_INCOMING_CHARS = 8 * 1024 * 1024;
 import { tabSession } from './tab.js';
 
 // Identities already renewed in this page because the tab was a copy.
@@ -100,8 +103,11 @@ export class NetworkRoom {
     this.maxQueueAgeMs = o.maxQueueAgeMs ?? 60_000; // game messages older than this are not resent
     this.aloneSnapshotMs = o.aloneSnapshotMs ?? 300_000; // a host alone in the room stores state this seldom
     this.hostSilentMs = o.hostSilentMs ?? null;
-    this.maxMessageBytes = o.maxMessageBytes ?? 64 * 1024;
-    this.maxSnapshotBytes = o.maxSnapshotBytes ?? 512 * 1024;
+    // The room tells its own limits at the welcome; these apply until then.
+    // Limits given here are kept when they are lower than the room's.
+    this.ownLimits = { message: o.maxMessageBytes ?? Infinity, snapshot: o.maxSnapshotBytes ?? Infinity };
+    this.maxMessageBytes = o.maxMessageBytes ?? 256 * 1024;
+    this.maxSnapshotBytes = o.maxSnapshotBytes ?? 1024 * 1024;
 
     // Keys are kept per game server, so games on the same site do not share them.
     // `slot` keeps a separate identity in the same browser (e.g. a big-screen window).
@@ -134,6 +140,9 @@ export class NetworkRoom {
     this.tokensAt = Date.now();
     this.outbox = []; // messages held back by the pace, in order
     this.outboxTimer = null;
+    this.latest = new Map(); // kind → newest pending value (send with `latest`, F-037)
+    this.latestTimer = null;
+    this.partSeq = 0;
     this.leaveTimer = null;
     this.pendingSnapshot = null;
     this.status = 'idle';
@@ -296,6 +305,7 @@ export class NetworkRoom {
     this.outbox = [];
     this.tokens = this.rate;
     this.tokensAt = Date.now();
+    const joiner = new PartJoiner(MAX_INCOMING_CHARS); // large messages arrive in parts (F-036)
     let denied = null;
     ws.onopen = () => {
       if (this.ws !== ws) return;
@@ -320,6 +330,11 @@ export class NetworkRoom {
       let msg;
       try {
         msg = JSON.parse(event.data);
+        if (msg?.t === 'part') {
+          const text = joiner.add(msg);
+          if (text === null) return; // more parts to come
+          msg = JSON.parse(text);
+        }
       } catch {
         return;
       }
@@ -460,6 +475,7 @@ export class NetworkRoom {
     clearTimeout(this.connectTimer);
     clearTimeout(this.phaseTimer);
     clearTimeout(this.outboxTimer);
+    clearTimeout(this.latestTimer);
     clearTimeout(this.leaveTimer);
     clearInterval(this.silentTimer);
     this.outbox = [];
@@ -507,7 +523,10 @@ export class NetworkRoom {
         this.attempt = 0;
         this.failingSince = null;
         clearTimeout(this.connectTimer);
-        if (Number.isFinite(msg.room?.settings?.rate)) this.rate = msg.room.settings.rate;
+        const limits = msg.room?.settings ?? {};
+        if (Number.isFinite(limits.rate)) this.rate = limits.rate;
+        if (Number.isFinite(limits.maxMessageBytes)) this.maxMessageBytes = Math.min(limits.maxMessageBytes, this.ownLimits.message);
+        if (Number.isFinite(limits.maxSnapshotBytes)) this.maxSnapshotBytes = Math.min(limits.maxSnapshotBytes, this.ownLimits.snapshot);
         this.tokens = this.rate;
         this.tokensAt = Date.now();
         this.lastHostData = Date.now();
@@ -522,6 +541,7 @@ export class NetworkRoom {
         if (this.pendingSnapshot && this.isHost) this.transmit(this.pendingSnapshot);
         this.pendingSnapshot = null;
         for (const m of this.queue) this.transmit(m.text);
+        this.flushLatest(); // the newest values, after everything that must arrive in order
         this.setStatus('online');
         this.emit('welcome', this.room);
         if (!this.firstWelcome.done) {
@@ -585,6 +605,7 @@ export class NetworkRoom {
     if (isHost !== this.wasHost) {
       // Messages queued in the old role must not be delivered in the new one.
       this.queue = this.queue.filter((m) => m.kind !== 'msg');
+      this.latest.clear();
       this.pendingSnapshot = null;
       this.lastHostData = Date.now();
     }
@@ -692,11 +713,33 @@ export class NetworkRoom {
    */
   transmit(text, droppable = false) {
     if (!this.ready) return false;
+    // A large message goes in parts, one after the other, at the same pace (F-036).
+    if (text.length > PART_CHARS) {
+      this.partSeq += 1;
+      for (const part of splitIntoParts(text, this.partSeq)) this.transmitPiece(part, false);
+      return true;
+    }
+    return this.transmitPiece(text, droppable);
+  }
+
+  /** Send one text as it is, keeping the pace. */
+  transmitPiece(text, droppable) {
     if (this.outbox.length === 0 && this.takeToken()) return this.rawSend(text);
     if (droppable) return false;
     this.outbox.push(text);
     this.outboxTimer ??= setTimeout(() => this.drain(), 50);
     return true;
+  }
+
+  /** Send the newest pending value of each kind as soon as the pace allows (F-037). */
+  flushLatest() {
+    this.latestTimer = null;
+    for (const [kind, text] of this.latest) {
+      if (!this.ready || this.outbox.length > 0 || !this.takeToken()) break;
+      this.rawSend(text);
+      this.latest.delete(kind);
+    }
+    if (this.latest.size > 0 && this.ready) this.latestTimer = setTimeout(() => this.flushLatest(), 30);
   }
 
   drain() {
@@ -718,12 +761,15 @@ export class NetworkRoom {
    * Send game data. Host-run rooms: from the host to `to` (default: everyone
    * else); from anyone else to the host. Server-run rooms: to the game rules.
    * `to`: 'all' | [ids] | { role } | { place }.
-   * `reliable: false` drops the message while disconnected (for data that the
-   * next message replaces anyway).
+   * `reliable: false` drops the message while disconnected or when it comes
+   * faster than the room's pace (for data that the next message replaces anyway).
+   * `latest: kind` (e.g. 'aim') keeps only the newest value of that kind and
+   * sends it as soon as the pace allows, also after a reconnect: for values
+   * that change faster than they can be sent, where only the last one counts.
    * Returns false when the message was not sent: nobody is there to get it
    * (a host alone in the room, or the host is away), or it is too large.
    */
-  send(data, { to, reliable = true } = {}) {
+  send(data, { to, reliable = true, latest } = {}) {
     const room = this.room;
     if (room && !this.isHost) {
       // Only roles that send may; someone still waiting to be admitted may not.
@@ -734,9 +780,19 @@ export class NetworkRoom {
     }
     const msg = { t: 'msg', d: data };
     if (to !== undefined) msg.to = to;
-    if (this.tooLarge(JSON.stringify(msg), this.maxMessageBytes, 'send')) return false;
+    const text = JSON.stringify(msg);
+    if (this.tooLarge(text, this.maxMessageBytes, 'send')) return false;
+    if (latest !== undefined) {
+      const kind = String(latest);
+      if (text.length > PART_CHARS) return this.transmit(text);
+      if (!this.latest.has(kind) && this.ready && this.outbox.length === 0 && this.takeToken()) return this.rawSend(text);
+      this.latest.delete(kind); // keeps the kinds in the order they last changed
+      this.latest.set(kind, text);
+      if (this.ready) this.latestTimer ??= setTimeout(() => this.flushLatest(), 30);
+      return true;
+    }
     if (reliable) return this.numbered(msg, 'msg');
-    return this.transmit(JSON.stringify(msg), true);
+    return this.transmit(text, true);
   }
 
   /**

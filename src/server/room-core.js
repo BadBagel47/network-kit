@@ -22,7 +22,9 @@
 //   owner        the creator: keeps the rights and the invitation keys
 //   host         host-run rooms: the participant whose browser runs the game
 
-import { PROTOCOL, CLOSE, CLOSE_UNRESPONSIVE } from '../shared/protocol.js';
+import {
+  PROTOCOL, CLOSE, CLOSE_UNRESPONSIVE, PART_CHARS, splitIntoParts, PartJoiner,
+} from '../shared/protocol.js';
 import { newPlayerId, newSecret, randomSeed, sha256, sameSecret } from './random.js';
 
 const STATE_VERSION = 2;
@@ -56,8 +58,8 @@ export const DEFAULT_OPTIONS = Object.freeze({
   cleanupMs: 24 * 60 * 60_000, // delete a room this long after the last participant left
   closedKeepMs: 60 * 60_000, // keep a closed room's "closed" note this long
   snapshotSaveMs: 5_000,
-  maxMessageBytes: 64 * 1024,
-  maxSnapshotBytes: 512 * 1024,
+  maxMessageBytes: 256 * 1024, // larger messages travel in parts (F-036)
+  maxSnapshotBytes: 1024 * 1024,
   maxDataBytes: 4 * 1024, // the room's shared data (see the "data" command)
   maxMessagesPerSecond: 40, // per connection (short bursts of twice this are fine)
   maxMessagesPerDay: 600_000, // per room and UTC day
@@ -142,6 +144,8 @@ export class RoomCore {
     this.snapshotSavedAt = 0;
     this.cancelSave = null;
     this.buckets = new WeakMap(); // per-connection rate limit
+    this.joiners = new WeakMap(); // per-connection parts of a large message
+    this.partSeq = 0;
     this.hostCheck = null; // { id, cancel }: the host has been asked to show it is alive
     this.lastHostCheck = 0;
     this.uncounted = 0; // messages counted since the usage was last stored
@@ -186,9 +190,24 @@ export class RoomCore {
     this.dirty = true;
   }
 
+  // The snapshot is stored as text in parts (F-036), so a large game state
+  // never meets the platform's limit on one stored value:
+  //   snapshot      { at, parts }      snapshot:0 … snapshot:N-1  text parts
   async getSnapshot() {
     if (!this.snapshotLoaded) {
-      this.snapshot = (await this.host.storage.get('snapshot')) ?? null;
+      const record = (await this.host.storage.get('snapshot')) ?? null;
+      if (record && 'd' in record) {
+        this.snapshot = record; // stored whole by an earlier 0.x version
+      } else if (record) {
+        const texts = [];
+        for (let i = 0; i < record.parts; i++) texts.push((await this.host.storage.get(`snapshot:${i}`)) ?? '');
+        try {
+          this.snapshot = { d: JSON.parse(texts.join('')), at: record.at };
+        } catch {
+          this.snapshot = null; // an incomplete save: better nothing than a broken state
+        }
+      }
+      this.storedParts = record?.parts ?? 0;
       this.snapshotLoaded = true;
     }
     return this.snapshot;
@@ -200,16 +219,26 @@ export class RoomCore {
     if (!this.snapshotDirty || !this.snapshot || !this.state) return;
     this.snapshotDirty = false;
     this.snapshotSavedAt = this.host.now();
-    await this.host.storage.put('snapshot', this.snapshot);
+    const text = JSON.stringify(this.snapshot.d) ?? 'null';
+    const parts = Math.max(1, Math.ceil(text.length / PART_CHARS));
+    for (let i = 0; i < parts; i++) {
+      await this.host.storage.put(`snapshot:${i}`, text.slice(i * PART_CHARS, (i + 1) * PART_CHARS));
+    }
+    await this.host.storage.put('snapshot', { at: this.snapshot.at, parts });
+    for (let i = parts; i < (this.storedParts ?? 0); i++) await this.host.storage.delete(`snapshot:${i}`);
+    this.storedParts = parts;
   }
 
   async dropSnapshot() {
     this.cancelSave?.();
     this.cancelSave = null;
+    if (!this.snapshotLoaded) await this.getSnapshot(); // to know how many parts to remove
     this.snapshot = null;
     this.snapshotLoaded = true;
     this.snapshotDirty = false;
     await this.host.storage.delete('snapshot');
+    for (let i = 0; i < (this.storedParts ?? 0); i++) await this.host.storage.delete(`snapshot:${i}`);
+    this.storedParts = 0;
   }
 
   // ----------------------------------------------------------------- timers
@@ -431,12 +460,22 @@ export class RoomCore {
     return this.options.roles[p.role] ?? { seats: 0, plays: false, canPause: false, canHost: false, sends: false };
   }
 
+  /** Send a text, in parts if it is large (F-036). */
+  deliver(ws, text) {
+    if (text.length <= PART_CHARS) {
+      this.host.send(ws, text);
+      return;
+    }
+    this.partSeq += 1;
+    for (const part of splitIntoParts(text, this.partSeq)) this.host.send(ws, part);
+  }
+
   sendTo(id, text) {
-    for (const ws of this.socketsOf(id)) this.host.send(ws, text);
+    for (const ws of this.socketsOf(id)) this.deliver(ws, text);
   }
 
   sendJson(ws, msg) {
-    this.host.send(ws, JSON.stringify(msg));
+    this.deliver(ws, JSON.stringify(msg));
   }
 
   /** Close a socket from our side and remember that it no longer counts. */
@@ -529,7 +568,7 @@ export class RoomCore {
     return p.id === this.state.hostId || (!p.waiting && this.role(p).sends);
   }
 
-  async message(ws, raw) {
+  async message(ws, raw, joined = false) {
     if (!this.state || this.state.closed) return;
     const att = this.host.getAttachment(ws);
     if (!att || att.closed) return;
@@ -552,9 +591,27 @@ export class RoomCore {
       return;
     }
 
-    if (!this.allow(ws)) {
+    // A joined large message was paid for part by part.
+    if (!joined && !this.allow(ws)) {
       this.reject(ws, CLOSE.RATE, 'too-many-messages');
       await this.closed(ws, true);
+      return;
+    }
+    if (valid && msg.t === 'part' && !joined) {
+      // Parts of a large message (F-036): joined here, then handled as one message.
+      let joiner = this.joiners.get(ws);
+      if (!joiner) {
+        joiner = new PartJoiner(this.options.maxSnapshotBytes);
+        this.joiners.set(ws, joiner);
+      }
+      let text;
+      try {
+        text = joiner.add(msg);
+      } catch (err) {
+        this.penalize(ws, 5);
+        return this.sendJson(ws, { t: 'err', code: err.message === 'too large' ? 'too-large' : 'bad-part' });
+      }
+      if (text !== null) await this.message(ws, text, true);
       return;
     }
     if (!valid) {
@@ -1052,7 +1109,14 @@ export class RoomCore {
       paused: s.paused,
       ownerId: s.ownerId,
       hostId: s.hostId,
-      settings: { ...s.settings, pauseBy: o.pauseBy, takeover: o.takeover, rate: o.maxMessagesPerSecond },
+      settings: {
+        ...s.settings,
+        pauseBy: o.pauseBy,
+        takeover: o.takeover,
+        rate: o.maxMessagesPerSecond,
+        maxMessageBytes: o.maxMessageBytes,
+        maxSnapshotBytes: o.maxSnapshotBytes,
+      },
       roles,
       places,
       placeSizes: { ...o.places },
@@ -1074,16 +1138,16 @@ export class RoomCore {
       const { id } = this.host.getAttachment(ws);
       if (id === this.state.ownerId) {
         ownerText ??= JSON.stringify({ t: 'room', room: this.view(id) });
-        this.host.send(ws, ownerText);
+        this.deliver(ws, ownerText);
       } else {
-        this.host.send(ws, common);
+        this.deliver(ws, common);
       }
     }
   }
 
   event(e, id, extra = {}) {
     const text = JSON.stringify({ t: 'ev', e, id, ...extra });
-    for (const ws of this.identifiedSockets()) this.host.send(ws, text);
+    for (const ws of this.identifiedSockets()) this.deliver(ws, text);
   }
 
   /**

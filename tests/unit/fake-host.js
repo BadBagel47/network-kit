@@ -1,6 +1,7 @@
 // A fake Durable Object host for RoomCore: clock, storage, alarm, short
 // in-memory timers and sockets.
 import { RoomCore } from '../../src/server/room-core.js';
+import { PROTOCOL, PartJoiner } from '../../src/shared/protocol.js';
 
 export class FakeSocket {
   constructor(name) {
@@ -12,8 +13,25 @@ export class FakeSocket {
     this.owesAnswer = false;
   }
 
+  /** What this client received, with large messages joined from their parts. */
   messages(type) {
-    return this.sent.map((t) => JSON.parse(t)).filter((m) => !type || m.t === type);
+    const joiner = new PartJoiner(64 * 1024 * 1024);
+    const out = [];
+    for (const text of this.sent) {
+      let m = JSON.parse(text);
+      if (m.t === 'part') {
+        const whole = joiner.add(m);
+        if (whole === null) continue;
+        m = JSON.parse(whole);
+      }
+      if (!type || m.t === type) out.push(m);
+    }
+    return out;
+  }
+
+  /** The raw texts that went over the wire (parts not joined). */
+  get wire() {
+    return this.sent.map((t) => JSON.parse(t));
   }
 
   last(type) {
@@ -81,6 +99,15 @@ export class FakeWorld {
     };
   }
 
+  /** The game state the room has stored (it is kept as text in parts). */
+  storedSnapshot() {
+    const record = this.store.get('snapshot');
+    if (!record) return undefined;
+    let text = '';
+    for (let i = 0; i < record.parts; i++) text += this.store.get(`snapshot:${i}`);
+    return JSON.parse(text);
+  }
+
   /** A fresh RoomCore that loads from storage. */
   async core(options) {
     this.options = options ?? this.options;
@@ -135,7 +162,7 @@ export async function connect(world, core, { name = 'P', pk, role, key, owner, s
   world.socketList.push(ws);
   core.opened(ws);
   const playerKey = pk ?? `player-key-${playerCounter}-xxxxxxxxxxxx`;
-  await core.message(ws, JSON.stringify({ t: 'hello', v: 2, pk: playerKey, sid, name, role, key, owner }));
+  await core.message(ws, JSON.stringify({ t: 'hello', v: PROTOCOL, pk: playerKey, sid, name, role, key, owner }));
   ws.id = ws.last('welcome')?.you.id ?? null;
   ws.pk = playerKey;
   return ws;
@@ -158,6 +185,12 @@ let commandN = 1000;
 export async function cmd(core, ws, c, args = {}) {
   commandN += 1;
   await send(core, ws, { t: 'cmd', n: commandN, c, ...args });
+}
+
+/** Send a message the way a client sends a large one: in parts. */
+export async function sendInParts(core, ws, msg, p = 1) {
+  const { splitIntoParts } = await import('../../src/shared/protocol.js');
+  for (const part of splitIntoParts(JSON.stringify(msg), p)) await core.message(ws, part);
 }
 
 /** The socket dropped (network loss), as the runtime reports it. */

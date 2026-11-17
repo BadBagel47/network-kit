@@ -2,7 +2,57 @@
 // Both sides of one game always use the same network-kit version (D-009),
 // so the protocol number only guards against mixed copies.
 
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
+
+// Large messages travel in parts of at most this many characters (F-036):
+// at most 64 kB each in UTF-8, well under Cloudflare's limits for one
+// WebSocket message and one stored value. Both sides split and join them.
+export const PART_CHARS = 16_000;
+
+/** Split a text into part messages: { t: 'part', p, i, of, d }. */
+export function splitIntoParts(text, p) {
+  const of = Math.ceil(text.length / PART_CHARS);
+  const parts = [];
+  for (let i = 0; i < of; i++) {
+    parts.push(JSON.stringify({ t: 'part', p, i, of, d: text.slice(i * PART_CHARS, (i + 1) * PART_CHARS) }));
+  }
+  return parts;
+}
+
+/**
+ * Collects parts into whole texts. `add(part)` returns the joined text when
+ * the last part has arrived, null while parts are missing, and throws on
+ * parts that do not fit together or would make a text longer than maxChars.
+ */
+export class PartJoiner {
+  constructor(maxChars) {
+    this.maxChars = maxChars;
+    this.current = null;
+  }
+
+  add(part) {
+    const { p, i, of, d } = part;
+    if (!Number.isSafeInteger(p) || !Number.isSafeInteger(i) || !Number.isSafeInteger(of) || typeof d !== 'string') {
+      throw new Error('bad part');
+    }
+    if (of < 2 || of > Math.ceil(this.maxChars / PART_CHARS) || d.length > PART_CHARS) throw new Error('bad part');
+    if (i === 0) this.current = { p, of, texts: [], length: 0 };
+    const c = this.current;
+    if (!c || c.p !== p || c.of !== of || c.texts.length !== i) {
+      this.current = null;
+      throw new Error('parts out of order');
+    }
+    c.texts.push(d);
+    c.length += d.length;
+    if (c.length > this.maxChars) {
+      this.current = null;
+      throw new Error('too large');
+    }
+    if (c.texts.length < of) return null;
+    this.current = null;
+    return c.texts.join('');
+  }
+}
 
 // Room codes: no 0/O or 1/I so codes are easy to read out loud.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

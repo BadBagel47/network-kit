@@ -405,3 +405,70 @@ test('V-B19: a host that has just started is not reported as silent', async () =
   assert.equal(a.ws.sent.filter((t) => t.includes('host-check')).length, 0);
   assert.equal(a.ws.sent.length, before);
 });
+
+// ---- F-036 and F-037: large messages and the newest value ----------------
+
+const bigState = (kb, tag) => ({ tag, bases: Array.from({ length: kb }, (_, i) => ({ i, map: 'å'.repeat(490) })) });
+
+test('F-036: large messages travel both ways whole, and a large snapshot reaches the next host', async () => {
+  const { world, owner } = await start(CREW);
+  const a = track(await join(world, 'A'), owner);
+  a.send(bigState(150, 'from A'));
+  owner.send({ full: bigState(190, 'from host') }, { to: [a.me] });
+  await until(() => owner.events('message').length === 1 && a.events('message').length === 1, 4000);
+  assert.equal(owner.events('message')[0].data.tag, 'from A');
+  assert.equal(a.events('message')[0].data.full.bases.length, 190);
+  assert.ok(a.ws.sent.filter((t) => t.startsWith('{"t":"part"')).length > 1, 'sent in parts');
+
+  owner.start();
+  await world.settle();
+  await world.advance(4_000);
+  owner.sendSnapshot(bigState(500, 'kept'), { force: true });
+  await world.settle(60);
+  owner.ws.dead = true;
+  await world.serverNotices(owner.ws);
+  await world.advance(6_000);
+  await until(() => a.events('host').length === 1, 4000);
+  assert.equal(a.events('host')[0].snapshot.tag, 'kept');
+  assert.equal(a.events('host')[0].snapshot.bases.length, 500);
+});
+
+test('F-036: a large message sent while disconnected arrives once after the reconnect', async () => {
+  const { world, owner } = await start(CREW);
+  const a = track(await join(world, 'A'), owner);
+  a.ws.close();
+  await until(() => a.status !== 'online');
+  a.send(bigState(120, 'queued'));
+  await until(() => a.status === 'online');
+  await until(() => owner.events('message').length === 1, 4000);
+  await world.settle(100);
+  assert.equal(owner.events('message').length, 1);
+  assert.equal(owner.events('message')[0].data.tag, 'queued');
+});
+
+test('F-037: only the newest value is sent when values come faster than the pace', async () => {
+  const { world, owner } = await start({ ...CREW, maxMessagesPerSecond: 10 });
+  world.realtime();
+  const a = track(await join(world, 'A'), owner);
+  for (let i = 0; i < 300; i++) {
+    a.send({ aim: i }, { latest: 'aim' });
+    if (i % 20 === 0) await sleep(15);
+  }
+  await until(() => owner.events('message').at(-1)?.data.aim === 299, 4000);
+  const got = owner.events('message').map((m) => m.data.aim);
+  assert.ok(got.length < 100, `far fewer than 300 were sent (${got.length})`);
+  assert.deepEqual([...got].sort((x, y) => x - y), got, 'in order');
+  assert.deepEqual(a.events('closed'), [], 'and nobody was thrown out');
+});
+
+test('F-037: the newest value waits through a reconnect, but not into another role', async () => {
+  const { world, owner } = await start(CREW);
+  const a = track(await join(world, 'A'), owner);
+  a.ws.close();
+  await until(() => a.status !== 'online');
+  for (let i = 0; i < 5; i++) a.send({ aim: i }, { latest: 'aim' });
+  a.send({ fire: true }, { latest: 'trigger' });
+  await until(() => a.status === 'online');
+  await until(() => owner.events('message').length === 2, 4000);
+  assert.deepEqual(owner.events('message').map((m) => m.data), [{ aim: 4 }, { fire: true }]);
+});

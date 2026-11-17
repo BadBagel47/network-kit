@@ -15,9 +15,9 @@ test('B-014: the newest snapshot survives the room going to sleep', async () => 
   await send(core, owner, { t: 'snap', d: { move: 1 } });
   await world.advance(1_000);
   await send(core, owner, { t: 'snap', d: { move: 2 } });
-  assert.deepEqual(world.store.get('snapshot').d, { move: 1 }, 'not written on every snapshot');
+  assert.deepEqual(world.storedSnapshot(), { move: 1 }, 'not written on every snapshot');
   await world.advance(4_100); // the trailing save
-  assert.deepEqual(world.store.get('snapshot').d, { move: 2 });
+  assert.deepEqual(world.storedSnapshot(), { move: 2 });
   const woke = await world.sleep();
   await drop(woke, owner);
   await world.advance(6_000);
@@ -34,7 +34,7 @@ test('B-014: a snapshot is stored when the host drops, pauses, leaves or hands o
     if (how === 'pause') await cmd(core, owner, 'pause');
     if (how === 'leave') await cmd(core, owner, 'leave');
     if (how === 'handover') await cmd(core, owner, 'handover', { id: a.id });
-    assert.deepEqual(world.store.get('snapshot').d, { v: 2 }, how);
+    assert.deepEqual(world.storedSnapshot(), { v: 2 }, how);
   }
 });
 
@@ -241,7 +241,8 @@ test('B-022: relayed messages cause no storage writes; snapshots are written spa
     world.time += 100;
     await send(core, owner, { t: 'snap', d: { i } });
   }
-  assert.ok(world.puts.length <= 1, `paused: ${world.puts.length} writes for 20 snapshots`);
+  const saves = world.puts.filter((k) => k === 'snapshot').length;
+  assert.ok(saves <= 1, `paused: ${saves} saves for 20 snapshots`);
 });
 
 test('B-022: server-run rooms write only when the game changed', async () => {

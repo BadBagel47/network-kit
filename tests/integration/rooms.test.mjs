@@ -1,7 +1,7 @@
 // The example games against the demo Worker in local workerd, with real clients.
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { NetworkRoom, CLOSE, RoomError } from '../../src/client/index.js';
+import { NetworkRoom, CLOSE, RoomError, PROTOCOL } from '../../src/client/index.js';
 import { BASE, create, join, next, until, sleep, cleanup, raw } from './helpers.mjs';
 
 afterEach(cleanup);
@@ -117,6 +117,41 @@ test('V-B1: a long queue after a reconnect arrives in order and nobody is thrown
   assert.equal(a.status, 'online');
 });
 
+test('F-036: large states travel and are kept in parts in real workerd', { timeout: 60_000 }, async () => {
+  const big = (kb, tag) => ({ tag, bases: Array.from({ length: kb }, (_, i) => ({ i, map: 'ö'.repeat(490) })) });
+  const host = await create('Host');
+  const a = await join(host.code, 'A');
+  const b = await join(host.code, 'B');
+  const full = next(a, 'message', (m) => m.data?.tag === 'joiner');
+  host.send(big(190, 'joiner'), { to: [a.me] });
+  assert.equal((await full).data.bases.length, 190);
+  const fromA = next(host, 'message', (m) => m.data?.tag === 'from A');
+  a.send(big(150, 'from A'));
+  assert.equal((await fromA).data.bases.length, 150);
+
+  host.start();
+  await until(() => host.phase !== 'lobby');
+  host.sendSnapshot(big(600, 'kept'), { force: true });
+  await sleep(1500);
+  const took = next(a, 'host', () => true, 15_000);
+  host.disconnect();
+  const { snapshot } = await took;
+  assert.equal(snapshot.tag, 'kept');
+  assert.equal(snapshot.bases.length, 600);
+  assert.equal(b.status, 'online');
+});
+
+test('F-037: the newest value wins in real workerd', async () => {
+  const host = await create('Host');
+  const a = await join(host.code, 'A');
+  const got = [];
+  host.on('message', (m) => got.push(m.data.aim));
+  for (let i = 0; i < 400; i++) a.send({ aim: i }, { latest: 'aim' });
+  await until(() => got.at(-1) === 399, 8000);
+  assert.ok(got.length < 400);
+  assert.equal(a.status, 'online');
+});
+
 test('crew game: takeover when the host is lost; the owner keeps the room', async () => {
   const host = await create('Host');
   const a = await join(host.code, 'A');
@@ -162,7 +197,7 @@ test('uninvited connections: junk before hello closes the connection', async () 
   assert.equal((await closed).code, CLOSE.BAD_REQUEST);
   const second = raw(host.code);
   await second.opened;
-  second.ws.send(JSON.stringify({ t: 'hello', v: 2, pk: 'p'.repeat(20), sid: 's'.repeat(20_000), name: 'ghost' }));
+  second.ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL, pk: 'p'.repeat(20), sid: 's'.repeat(20_000), name: 'ghost' }));
   assert.equal((await second.closed).code, CLOSE.BAD_REQUEST);
   await sleep(100);
   assert.equal(host.players.length, 1, 'no ghost seat');
@@ -175,7 +210,7 @@ test('a connection that floods the room is closed, and the others are not distur
   host.on('message', (m) => got.push(m.data));
   const flood = raw(host.code);
   await flood.opened;
-  flood.ws.send(JSON.stringify({ t: 'hello', v: 2, pk: 'flooding-client-key-xxxx', sid: 'flood', name: 'Flood' }));
+  flood.ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL, pk: 'flooding-client-key-xxxx', sid: 'flood', name: 'Flood' }));
   await until(() => host.players.length === 3);
   for (let i = 0; i < 400; i++) flood.ws.send(JSON.stringify({ t: 'msg', d: i }));
   assert.equal((await flood.closed).code, CLOSE.RATE);

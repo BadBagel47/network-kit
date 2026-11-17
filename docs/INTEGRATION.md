@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.4** (0.4.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.5** (0.5.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -113,7 +113,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `cleanupMs` | 24 h | Delete the room this long after the last participant left. |
 | `closedKeepMs` | 1 h | How long a closed room still answers "closed". |
 | `snapshotSaveMs` | 5 s | The host's snapshot is written to storage at most this often (and when the host drops, pauses, leaves or hands over). |
-| `maxMessageBytes` / `maxSnapshotBytes` / `maxDataBytes` | 64 kB / 512 kB / 4 kB | Larger ones are refused. |
+| `maxMessageBytes` / `maxSnapshotBytes` / `maxDataBytes` | 256 kB / 1 MB / 4 kB | Larger ones are refused. Messages and snapshots above 16,000 characters travel and are stored in parts, without the game noticing (*Large states* in section 5). |
 | `maxMessagesPerSecond` | 40 | Per connection; short bursts of twice this are fine. Faster connections are closed (4012, final). Refused and ignored messages cost the sender several times as much, and nothing of the room's budget. The kit's client keeps under the pace by itself. 0: no limit. |
 | `maxMessagesPerDay` | 600,000 | Per room and UTC day; the room closes (4013) when it is used up. 0: no limit. |
 | `maxActiveMinutesPerDay` | 720 | Per room and UTC day: minutes in which messages arrived. Stops a forgotten room that trickles messages from staying awake all day. 0: no limit. |
@@ -246,6 +246,7 @@ Identities and owner keys are stored per game server, so games on the same site 
 ### Methods and properties
 
 - `send(data, { to, reliable })`. `to`: `'all'` (default: everyone else who is admitted), `[ids]`, `{ role }` or `{ place }`. The sender never gets its own message. Messages are numbered and resent after a reconnect, and the room counts each once. `reliable: false` is for data the next message replaces anyway (positions). Returns `false` when nothing was sent: nobody is there to get it (a host alone in the room, or the host is away), this participant may not send (a role that does not send, or still waiting), or it is too large.
+- `send(data, { latest: kind })`: for values that change faster than they can be sent, where only the newest counts (an aim, a position, a slider). The client keeps the newest value of each `kind` and sends it as soon as the pace allows, also after a reconnect; older values of the same kind are never sent.
 - **Pace:** the client stays under the room's `maxMessagesPerSecond` by itself. Sent faster than that, reliable messages are held back and delivered in order, and `reliable: false` ones are dropped. After a reconnect, queued game messages up to `maxQueueAgeMs` old and all queued commands are resent, at the same pace.
 - `sendSnapshot(data, { force })` (host): give the room the full state to keep.
 - `takePlace(name)`, `leavePlace()`, `pause()`, `resume()`.
@@ -259,12 +260,14 @@ Identities and owner keys are stored per game server, so games on the same site 
 The host's browser steps the game; everyone else sends inputs and draws what the host sends. Only messages *into* the server count against the daily budget, so:
 
 - Participants send inputs **only when they change**.
-- The host sends the moving part of the state often with `reliable: false`, things that must arrive with the default, and `sendSnapshot(state)` every few seconds.
+- The host sends the moving part of the state often with `latest: 'positions'` (only the newest counts), things that must arrive with the default, and `sendSnapshot(state)` every few seconds. Inputs that change very often, like an aim, also go with `latest`.
 - On `host`: load the snapshot (or start fresh) and begin stepping. On `role` with `isHost: false`: stop.
 - On `peer` `join` or `back` (host): send that participant what it needs to see, `send({ type: 'full', ... }, { to: [id] })`. **Never rely on the snapshot for this**: it is not sent to them.
 - On `peer` `host`, and on `peer` `back` for the host's id (others): send the current input again. A new host does not know which keys are held, and inputs sent while the host was away were dropped.
 - Step the game only while `room.running`.
 - The client sends nothing while the host is alone in the room.
+
+**Large states.** A game state of a few hundred kilobytes works without any change in the game: the client and the room split anything above 16,000 characters into parts and join them again, and the room stores the host's snapshot in parts too. The limits are `maxMessageBytes` (256 kB) for one message, for example the full state sent to a joiner, and `maxSnapshotBytes` (1 MB) for the kept state; raise them if the game needs more. Each part counts against the connection's pace, so a 200 kB state takes about a third of a second to send. Each stored part is a storage write: with a large state, raise `snapshotSaveMs` (for example to 15 seconds) so a long evening's play does not use up the free plan's daily writes, and keep the state small where it is easy (rebuild what can be rebuilt from the seed).
 
 `examples/demo/public/app.js` is a complete small game of this kind. For a game led by someone who does not play (a quiz), use `ownerRole` with a non-playing role and leave `takeover` off: see the quiz in `examples/demo/options.js` and its test in `tests/integration/rooms.test.mjs`.
 
