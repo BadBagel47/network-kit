@@ -78,6 +78,14 @@ export default { fetch: rooms.fetch };
 
 Deploy with `npx wrangler deploy` from a GitHub Actions workflow using a `CLOUDFLARE_API_TOKEN` secret (see network-kit's `.github/workflows/deploy-demo.yml`). Local runs: `npx wrangler dev --var ROOM_JURISDICTION:` (local workerd has no jurisdictions).
 
+**The game's own pages from the same Worker:** a game can serve its pages (HTML, scripts, images, its copy of the client) from the same Worker as its rooms, so the game loads nothing from another site and needs no CORS settings. Add the folder to the wrangler config:
+
+```jsonc
+  "assets": { "directory": "public" }   // the game's pages; put the client copy under public/ too
+```
+
+Files in the folder are served as they are; requests under `basePath` that match no file reach the room server. The page then uses its own address as the server: `NetworkRoom.create(location.origin, ...)`. Deploying the Worker deploys pages and room server together, so they are always the same version. network-kit's demo is set up this way (`wrangler.jsonc`, `examples/demo/public/`).
+
 HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys }`), `GET /rooms/CODE` gives `{ code, phase, access, participants, closed }`, `GET /rooms/CODE/ws` is the WebSocket.
 
 ### Options
