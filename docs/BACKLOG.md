@@ -22,7 +22,7 @@
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
 | F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
-| B-041 | Bug | Demo: the letters W, A, S and D (and the arrow keys) cannot be typed in the name field, because the game takes them as steering keys on the whole page | High | Found by the owner 2026-11-17 in the phone/iPad test (D-025); cause found, not fixed | Standard |
+| B-041 | Bug | Demo: the letters W, A, S and D (and the arrow keys) cannot be typed in the name field, because the game takes them as steering keys on the whole page | High | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf). Found by the owner 2026-11-17 in the phone/iPad test (D-025); cause found | Standard |
 
 ## Done
 
