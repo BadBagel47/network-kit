@@ -67,6 +67,8 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 ## One-time actions
 
+- Done (2026-11-17): a daily scheduled check at 07:40 Swedish time, owner's request. It reads the game repositories' changes of the last day that concern network-kit, records new general needs and changed conditions in this repository's docs (documentation only, no code, nothing written in the game repositories) and reports in the network-kit session. It fires into that session; if the session is archived, set it up again in a new one.
+
 - Done (2026-11-15): Cloudflare API token (template "Edit Cloudflare Workers") added as the GitHub Secret `CLOUDFLARE_API_TOKEN`; the demo deploys from `main` by itself.
 - Done (2026-11-15): the owner made network-kit public, so games' update workflows need no token.
 - Pending: a second, read-only Cloudflare API token for account analytics, as a secret for the admin page (F-008).
