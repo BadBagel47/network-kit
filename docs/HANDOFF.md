@@ -84,7 +84,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 | Boomers | `BadBagel47/boomers` (F-002) | Second; fits host-run with takeover, but its documents say server-run (D-028) |
 | Bricks | `BadBagel47/bricks` (F-007) | Later; fits a host-run room as a relay; needs F-029 and the gate at round start (F-003) |
 | Buzzy | `BadBagel47/buzzy` (#408, #348) | Later, last; fits a server-run room with a non-playing leader |
-| Vättigt | `BadBagel47/vattigt`, formerly `vettigt` (Vättigt D-011, its `docs/NETWORK.md`) | First game on network-kit (owner 2026-11-17); a local same-screen match is playable, online play not started; served from its own Worker. Plan: host-run room where every browser computes the same turn-based physics from the room's seed, teams as places. Fits v0.5.0 without changes; two non-blocking ideas recorded as F-039 and F-040 (2026-11-17) |
+| Vättigt | `BadBagel47/vattigt`, formerly `vettigt` (Vättigt D-011, its `docs/NETWORK.md`) | First game on network-kit (owner 2026-11-17). Online play built on v0.5.0 (Vättigt F-014, F-015, 2026-11-17): host-run with takeover, lockstep input batches from the host, one Worker for pages and rooms (EU); checked with two emulated phones in local workerd, not yet on Cloudflare or real phones; deploy waits for the owner to add a Cloudflare token to the vattigt repo. Plan: host-run room where every browser computes the same turn-based physics from the room's seed, teams as places. Fits v0.5.0 without changes; two non-blocking ideas recorded as F-039 and F-040 (2026-11-17) |
 | Memory-type turn-based game | idea | Should fit without extra work |
 
 ## Documentation map
