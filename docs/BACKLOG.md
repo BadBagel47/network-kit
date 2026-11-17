@@ -23,6 +23,8 @@
 | F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | D-046 | Design | Where EU rooms run: find which data centre a room is placed in and whether EU rooms can be placed nearer Sweden, to cut the round trip (110–120 ms measured, four legs through one room) | Low | Idea from the phone/iPad test 2026-11-17 (D-025); not started | Standard |
+| F-047 | Feature | Demo: measurement report: per device the time from key press to visible movement, response time, how evenly positions arrive and the frame rate; a Send report button stores it in the demo Worker so the agent can read it | High | Proposal from the phone/iPad test 2026-11-17 (D-025); owner's idea | Standard |
+| F-048 | Feature | Demo: the player's own ship moves at once in their browser and is corrected towards the host's position, with an on/off switch to compare | High | Proposal from the phone/iPad test 2026-11-17 (D-025) | Standard |
 
 ## Done
 
@@ -327,6 +329,7 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - Works: joining by QR code, taking a place, steering with keys and screen arrows, takeover during a game and the owner coming back as owner.
 - Found: B-041 (steering letters could not be typed in the name field; fixed the same evening), B-042 (jerky ships for those who do not run the game), B-043 ("Someone joined" instead of the name), B-044 (after a 2-minute lock B was back without the gunner place).
 - Response time (F-045 meter, after v0.5.1): 110–130 ms from the Pixel on 5G to the iPad (host, wifi) and back, through an EU room; with the Pixel on wifi about the same (100–130 ms, mostly 110–120), so the time is spent on the way through the room, not on the phone's network. Fine for turn-based games; real-time games should move the player's own ship at once and correct it against the host (note in the guide).
+- With the Pixel as host (wifi) and the iPad not hosting, the iPad's own ship starts and stops late, both with its own controls and as seen from the Pixel. Expected with the demo's set-up (round trip, host step, position interval and smoothing add up to about 0.15–0.25 s); to be measured with F-047 and compared with F-048.
 - Note: tests 2 and 10 lock the screen for 2 minutes, longer than the demo's 60-second grace period, so those participants were removed and came back as new joins; the test plan did not say so.
 
 ### B-042 Jerky ships for those who do not run the game (2026-11-17)
