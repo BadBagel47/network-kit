@@ -68,7 +68,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 ## One-time actions
 
-- Done (2026-11-17): a daily scheduled check at 07:40 Swedish time, owner's request. It reads the game repositories' changes of the last day that concern network-kit, records new general needs and changed conditions in this repository's docs (documentation only, no code, nothing written in the game repositories) and reports in the network-kit session. It fires into that session; if the session is archived, set it up again in a new one.
+- Done (2026-11-17, changed the same day): a daily scheduled check at 07:40 Swedish time, owner's request. It looks only at Critical ST8: if `BadBagel47/critical` has new commits since the last check, it reads what concerns network-kit, asks the current Critical session one short question, records new needs in this repository's docs and reports in the network-kit session; with no new commits it reports one line and asks nobody. Documentation only. Critical checked up to eaa39c60b75bd9278946bbb11872482c32d40a3f (2026-11-17). It fires into the network-kit session; if that session is archived, set it up again in a new one.
 
 - Done (2026-11-15): Cloudflare API token (template "Edit Cloudflare Workers") added as the GitHub Secret `CLOUDFLARE_API_TOKEN`; the demo deploys from `main` by itself.
 - Done (2026-11-15): the owner made network-kit public, so games' update workflows need no token.
