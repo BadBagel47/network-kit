@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CloudflareAnalytics, buildUsage, lastDays } from '../../admin/analytics.js';
+import { CloudflareAnalytics, buildUsage, lastDays, UNNAMED } from '../../admin/analytics.js';
 import { LoginGuard, checkPassword, newSession, validSession, readCookie, COOKIE } from '../../admin/auth.js';
 import { handle, resetCache, AdminGuard } from '../../admin/worker.js';
 
@@ -33,7 +33,7 @@ const TYPES = {
   WIAFilter: { inputFields: [{ name: 'date_geq' }, { name: 'date_leq' }, { name: 'scriptName' }] },
   DOI: { fields: [field('sum', obj('DOISum')), field('dimensions', obj('DOIDims'))] },
   DOISum: { fields: [field('requests'), field('responseBodySize')] },
-  DOIDims: { fields: [field('date'), field('namespaceId'), field('datetimeHour')] },
+  DOIDims: { fields: [field('date'), field('scriptName'), field('namespaceId'), field('datetimeHour')] },
   DOIFilter: { inputFields: [{ name: 'date_geq' }, { name: 'date_leq' }] },
   DOP: { fields: [field('sum', obj('DOPSum')), field('dimensions', obj('DOPDims'))] },
   DOPSum: { fields: [field('activeTime'), field('cpuTime'), field('rowsRead'), field('rowsWritten')] },
@@ -50,6 +50,7 @@ const ROWS = {
     { sum: { requests: 1200 }, dimensions: { date: '2026-11-17', scriptName: 'vattigt' } },
     { sum: { requests: 300 }, dimensions: { date: '2026-11-16', scriptName: 'vattigt' } },
     { sum: { requests: 50 }, dimensions: { date: '2026-11-17', scriptName: 'network-kit-demo' } },
+    { sum: { requests: 80 }, dimensions: { date: '2026-11-17', scriptName: '__unknown__' } },
   ],
   durableObjectsInvocationsAdaptiveGroups: [
     { sum: { requests: 4000 }, dimensions: { date: '2026-11-17', namespaceId: 'ns-vattigt' } },
@@ -111,10 +112,13 @@ test('usage is gathered per game from all four datasets', async () => {
   assert.equal(vattigt.daily.rowsWritten['2026-11-17'], 120);
   assert.equal(vattigt.daily.storedBytes['2026-11-17'], 7000, 'the day’s peak, not a sum of hours');
   assert.ok(usage.games.some((g) => g.name === 'network-kit-demo'));
+  assert.equal(usage.games.find((g) => g.name === UNNAMED).daily.workerRequests['2026-11-17'], 80, 'requests without a name get their own row');
   assert.ok(usage.games.some((g) => g.name.startsWith('namespace ')), 'an unknown namespace is still shown');
   // The account was looked up with the token, and every call carried it.
   assert.ok(fetch.calls.every((c) => c.auth === 'Bearer t'));
   // A dataset that only filters by datetime is asked with datetimes.
+  const roomQuery = fetch.calls.find((c) => c.body?.includes('durableObjectsInvocationsAdaptiveGroups(')).body;
+  assert.match(roomQuery, /dimensions \{ date namespaceId \}/, 'rooms are tied to games through their namespace');
   const storageQuery = fetch.calls.find((c) => c.body?.includes('durableObjectsStorageGroups(')).body;
   assert.match(storageQuery, /datetime_geq/);
 });

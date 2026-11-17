@@ -13,6 +13,9 @@ import { METRIC_KEYS } from './limits.js';
 export const GRAPHQL_URL = 'https://api.cloudflare.com/client/v4/graphql';
 export const API_URL = 'https://api.cloudflare.com/client/v4';
 
+/** The row for usage that Cloudflare reports without a Worker's name. */
+export const UNNAMED = 'Not named by Cloudflare';
+
 /** Duration is billed for 128 MB per active Durable Object. */
 const GB_PER_OBJECT = 128 / 1024;
 
@@ -20,23 +23,28 @@ const GB_PER_OBJECT = 128 / 1024;
 const DATASETS = {
   workers: {
     name: 'workersInvocationsAdaptive',
+    owners: ['scriptName'],
     fields: { sum: ['requests'] },
   },
   invocations: {
     name: 'durableObjectsInvocationsAdaptiveGroups',
+    // Rooms are best tied to their game through the namespace: the script
+    // name is not always filled in for room requests.
+    owners: ['namespaceId', 'scriptName'],
     fields: { sum: ['requests'] },
   },
   periodic: {
     name: 'durableObjectsPeriodicGroups',
+    owners: ['namespaceId', 'scriptName'],
     fields: { sum: ['activeTime', 'duration', 'rowsRead', 'rowsWritten', 'inboundWebsocketMsgCount'] },
   },
   storage: {
     name: 'durableObjectsStorageGroups',
+    owners: ['namespaceId', 'scriptName'],
     fields: { max: ['storedBytes'] },
   },
 };
 const DAY_DIMENSIONS = ['date', 'datetimeDay', 'datetimeHour', 'datetimeMinute', 'datetime'];
-const OWNER_DIMENSIONS = ['scriptName', 'namespaceId'];
 
 /** YYYY-MM-DD of a time, in UTC (Cloudflare's daily limits reset at 00:00 UTC). */
 export const utcDate = (t) => new Date(t).toISOString().slice(0, 10);
@@ -148,7 +156,7 @@ export class CloudflareAnalytics {
       const shape = {
         name: ds.name,
         day: DAY_DIMENSIONS.find((d) => dimNames.includes(d)) ?? null,
-        owner: OWNER_DIMENSIONS.find((d) => dimNames.includes(d)) ?? null,
+        owner: ds.owners.find((d) => dimNames.includes(d)) ?? null,
         dateFilter: filterFields.includes('date_geq') ? 'date' : filterFields.includes('datetime_geq') ? 'datetime' : null,
         values: {},
       };
@@ -269,7 +277,8 @@ export function buildUsage({ now, dates, shapes, results, namespaceMap = null, n
     const raw = dims?.[shape.owner];
     if (!shape.owner) return 'All games';
     if (shape.owner === 'namespaceId') return namespaceMap?.get(raw) ?? `namespace ${String(raw).slice(0, 8)}`;
-    return raw || 'unknown';
+    // Cloudflare reports some requests without a Worker's name.
+    return raw && raw !== '__unknown__' ? raw : UNNAMED;
   };
   const dayOf = (shape, dims) => String(dims?.[shape.day] ?? '').slice(0, 10);
   const add = (shape, rows, pick) => {

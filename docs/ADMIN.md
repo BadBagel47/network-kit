@@ -19,6 +19,8 @@ Figures (limits checked 2026-11-17 in Cloudflare's documentation, D-011; `admin/
 | Rows written | 100,000 a day | `durableObjectsPeriodicGroups` `sum.rowsWritten` |
 | Stored data | 5 GB in total | `durableObjectsStorageGroups` `max.storedBytes` |
 
+Rooms are tied to their game through the Durable Object namespace (Cloudflare does not always fill in the Worker name for room requests); Worker requests that Cloudflare reports without a name get their own row, *Not named by Cloudflare*. Stored data is only reported for the whole account.
+
 Cloudflare does not document every field of these datasets, so the page asks the API which fields exist (introspection) and builds its queries from them. A dataset that is missing or refused leaves a note under *About the figures*; the rest still shows. After each deploy, `scripts/admin-check.mjs` runs the real queries and writes what it found in the workflow's summary.
 
 ## Sign-in
