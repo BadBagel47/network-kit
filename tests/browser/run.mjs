@@ -89,6 +89,12 @@ try {
   await a.p.waitForFunction(([id, x]) => window.demo.world.ships[id].x > x + 20, [bId, x0]);
   // Bo's screen follows the host's positions.
   await b.p.waitForFunction(([id, x]) => window.demo.world.ships[id].x > x + 20, [bId, x0]);
+  // F-045: no inertia, the ship stops when the key is let go; Bo sees the response time.
+  const stopped = await a.p.evaluate((id) => window.demo.world.ships[id].x, bId);
+  await a.p.waitForTimeout(300);
+  assert.equal(await a.p.evaluate((id) => window.demo.world.ships[id].x, bId), stopped, 'the ship stops at once');
+  await b.p.waitForFunction(() => /^Response: \d+ ms$/.test(document.querySelector('#response').textContent), null, { timeout: 6000 });
+  assert.equal(await a.p.textContent('#response'), 'You run the game: no delay');
 
   // F-038: the arrows on the screen steer too (held while pressed).
   assert.equal(await b.p.isVisible('#pad'), true);

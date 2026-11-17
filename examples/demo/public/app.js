@@ -98,6 +98,7 @@ function showGame() {
     log(snapshot ? 'You run the game now, from the latest state.' : 'You run the game.');
   });
   room.on('role', ({ isHost }) => {
+    responseMs = null;
     if (!isHost) inputs = {};
   });
 
@@ -121,6 +122,15 @@ function showGame() {
   });
 
   room.on('message', ({ from, data }) => {
+    if (data?.type === 'ping') {
+      room.send({ type: 'pong', t: data.t }, { to: [from] }); // answered at once
+      return;
+    }
+    if (data?.type === 'pong') {
+      const ms = performance.now() - data.t;
+      responseMs = responseMs === null ? ms : responseMs * 0.6 + ms * 0.4; // a little smoothed
+      return;
+    }
     if (room.isHost) {
       if (data?.type === 'input') inputs[from] = data.keys;
     } else if (data?.type === 'pos') {
@@ -293,13 +303,32 @@ function drawnAt(s, t) {
   return { x: s.fromX + (s.x - s.fromX) * k, y: s.fromY + (s.y - s.fromY) * k };
 }
 
+const SPEED = 4; // pixels per step, 120 a second
+
+// Response time: how long a message takes from this browser to the one running
+// the game and back, measured every 2 seconds (F-045). The host has no delay.
+let responseMs = null;
+setInterval(() => {
+  if (!room || room.status !== 'online' || room.isHost || !room.room?.hostId || room.self?.role !== 'player') return;
+  room.send({ type: 'ping', t: performance.now() }, { to: [room.room.hostId] });
+}, 2000);
+function showResponse() {
+  const el = $('response');
+  if (!room || (!room.isHost && room.self?.role !== 'player')) return void (el.textContent = ''); // viewers send nothing
+  el.textContent = room.isHost ? 'You run the game: no delay'
+    : responseMs === null ? 'Response: measuring…' : `Response: ${Math.round(responseMs)} ms`;
+}
+setInterval(showResponse, 500);
+
 setInterval(() => {
   if (!room?.isHost || !room.running) return;
   world.tick += 1;
   for (const [id, ship] of Object.entries(world.ships)) {
+    // No inertia: a ship moves at an even speed while a key is held and stops
+    // at once, so the response is easy to judge (F-045).
     const k = inputs[id] ?? {};
-    ship.vx = (ship.vx + ((k.right ? 1 : 0) - (k.left ? 1 : 0)) * 0.6) * 0.9;
-    ship.vy = (ship.vy + ((k.down ? 1 : 0) - (k.up ? 1 : 0)) * 0.6) * 0.9;
+    ship.vx = ((k.right ? 1 : 0) - (k.left ? 1 : 0)) * SPEED;
+    ship.vy = ((k.down ? 1 : 0) - (k.up ? 1 : 0)) * SPEED;
     ship.x = Math.max(10, Math.min(590, ship.x + ship.vx));
     ship.y = Math.max(10, Math.min(350, ship.y + ship.vy));
   }

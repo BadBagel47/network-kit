@@ -10,6 +10,8 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+- Demo: ships without inertia and a response-time meter, to judge how fast the game answers (F-045). The kit itself is unchanged.
+
 ## 0.5.1 (2026-11-17)
 
 Affects: every game; take it in (bug fixes only, nothing to change in a game). Found in the owner's phone and iPad test (D-025).
