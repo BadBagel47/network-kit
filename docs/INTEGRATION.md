@@ -101,7 +101,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `lateJoin` | `'now'` | Joining a running game in a playing role: `'now'`, `'next'` (waits until admitted) or `'never'`. |
 | `lateJoinChoices` | all three | Which `lateJoin` values a room's owner may pick. |
 | `pauseBy` | `'anyone'` | Who may pause and resume: `'anyone'` (whose role may pause), `'host'` (host and owner only) or `'nobody'`. |
-| `graceMs` | 60 s | How long a dropped participant keeps the seat and place. |
+| `graceMs` | 60 s | How long a dropped participant keeps the seat and place. Someone who comes back later is the same participant again (`returning`), and gets the place back if nobody has taken it (from 0.5.1). |
 | `autoPauseMs` | off | Pause the room when a playing participant has been away this long; lifted when they are back or gone. |
 | `takeover` | `false` | Host-run rooms: may another participant continue a lost host's game? Only while a game is in progress (countdown or playing); in the lobby and between rounds the room waits, unless the host is gone past the grace period. Off: the room always waits for the host. |
 | `takeoverMs` | 5 s | With takeover: how long to wait for the host first. |
@@ -238,7 +238,7 @@ Identities and owner keys are stored per game server, so games on the same site 
 | `message` | `{ from, data }` (host-run: from participants to the host, from the host to the others; server-run: `from` is `null`) |
 | `host` | `{ snapshot }` this browser runs the game now: continue from `snapshot`, or start fresh when it is `null`. Also sent to the creator at the start and to a host whose page reloaded. `room.isHost` is already true. |
 | `role` | `{ isHost, isOwner }` when either changes for this client |
-| `peer` | `{ event, id, player, why }` with `event` = `join`, `waiting`, `drop`, `back`, `gone`, `host` or `owner`. `back` is sent on every reconnect, also a silent one. |
+| `peer` | `{ event, id, name, player, why, returning }` with `event` = `join`, `waiting`, `drop`, `back`, `gone`, `host` or `owner`. `back` is sent on every reconnect, also a silent one. The room list already includes the participant when `join` or `back` arrives, and `name` is always given (from 0.5.1). `returning` is true for a `join` by someone who was here before and was away longer than the grace period. |
 | `error` | `{ code, command }` a refused command: `place-taken`, `owner-only`, `host-only`, `not-allowed`, `too-large`, … |
 | `ok` | `{ command, n }` a command was carried out |
 | `closed` | `{ code, reason, text }` the room is over for this client (no more reconnecting) |
@@ -263,6 +263,7 @@ The host's browser steps the game; everyone else sends inputs and draws what the
 - The host sends the moving part of the state often with `latest: 'positions'` (only the newest counts), things that must arrive with the default, and `sendSnapshot(state)` every few seconds. Inputs that change very often, like an aim, also go with `latest`.
 - On `host`: load the snapshot (or start fresh) and begin stepping. On `role` with `isHost: false`: stop.
 - On `peer` `join` or `back` (host): send that participant what it needs to see, `send({ type: 'full', ... }, { to: [id] })`. **Never rely on the snapshot for this**: it is not sent to them.
+- Others' moving things (host-run games): positions arrive in steps (the demo sends 15 a second). Draw them gliding from where they are drawn to the newest position over about one interval, or they look jerky; the host draws its own game directly. The demo shows how (`drawnAt` in `examples/demo/public/app.js`).
 - On `peer` `host`, and on `peer` `back` for the host's id (others): send the current input again. A new host does not know which keys are held, and inputs sent while the host was away were dropped.
 - Step the game only while `room.running`.
 - The client sends nothing while the host is alone in the room.

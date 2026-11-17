@@ -127,7 +127,54 @@ test('grace period: drop, back with the same id and place; gone afterwards', asy
   assert.deepEqual(owner.room.places.gunner, [a.id], 'kept during the grace period');
   await world.advance(2_000);
   assert.deepEqual(owner.room.places.gunner, []);
-  assert.deepEqual(owner.last('ev'), { t: 'ev', e: 'gone', id: a.id, why: 'gone' });
+  assert.deepEqual(owner.last('ev'), { t: 'ev', e: 'gone', id: a.id, why: 'gone', name: 'A' });
+});
+
+test('back after the grace period: the same participant gets the place back if it is free (B-044)', async () => {
+  const { world, core, owner } = await setup();
+  const a = await connect(world, core, { name: 'A', pk: 'returner-key-xxxxxxxxxx' });
+  await cmd(core, a, 'take', { place: 'gunner' });
+  await drop(core, a);
+  await world.advance(61_000);
+  assert.equal(owner.last('ev').e, 'gone');
+  owner.clear();
+  const a2 = await connect(world, core, { name: 'A', pk: a.pk });
+  assert.equal(a2.id, a.id, 'the same participant');
+  assert.deepEqual(a2.room.places.gunner, [a.id], 'the place is given back');
+  assert.deepEqual(owner.last('ev'), { t: 'ev', e: 'join', id: a.id, name: 'A', returning: true });
+
+  // Taken by someone else meanwhile: the returner comes back without it.
+  await drop(core, a2);
+  await world.advance(61_000);
+  const b = await connect(world, core, { name: 'B' });
+  await cmd(core, b, 'take', { place: 'gunner' });
+  const a3 = await connect(world, core, { name: 'A', pk: a.pk });
+  assert.equal(a3.id, a.id);
+  assert.deepEqual(a3.room.places.gunner, [b.id]);
+  assert.equal(core.state.players[a.id].place, null);
+
+  // Someone who left on purpose is not "returning" and gets no place back.
+  await cmd(core, a3, 'take', { place: 'engineer' });
+  await cmd(core, a3, 'leave');
+  owner.clear();
+  const a4 = await connect(world, core, { name: 'A', pk: a.pk, key: core.state.keys.player.k });
+  assert.equal(core.state.players[a4.id].place, null);
+  assert.equal(owner.last('ev').returning, undefined);
+});
+
+test('the others get the new room list before they hear who joined, with the name (B-043)', async () => {
+  const { world, core, owner } = await setup();
+  owner.clear();
+  const a = await connect(world, core, { name: 'Ada' });
+  const order = owner.messages().map((m) => (m.t === 'ev' ? `ev:${m.e}` : m.t));
+  assert.ok(order.indexOf('room') < order.indexOf('ev:join'), `room first, then the event: ${order}`);
+  assert.deepEqual(owner.last('ev'), { t: 'ev', e: 'join', id: a.id, name: 'Ada' });
+  await drop(core, a);
+  assert.deepEqual(owner.last('ev'), { t: 'ev', e: 'drop', id: a.id, name: 'Ada' });
+  owner.clear();
+  await connect(world, core, { name: 'Ada', pk: a.pk });
+  const back = owner.messages().map((m) => (m.t === 'ev' ? `ev:${m.e}` : m.t));
+  assert.ok(back.indexOf('room') < back.indexOf('ev:back'), `room first, then the event: ${back}`);
 });
 
 test('late join: now, next (admitted at the next safe point) and never', async () => {

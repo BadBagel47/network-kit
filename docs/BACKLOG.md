@@ -22,9 +22,6 @@
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
 | F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
-| B-042 | Bug | Demo: players who do not run the game see the ships move jerkily (about 15 steps a second), while the host sees them smooth | Medium | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf, owner: "Kör A rek"). Found by the owner 2026-11-17 (D-025 part 1); cause found: the host sends positions 15 times a second and the others draw them as they come, without smoothing between them | Standard |
-| B-043 | Bug | "Someone joined" instead of the name: the room tells the others that a participant joined before it sends the room's new list, so the name is not known yet | Medium | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf, owner: "Kör A rek"). Found by the owner 2026-11-17 (D-025 part 1, test 10); reproduced on the fake host | Standard |
-| B-044 | Bug | A participant away longer than the grace period (60 s; the test locked the phone for 2 min) comes back as the same participant but without the place (B lost gunner), and is announced as joined, not back | Medium | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf, owner: "Kör A rek"). Found by the owner 2026-11-17 (D-025 part 1); reproduced on the fake host; works as built, but the place is lost. Needs the owner's answer (see Proposed runs) | Standard |
 
 ## Done
 
@@ -59,6 +56,9 @@
 | F-038 | Feature | Demo: arrow buttons on the screen for phones and tablets | 2026-11-17 (demo only; tested in Chromium and on an emulated Pixel, not yet on the owner's devices) |
 | D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | 2026-11-17: figures checked in Cloudflare's documentation (read from its source on GitHub, since the documentation site is blocked in the agent's environment); EU rooms confirmed 2026-11-15. See the D-011 details |
 | B-041 | Bug | Demo: the letters W, A, S and D (and the arrow keys) could not be typed in the name field, because the game took them as steering keys on the whole page | 2026-11-17 (demo only; tested in Chromium, not yet on the owner's iPad) |
+| B-042 | Bug | Demo: players who do not run the game saw the ships move jerkily (about 15 steps a second), while the host saw them smooth | 2026-11-17, v0.5.1 (the others' ships glide between positions; demo only; not yet seen on the owner's devices) |
+| B-043 | Bug | "Someone joined" instead of the name: the room told the others that a participant joined before it sent the room's new list | 2026-11-17, v0.5.1 (list first, name in every event; unit tests) |
+| B-044 | Bug | A participant away longer than the grace period came back without the place and was announced as joined | 2026-11-17, v0.5.1 (place given back if free, `returning` on the join, the demo says "is back"; unit tests) |
 
 ## Proposed runs (2026-11-17, rules v1.12)
 
@@ -328,15 +328,15 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 
 ### B-042 Jerky ships for those who do not run the game (2026-11-17)
 - The host steps the game 30 times a second and sends positions 15 times a second (`examples/demo/public/app.js`); the others set each ship to the latest position as it arrives and draw it, so they see 15 jumps a second with uneven gaps.
-- Fix (demo): draw the others' ships a little behind (about 100 ms) and move smoothly between the last two positions. The guide gets a short note that games smooth received positions themselves.
+- Fixed in v0.5.1: the others' ships glide from where they are drawn to the newest position over one interval (about 67 ms); the guide says games do this themselves.
 
 ### B-043 "Someone joined" (2026-11-17)
 - The room sends the event "joined" before the updated room list (`hello` and `admitWaiting` in `src/server/room-core.js`), so the client's `peer` event has no player yet and the demo prints "Someone".
-- Fix (kit, bug-fix release): send the room list first, then the event, and include the participant's name in the event.
+- Fixed in v0.5.1: the room list goes first, then the event; every event carries the name, and the client passes `name` on.
 
 ### B-044 Place lost after a long absence (2026-11-17)
 - After the grace period the participant is removed; the room remembers them (same id when they return), but not their place, so B came back without gunner and was announced as joined.
-- Choice for the owner: give the place back when the participant returns and it is still free (general: Critical's stations, Vättigt's teams), and/or a longer grace period in the demo.
+- Owner's choice 2026-11-17 (Q4, recommendation): give the place back if it is still free; the grace period stays. Fixed in v0.5.1: the room remembers the place, gives it back when free, and marks the join `returning`.
 
 ### F-035 Room code length (2026-11-17, v0.3.0)
 - Asked for by Buzzy (#408) and Bricks (F-007), which use four-character codes; the owner decided on 4 to 12 characters, easy for each game to set.

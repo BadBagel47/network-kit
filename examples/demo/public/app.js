@@ -72,8 +72,8 @@ function log(text) {
   while ($('log').children.length > 30) $('log').lastChild.remove();
 }
 
-function nameOf(id) {
-  return room.player(id)?.name ?? world.ships[id]?.name ?? 'Someone';
+function nameOf(id, name = null) {
+  return room.player(id)?.name ?? name ?? world.ships[id]?.name ?? 'Someone';
 }
 
 function showGame() {
@@ -101,9 +101,9 @@ function showGame() {
     if (!isHost) inputs = {};
   });
 
-  room.on('peer', ({ event, id }) => {
+  room.on('peer', ({ event, id, name, returning }) => {
     const words = { join: 'joined', back: 'is back', drop: 'lost the connection', gone: 'left', host: 'runs the game', waiting: 'is waiting', owner: 'owns the room' };
-    log(`${nameOf(id)} ${words[event] ?? event}.`);
+    log(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}.`);
     if (room.isHost) {
       if (event === 'join' || event === 'back') {
         ensureShips();
@@ -272,12 +272,25 @@ function ensureShips() {
   }
 }
 
+// Positions arrive about 15 times a second, at uneven intervals. Drawing each
+// one as it comes looks jerky, so the others' browsers glide from where a ship
+// is drawn to its newest position over about one interval (B-042).
+const GLIDE_MS = 1000 / 15;
+const now = () => performance.now();
 function applyPositions(p, tick) {
+  const t = now();
   for (const [id, x, y] of p) {
-    world.ships[id] ??= { x, y, vx: 0, vy: 0, color: COLORS[Object.keys(world.ships).length % COLORS.length], name: '' };
-    Object.assign(world.ships[id], { x, y });
+    const s = (world.ships[id] ??= { x, y, vx: 0, vy: 0, color: COLORS[Object.keys(world.ships).length % COLORS.length], name: '' });
+    const at = drawnAt(s, t);
+    Object.assign(s, { x, y, fromX: at.x, fromY: at.y, glideFrom: t });
   }
   world.tick = tick;
+}
+/** Where a ship is drawn at time t: the host draws the game itself, the others glide. */
+function drawnAt(s, t) {
+  if (room?.isHost || s.glideFrom === undefined) return { x: s.x, y: s.y };
+  const k = Math.min(1, (t - s.glideFrom) / GLIDE_MS);
+  return { x: s.fromX + (s.x - s.fromX) * k, y: s.fromY + (s.y - s.fromY) * k };
 }
 
 setInterval(() => {
@@ -308,14 +321,16 @@ function draw() {
   if (!room) return;
   const r = room.room;
   ctx.clearRect(0, 0, 600, 360);
+  const t = now();
   for (const [id, s] of Object.entries(world.ships)) {
+    const at = drawnAt(s, t);
     ctx.fillStyle = s.color;
     ctx.beginPath();
-    ctx.arc(s.x, s.y, id === room.me ? 10 : 8, 0, Math.PI * 2);
+    ctx.arc(at.x, at.y, id === room.me ? 10 : 8, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#e6edf3';
     ctx.font = '12px system-ui';
-    ctx.fillText(s.name || nameOf(id), s.x + 12, s.y - 10);
+    ctx.fillText(s.name || nameOf(id), at.x + 12, at.y - 10);
   }
   if (room.status === 'closed') return;
   let text = '';

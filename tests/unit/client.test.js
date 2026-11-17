@@ -82,6 +82,11 @@ test('reconnect: a dropped connection comes back as the same participant and res
   assert.equal(a.me, id);
   assert.deepEqual(owner.events('message').map((m) => m.data), ['one', 'two']);
   assert.deepEqual(owner.events('peer').map((p) => p.event).filter((e) => e !== 'join'), ['drop', 'back']);
+  // The name comes with every event and the player is already in the room list (B-043).
+  const joined = owner.events('peer').find((p) => p.event === 'join' && p.id === id);
+  assert.equal(joined.name, 'A');
+  assert.equal(joined.player?.name, 'A');
+  assert.equal(joined.returning, false);
 });
 
 test('B-015: gone past the grace period and back in the same page replays nothing', async () => {

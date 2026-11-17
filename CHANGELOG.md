@@ -10,9 +10,14 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
-- Demo: arrow buttons on the screen, so phones and tablets can steer (F-038). The kit itself is unchanged.
-- Demo: the steering letters W, A, S, D and the arrow keys can be typed in the name field again (B-041). The kit itself is unchanged.
-- Admin page (F-008, first part): a separate Worker that shows usage per game against Cloudflare's free limits, with password sign-in (`docs/ADMIN.md`). The kit itself is unchanged.
+## 0.5.1 (2026-11-17)
+
+Affects: every game; take it in (bug fixes only, nothing to change in a game). Found in the owner's phone and iPad test (D-025).
+
+- Fixed: the others heard that someone joined before they got the room's new list, so a game could not show the name yet ("Someone joined"). The list now comes first, and every `peer` event carries the participant's `name` (B-043).
+- Fixed: someone away longer than the grace period came back without their place. They now get it back if nobody has taken it, and their `join` has `returning: true` (B-044).
+- Demo: the others' ships glide between positions instead of jumping 15 times a second (B-042); the steering letters can be typed in the name field (B-041).
+- Admin page (F-008, first part): a separate Worker that shows usage per game against Cloudflare's free limits, with password sign-in (`docs/ADMIN.md`).
 
 ## 0.5.0 (2026-11-17)
 
