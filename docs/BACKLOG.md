@@ -22,6 +22,7 @@
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
 | F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
+| F-045 | Feature | Demo: ships without inertia (they stop at once) and a response-time meter in milliseconds, so the owner can judge how fast the game answers | Medium | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf, owner's go-ahead). Asked by the owner in the phone/iPad test (D-025) | Standard |
 
 ## Done
 
