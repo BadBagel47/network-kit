@@ -66,9 +66,10 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 - **v0.2.1:** a fix to the shipped smoke test only (a timing race that showed on GitHub's test run right after v0.2.0). Games take v0.2.1.
 - **Checked before release:** an independent reviewer went through the release candidate and found two serious and about ten medium faults in the rewrite; they were fixed or recorded before the release (`docs/reviews/2026-11-15-v0.2.0-check.md`). Those last fixes have tests but were not checked again independently.
 - **Tests:** 107 unit tests (room logic, and the real client against it), 12 integration tests in local workerd (the three example games, a flooding connection, a long resend, a room that really sleeps), the demo page in Chromium, the compatibility check and the smoke test that ships with every copy.
-- **Not verified:** the owner has started trying the demo on one phone (D-025; it found B-033 and B-034), the full list is not done yet; Cloudflare's free-plan figures (D-011), so the default limits are estimates.
+- **Not verified:** the owner has started trying the demo on one phone (D-025; it found B-033 and B-034), the full list is not done yet. Cloudflare's free-plan figures were checked in its documentation 2026-11-17 (D-011); the admin page's queries are not yet checked against the real API.
 - **Next:** Vättigt's online play (first game, owner's decision 2026-11-17) in `BadBagel47/vattigt` builds on v0.5.0, following `docs/INTEGRATION.md`; its session does the work and the network-kit session supports it. Critical ST8 F-040 (online mode) in `BadBagel47/critical` continues in parallel. In network-kit: *Proposed runs* in `docs/BACKLOG.md`. Waiting for the owner: D-025 (two phones) and D-028 (how Boomers runs its game).
-- **Latest entries:** v0.5.0 large states and newest values (2026-11-17) · v0.4.0 four-character codes by default (2026-11-17) · v0.3.0 code length (2026-11-17) · v0.2.3 host in the lobby (2026-11-16) · v0.2.2 copied tabs (2026-11-15) · v0.2.0 hardening and shape, with an independent check before release (2026-11-15) · games pass D-012 (2026-11-15) · independent review of v0.1.0 (2026-11-15) · demo on Cloudflare, EU rooms confirmed (2026-11-15) · v0.1.0 (2026-11-15).
+- **Admin page (2026-11-17, F-008 first part):** a separate Worker `network-kit-admin` shows usage per game against the free limits, with password sign-in (`docs/ADMIN.md`). Tested with sample figures in local workerd and Chromium; the real figures need the owner's read-only token and password.
+- **Latest entries:** admin page with usage per game (2026-11-17) · v0.5.0 large states and newest values (2026-11-17) · v0.4.0 four-character codes by default (2026-11-17) · v0.3.0 code length (2026-11-17) · v0.2.3 host in the lobby (2026-11-16) · v0.2.2 copied tabs (2026-11-15) · v0.2.0 hardening and shape, with an independent check before release (2026-11-15) · games pass D-012 (2026-11-15) · independent review of v0.1.0 (2026-11-15) · demo on Cloudflare, EU rooms confirmed (2026-11-15) · v0.1.0 (2026-11-15).
 
 ## One-time actions
 
@@ -76,7 +77,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 - Done (2026-11-15): Cloudflare API token (template "Edit Cloudflare Workers") added as the GitHub Secret `CLOUDFLARE_API_TOKEN`; the demo deploys from `main` by itself.
 - Done (2026-11-15): the owner made network-kit public, so games' update workflows need no token.
-- Pending: a second, read-only Cloudflare API token for account analytics, as a secret for the admin page (F-008).
+- Pending (2026-11-17): for the admin page (F-008), the GitHub secrets `ADMIN_PASSWORD` (the owner's own password, at least 12 characters) and `CLOUDFLARE_ANALYTICS_TOKEN` (a read-only Cloudflare token with Account Analytics Read and Workers Scripts Read). Steps in `docs/ADMIN.md`.
 
 ## Users of network-kit
 
@@ -97,6 +98,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 | Current state, decisions | this file |
 | Features, bugs, design, proposed runs | `docs/BACKLOG.md` |
 | How games use network-kit (API, options, budget, privacy) | `docs/INTEGRATION.md` |
+| Admin page (usage per game, sign-in, secrets) | `docs/ADMIN.md`, code in `admin/` |
 | Changes per version | `CHANGELOG.md` |
 | Reviews (v0.1.0 with proof scripts, the check of v0.2.0) | `docs/reviews/` |
 | Update workflow for games | `templates/update-network-kit.yml` |

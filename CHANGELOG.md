@@ -11,6 +11,7 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 ## Unreleased
 
 - Demo: arrow buttons on the screen, so phones and tablets can steer (F-038). The kit itself is unchanged.
+- Admin page (F-008, first part): a separate Worker that shows usage per game against Cloudflare's free limits, with password sign-in (`docs/ADMIN.md`). The kit itself is unchanged.
 
 ## 0.5.0 (2026-11-17)
 

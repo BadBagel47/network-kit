@@ -1,0 +1,16 @@
+// network-kit admin page (F-008): usage per game against the Free plan limits.
+// Deployed by .github/workflows/deploy-admin.yml; secrets ADMIN_PASSWORD and
+// CF_ANALYTICS_TOKEN are set there from the repository's secrets.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "network-kit-admin",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "public", "binding": "ASSETS" },
+  "durable_objects": {
+    "bindings": [{ "name": "GUARD", "class_name": "AdminGuard" }]
+  },
+  // Free plan: SQLite-backed Durable Objects only.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AdminGuard"] }],
+  "observability": { "enabled": false }
+}

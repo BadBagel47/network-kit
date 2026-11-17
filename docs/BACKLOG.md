@@ -12,8 +12,7 @@
 | --- | --- | --- | --- | --- | --- |
 | F-003 | Feature | One admin page for all games: on/off/until, private only, emergency stop | Medium | Idea; must include the gate redesign (review finding 15, D-012) | Strong, high |
 | F-004 | Feature | Automatic daily budget per game | Medium | Proposal | Standard |
-| F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf): first part, an admin page with usage per game (owner's go-ahead "Kör A rek") | Standard |
-| D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf, admin page run). EU rooms confirmed 2026-11-15 (first demo deploy); the Free plan figures are still unchecked | Standard |
+| F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | First part built 2026-11-17: admin page with usage per game against the free limits (`docs/ADMIN.md`); tested locally with sample figures, not yet against Cloudflare's real figures (needs the read-only token and the password). Left: plan, estimated cost, spending cap | Standard |
 | D-025 | Design | Try the demo on real phones: lock screen, wifi to mobile data, tab in the background (two phones, or two browser apps on one); include an iPad, since Critical ST8's touch controls start on iPad (2026-11-17) | Medium | Owner task; started 2026-11-15 on one phone (found B-033 and B-034) | – |
 | F-026 | Feature | Operations: what players see when the daily quota is used up, a budget for the public demo, logging in production | Low | Proposal from the review 2026-11-15 | Standard |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
@@ -55,6 +54,7 @@
 | F-036 | Feature | Large states: send a full state to a joiner and keep a snapshot when the game's state is larger than the default limits, by packing (compression) and/or splitting into parts; check Cloudflare's limit on one stored value for the snapshot | 2026-11-17, v0.5.0: split into parts (owner's answer to question A1), messages and stored snapshots; tested in local workerd |
 | F-037 | Feature | Values where only the latest counts (an aim that changes 60 times a second): when the client holds back sends to keep the room's pace, keep and send the newest value per kind instead of dropping it | 2026-11-17, v0.5.0: `send(data, { latest: kind })` |
 | F-038 | Feature | Demo: arrow buttons on the screen for phones and tablets | 2026-11-17 (demo only; tested in Chromium and on an emulated Pixel, not yet on the owner's devices) |
+| D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | 2026-11-17: figures checked in Cloudflare's documentation (read from its source on GitHub, since the documentation site is blocked in the agent's environment); EU rooms confirmed 2026-11-15. See the D-011 details |
 
 ## Proposed runs (2026-11-17, rules v1.12)
 
@@ -70,12 +70,10 @@ Ordered for: what the games moving here next need first (Bricks, Buzzy), operati
   - F-032 – Rooms nobody is playing in are noticed, and the update and release workflows are tested automatically, so a forgotten room costs less and workflow mistakes are caught early.
   - Question: Which of the small additions in F-031 now? Recommendation: only lifting a ban and the ban list (Buzzy needs them); the rest when a game asks.
 - **C** – strong model, high level – Administration and budget
-  - D-011 – Cloudflare's current free limits are checked, so the numbers below are right (needs a read-only Cloudflare token for account analytics, added by the owner as a secret).
-  - F-008 – Usage per game today and this month is shown, with plan, estimated cost and an optional spending cap.
+  - F-008 – The admin page also shows plan, estimated cost and an optional spending cap (usage per game is built).
   - F-004 – Each game gets a share of the daily free budget and closes for the day when it is used up.
   - F-003 – One admin page with on/off/until, private only and an emergency stop per game; checked inside the room, also when a round starts (Bricks), not on reconnects.
   - F-026 – Players get a clear message when the quota is used up; the public demo gets a budget; logging is turned on.
-  - Question: How does the owner sign in to the admin page? Recommendation: Cloudflare Access in front of the page (sign-in with a one-time code by email; free for a few users, to be confirmed in D-011), so the kit needs no login code of its own.
   - Question: How is the daily free budget shared between the games? Recommendation: set per game on the admin page, equal shares by default.
   - Question (shown in a later proposal): Should the new admin page also replace Bricks' own admin Worker? Recommendation: no, not now: it serves the games on network-kit, and Bricks moves to it when Bricks moves to network-kit.
 - **D** – standard model, medium level – Turn-based games (from Vättigt)
@@ -176,9 +174,10 @@ Vättigt (first game on network-kit, owner's decision 2026-11-17) and Critical F
 - Earlier idea: the room already gets a heartbeat from every client every 20 seconds (answered for free); `getWebSocketAutoResponseTimestamp` tells when a socket last sent one. Players who stop receiving state could ask the room to check the host; if the host's last heartbeat is too old, the room treats the host as dropped. Must not cost room time while nothing happens.
 
 ### D-011 Cloudflare limits and EU rooms on the Free plan (2026-11-15)
+- Checked 2026-11-17 (Cloudflare's documentation, read from github.com/cloudflare/cloudflare-docs): Workers Free 100,000 requests a day (error 1027 above it); Durable Objects Free 100,000 requests a day and 13,000 GB-s a day; SQLite storage 5 million rows read and 100,000 rows written a day, 5 GB stored in total; all daily limits per account, reset at 00:00 UTC, and operations over a limit fail. Incoming WebSocket messages count as requests at 20:1 for billing; outgoing messages and protocol pings are free; auto-responses (our ping/pong) cost no duration; hibernating objects cost no duration; duration is billed at 128 MB per active object; each `setAlarm()` and each delete is a row written. The analytics show real message counts, not the 20:1 figure. Used by the admin page (`admin/limits.js`).
 - The figures in `docs/INTEGRATION.md` (100,000 requests and 13,000 GB-s a day, 20:1 billing of incoming WebSocket messages) come from earlier notes, not from Cloudflare's pages, which could not be reached from the build environment.
 - EU-only rooms: confirmed on 2026-11-15. The first demo deploy created a room with `ROOM_JURISDICTION=eu` (recorded under Decisions in `docs/HANDOFF.md`).
-- Still open: the Free plan figures, best read from the account's own usage numbers in F-008.
+- The account's own figures are shown on the admin page (F-008).
 
 ### D-012 Fit for the other games (2026-11-15)
 - The owner wants network-kit to work for any game and be reused, not tailored to one project (project rule in `AGENTS.md`).

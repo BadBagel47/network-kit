@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>network-kit usage</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="viz-root">
+    <header class="top">
+      <h1>network-kit usage</h1>
+      <form id="logout" method="post" action="/logout" hidden>
+        <button type="submit">Sign out</button>
+      </form>
+    </header>
+
+    <section id="signin" hidden>
+      <form method="post" action="/login" class="signin">
+        <input type="text" name="username" autocomplete="username" value="admin" hidden>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button type="submit">Sign in</button>
+        <p id="signin-error" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <p id="message" class="message" role="status"></p>
+
+    <section id="dashboard" hidden>
+      <h2>Today on the whole account</h2>
+      <p class="muted" id="today-note"></p>
+      <ul id="meters" class="meters"></ul>
+
+      <h2>Per game</h2>
+      <div class="filters" role="group" aria-label="Period">
+        <button type="button" data-period="today" aria-pressed="true">Today</button>
+        <button type="button" data-period="yesterday" aria-pressed="false">Yesterday</button>
+        <button type="button" data-period="month" aria-pressed="false">This month</button>
+      </div>
+      <p class="muted" id="period-note"></p>
+      <div class="table-wrap"><table id="games"></table></div>
+
+      <h2>Last 30 days</h2>
+      <div class="filters">
+        <label for="metric">Show</label>
+        <select id="metric"></select>
+        <button type="button" id="as-table" aria-pressed="false">Table</button>
+      </div>
+      <div id="chart" class="chart"></div>
+      <div id="chart-table" class="table-wrap" hidden></div>
+
+      <details class="about">
+        <summary>About the figures</summary>
+        <ul id="definitions"></ul>
+        <ul id="notes" class="notes"></ul>
+      </details>
+    </section>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
