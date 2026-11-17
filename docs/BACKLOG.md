@@ -21,6 +21,7 @@
 | F-030 | Feature | A room-kept state for newcomers, optionally per role, so joiners and reloading participants get it without relying on the host | Medium | Idea from the games pass (D-012) | Strong, high |
 | F-031 | Feature | Smaller additions found in the games pass: automatic placement, ready flags, pause timeline in server time, grace period per phase, unban and ban list, admit one by one, access per role, private kept state per participant, server time on relayed messages, state saved in parts, rate caps per role | Low | Ideas from the games pass (D-012); each is added when a game needs it | Standard |
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
+| F-039 | Feature | Turn-based games where one player acts at a time: (1) an option to let a playing participant send straight to the others in a host-run room, not only to the host; (2) the host can name who should take over first (e.g. the player whose turn it is) | Low | Idea from Vättigt (2026-11-17); Vättigt works without it | Standard |
 
 ## Done
 
@@ -290,6 +291,15 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - The update template and the release workflow were simulated by hand in run B, not tested in CI. A small script that runs their shell steps against local repositories would catch regressions.
 - The gate has a unit test for creating a room, none for joining (it changes in F-003 anyway).
 - A CI check that a change to `src/` comes with a version bump and a changelog entry.
+
+### F-039 Turn-based games: direct sends and a preferred successor (idea from Vättigt, 2026-11-17)
+
+Vättigt (`BadBagel47/vattigt`, its `docs/NETWORK.md`) is a turn-based artillery game for phones, 2 to 8 players: only the player whose turn it is acts, and every browser computes the same physics from the room's seed and that player's inputs. It fits a host-run room with takeover in v0.5.0 without changes (inputs go to the host, the host forwards them to everyone, aim sent with `latest`). Two things would make such games simpler and cheaper; neither blocks Vättigt.
+
+1. **Direct sends from a player.** Today a non-host participant's messages reach only the host, so the active player's input crosses the room twice (player to host, host to everyone) and counts twice against the budget, and nothing reaches the others while the host is away. Proposal: a role option (e.g. `sendsTo: 'host' | 'all'`, default `'host'`) that lets a playing participant use the same targets as the host. General use: lockstep turn-based games (Vättigt, a memory-type game, board games), reactions and chat in any game. With two participants this is what Bricks already gets.
+2. **A preferred successor.** In a turn-based game on phones, most players put the phone down while waiting, so the host's phone is often the one asleep; takeover then picks the owner or whoever has been in the room longest, who may be asleep too. Proposal: the host can name an order of preferred successors (e.g. the player whose turn it is, who is certainly awake), used before the default order. General use: any host-run game with takeover where the game knows who is active (turn-based games, a crew game's captain).
+
+To check when a turn-based game moves here: how often the host role moves when players lock their phones between turns (D-025 on real phones covers the mechanism).
 
 ### B-033 A copied tab takes over the participant (2026-11-15)
 - Found by the owner when trying the demo on one phone (D-025): the player link opened in a new tab of the same browser showed "(owner, host)" and no name field, and the first tab closed with "The room was opened in another tab."
