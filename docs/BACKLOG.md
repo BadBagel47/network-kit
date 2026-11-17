@@ -21,6 +21,8 @@
 | F-030 | Feature | A room-kept state for newcomers, optionally per role, so joiners and reloading participants get it without relying on the host | Medium | Idea from the games pass (D-012) | Strong, high |
 | F-031 | Feature | Smaller additions found in the games pass: automatic placement, ready flags, pause timeline in server time, grace period per phase, unban and ban list, admit one by one, access per role, private kept state per participant, server time on relayed messages, state saved in parts, rate caps per role | Low | Ideas from the games pass (D-012); each is added when a game needs it | Standard |
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
+| F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
+| F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 
 ## Done
 
@@ -320,6 +322,18 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - Asked by Critical ST8 (its agent, by message): its Gunner's aim changes 60 times a second, but a connection may send at most 40 messages a second. Today the client keeps the pace by holding back reliable messages and dropping `reliable: false` ones that come too fast, so the newest aim can be the one that is dropped and the host is left with an older value until the next change.
 - Proposal: `send(data, { latest: 'aim' })` keeps one pending value per kind and sends the newest one as soon as the pace allows. General: positions, aims, sliders.
 - Until then a game sends such values at most about 20 times a second itself, and sends the final value with the default (reliable) when the input stops.
+
+### F-039 Direct sends from playing participants (2026-11-17, from Vättigt)
+- Today a non-host's message in a host-run room reaches only the host (`relay` in `src/server/room-core.js`). In a turn-based game the active player's input then crosses the room twice (player to host, host to everyone), counts twice against the room's budget, and stops while the host is away.
+- Idea (Vättigt): a role option, e.g. `sendsTo: 'host' | 'all'` (default `'host'`, so nothing changes for existing games), that lets a participant in that role use the same targets as the host.
+- Other uses: lockstep turn-based games (memory-type, board games), reactions or chat in any game.
+- To settle when built: whether direct sends continue while the game is paused, and whether the host still gets a copy. Cheating is not a priority (hobby games), so the host does not need to vet direct sends.
+
+### F-040 Preferred successor for takeover (2026-11-17, from Vättigt)
+- Today takeover picks the owner, else whoever has been here longest (`takeOver` in `src/server/room-core.js`). In a turn-based phone game most players put the phone down between turns, so that participant may be asleep too.
+- Idea (Vättigt): the host names a preferred order (e.g. the player whose turn it is, certainly awake), kept by the room and tried before the default order.
+- The existing awake check after a takeover still applies, so a preferred participant who does not answer is passed over.
+- Other uses: any host-run game with takeover that knows who is active.
 
 ### Run A result (2026-11-17, v0.5.0)
 - F-036: client and room split any text above 16,000 characters into parts and join them; the room stores the snapshot in parts (meta record plus text parts) and still reads the 0.4 format. Parts count against the connection's pace; a joined message counts once against the room's daily budget. Default limits 256 kB per message and 1 MB per snapshot. Tested: unit tests, the real client against the room, and local workerd with a 190 kB state to a joiner and a 600 kB snapshot handed to a new host.
