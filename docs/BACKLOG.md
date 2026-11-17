@@ -14,13 +14,14 @@
 | F-004 | Feature | Automatic daily budget per game | Medium | Proposal | Standard |
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
 | D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | EU rooms confirmed 2026-11-15 (first demo deploy); the Free plan figures are still unchecked | Standard |
-| D-025 | Design | Try the demo on real phones: lock screen, wifi to mobile data, tab in the background (two phones, or two browser apps on one) | Medium | Owner task; started 2026-11-15 on one phone (found B-033 and B-034) | – |
+| D-025 | Design | Try the demo on real phones: lock screen, wifi to mobile data, tab in the background (two phones, or two browser apps on one); include an iPad, since Critical ST8's touch controls start on iPad (2026-11-17) | Medium | Owner task; started 2026-11-15 on one phone (found B-033 and B-034) | – |
 | F-026 | Feature | Operations: what players see when the daily quota is used up, a budget for the public demo, logging in production | Low | Proposal from the review 2026-11-15 | Standard |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
 | F-029 | Feature | Rooms created by a game's server without a participating creator (e.g. an invitation two people open), with the first eligible participant leading | Medium | Idea from the games pass (D-012); needed when Bricks moves | Strong, high |
 | F-030 | Feature | A room-kept state for newcomers, optionally per role, so joiners and reloading participants get it without relying on the host | Medium | Idea from the games pass (D-012) | Strong, high |
 | F-031 | Feature | Smaller additions found in the games pass: automatic placement, ready flags, pause timeline in server time, grace period per phase, unban and ban list, admit one by one, access per role, private kept state per participant, server time on relayed messages, state saved in parts, rate caps per role | Low | Ideas from the games pass (D-012); each is added when a game needs it | Standard |
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
+| F-036 | Feature | Large states: send a full state to a joiner and keep a snapshot when the game's state is larger than the default limits, by packing (compression) and/or splitting into parts; check Cloudflare's limit on one stored value for the snapshot | Medium | Need from Critical ST8's review 2026-11-17: its state measured 41 kB at the start and up to 187 kB with visited bases, against 64 kB per message and 512 kB per snapshot by default. Critical also shrinks its state (D-263 there) | Strong, high |
 
 ## Done
 
@@ -65,6 +66,8 @@
 - **C** – standard model, medium level – Smaller additions and follow-ups
   - F-031 – Unban and the other small additions from the games pass, so Buzzy's leader can undo a ban.
   - F-032 – Notice a room nobody is playing in, and test the update and release workflows automatically.
+- **D** – strong model, high level – Large states
+  - F-036 – Pack or split full states and snapshots that are larger than the limits, so games with a large world (Critical ST8) can let players join and a new host take over.
 
 Owner tasks: D-025 (try the demo on phones; on one phone, use two different browser apps) and D-028 (decide how Boomers runs its game).
 
@@ -109,7 +112,7 @@ Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.4.0 f
 ### F-005 Critical ST8 needs (updated 2026-11-15; done in v0.1.0)
 - Critical ST8 (https://github.com/BadBagel47/critical, the owner's top-down co-op space game) is the first real user, decided by the owner on 2026-11-15. Its online mode is F-040 and late join F-038 there; network preparations D-060, D-061, D-062 there.
 - What the game already is (2026-11-15): playable solo end to end; up to three players online share one frigate on three posts (Captain, Gunner, Engineer) and may switch posts freely; solo starts as Captain. Boarding switches to a top-down on-foot view. Pure JavaScript without a build step, hosted on GitHub Pages, moving to Cloudflare when the engine is built in.
-- The game logic is deterministic and separate from drawing and input: the whole game is one plain object (about 25 kB, about 3 kB changes all the time, measured 2026-11-14), stepped 60 times a second, and `stepPlayers()` takes each player's requests. That fits F-006 (one player's browser runs the game).
+- The game logic is deterministic and separate from drawing and input: the whole game is one plain object (about 25 kB, about 3 kB changes all the time, measured 2026-11-14; measured again 2026-11-17: 41 kB at the start and up to 187 kB with visited bases, see F-036), stepped 60 times a second, and `stepPlayers()` takes each player's requests. That fits F-006 (one player's browser runs the game).
 - Posts on a shared ship: a seat can be a post; players claim and switch posts freely, a post is held by at most one player, and the room tells everyone who holds what.
 - Messages to one player or a group, not only to everyone: players on the ship and players boarding a station see different things, and the host decides who gets what. This also saves the daily budget.
 - Snapshots for join and rejoin: a player who joins mid-game or comes back gets the full state once (about 25 kB), then only changes (F-038 there).
@@ -300,3 +303,9 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 ### F-035 Room code length (2026-11-17, v0.3.0)
 - Asked for by Buzzy (#408) and Bricks (F-007), which use four-character codes; the owner decided on 4 to 12 characters, easy for each game to set.
 - Built as one server option, `codeLength` (default 5 in v0.3.0; the owner then chose 4 as the default, v0.4.0). The guide has a table of how many codes each length gives and when to make rooms private.
+
+### F-036 Large states (2026-11-17)
+- From a review of Critical ST8's online plans: the game's whole state is 41 kB at the start, about 154 kB with one base the crew has been inside and 187 kB after a while, and it grows with every base visited. The defaults are 64 kB per message (`maxMessageBytes`) and 512 kB per snapshot (`maxSnapshotBytes`), so a full state for a joiner does not fit in one message, and a long game would not fit as a snapshot.
+- Critical shrinks its own state (D-263 there: places rebuilt from a seed, only changes kept), but other games with a large world will meet the same limit.
+- General options: pack messages and snapshots (browsers have `CompressionStream`; check Safari and the Worker runtime), split a large message into parts that the client puts together, or both. Large sends should not count as many messages against the per-connection pace.
+- Check Cloudflare's limit on the size of one stored value in a Durable Object before relying on 512 kB snapshots (part of D-011).
