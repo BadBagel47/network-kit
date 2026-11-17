@@ -22,6 +22,7 @@
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
 | F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
+| B-041 | Bug | Demo: the letters W, A, S and D (and the arrow keys) cannot be typed in the name field, because the game takes them as steering keys on the whole page | High | Found by the owner 2026-11-17 in the phone/iPad test (D-025); cause found, not fixed | Standard |
 
 ## Done
 
@@ -311,6 +312,11 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - Cause: takeover starts whenever the host drops, also when no game is running (lobby, between rounds), where there is nothing to continue; and the host role only returns to the owner by a handover.
 - Fixed in v0.2.3 as proposed: with `takeover` on, a lost host is replaced only while a game is in progress (countdown or playing, also paused); in the lobby and after a round the room just waits. An owner who comes back while no game is in progress gets the host role back (with the kept state, so a series of rounds continues). The demo's text: the owner, who may start, is told to press Start.
 - Phones close a background tab's connection within seconds, so during a game a short app switch by the host still hands the game over (that is what takeover is for). If that is too eager, `takeoverMs` can be raised per game.
+
+### B-041 Steering keys block typing (2026-11-17)
+- Found by the owner in the test with an iPad keyboard (D-025): the letter A could not be typed in the name field; other letters worked.
+- Cause (read in the code): the demo listens for keys on the whole page and stops W, A, S, D and the arrow keys from doing anything else, also while the player types in a text field.
+- Fix: let the keys through when a text field (or another field that takes typing) has focus. Demo only; the kit is unchanged.
 
 ### F-035 Room code length (2026-11-17, v0.3.0)
 - Asked for by Buzzy (#408) and Bricks (F-007), which use four-character codes; the owner decided on 4 to 12 characters, easy for each game to set.
