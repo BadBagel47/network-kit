@@ -325,6 +325,7 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 ### D-025 results, 2026-11-17 (iPad host with keyboard, Pixel 10 Pro as B), part 1
 - Works: joining by QR code, taking a place, steering with keys and screen arrows, takeover during a game and the owner coming back as owner.
 - Found: B-041 (steering letters could not be typed in the name field; fixed the same evening), B-042 (jerky ships for those who do not run the game), B-043 ("Someone joined" instead of the name), B-044 (after a 2-minute lock B was back without the gunner place).
+- Response time (F-045 meter, after v0.5.1): 110–130 ms from the Pixel on 5G to the iPad (host, wifi) and back, through an EU room. Fine for turn-based games; real-time games should move the player's own ship at once and correct it against the host (note in the guide).
 - Note: tests 2 and 10 lock the screen for 2 minutes, longer than the demo's 60-second grace period, so those participants were removed and came back as new joins; the test plan did not say so.
 
 ### B-042 Jerky ships for those who do not run the game (2026-11-17)

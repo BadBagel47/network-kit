@@ -263,6 +263,7 @@ The host's browser steps the game; everyone else sends inputs and draws what the
 - The host sends the moving part of the state often with `latest: 'positions'` (only the newest counts), things that must arrive with the default, and `sendSnapshot(state)` every few seconds. Inputs that change very often, like an aim, also go with `latest`.
 - On `host`: load the snapshot (or start fresh) and begin stepping. On `role` with `isHost: false`: stop.
 - On `peer` `join` or `back` (host): send that participant what it needs to see, `send({ type: 'full', ... }, { to: [id] })`. **Never rely on the snapshot for this**: it is not sent to them.
+- Your own moving thing (real-time host-run games): a player who does not run the game waits a round trip (about 110–130 ms measured 2026-11-17, phone on 5G to a tablet on wifi) before the host's positions show their key press. Move the player's own ship at once in their browser and correct it gently towards the host's position when it arrives, so steering feels immediate.
 - Others' moving things (host-run games): positions arrive in steps (the demo sends 15 a second). Draw them gliding from where they are drawn to the newest position over about one interval, or they look jerky; the host draws its own game directly. The demo shows how (`drawnAt` in `examples/demo/public/app.js`).
 - On `peer` `host`, and on `peer` `back` for the host's id (others): send the current input again. A new host does not know which keys are held, and inputs sent while the host was away were dropped.
 - Step the game only while `room.running`.
