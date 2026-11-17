@@ -12,8 +12,8 @@
 | --- | --- | --- | --- | --- | --- |
 | F-003 | Feature | One admin page for all games: on/off/until, private only, emergency stop | Medium | Idea; must include the gate redesign (review finding 15, D-012) | Strong, high |
 | F-004 | Feature | Automatic daily budget per game | Medium | Proposal | Standard |
-| F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Idea | Standard |
-| D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | EU rooms confirmed 2026-11-15 (first demo deploy); the Free plan figures are still unchecked | Standard |
+| F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf): first part, an admin page with usage per game (owner's go-ahead "Kör A rek") | Standard |
+| D-011 | Design | Check Cloudflare's Free plan figures (daily requests, GB-s, 20:1 WebSocket billing, storage rows) and whether EU-only rooms work on the Free plan | Medium | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf, admin page run). EU rooms confirmed 2026-11-15 (first demo deploy); the Free plan figures are still unchecked | Standard |
 | D-025 | Design | Try the demo on real phones: lock screen, wifi to mobile data, tab in the background (two phones, or two browser apps on one); include an iPad, since Critical ST8's touch controls start on iPad (2026-11-17) | Medium | Owner task; started 2026-11-15 on one phone (found B-033 and B-034) | – |
 | F-026 | Feature | Operations: what players see when the daily quota is used up, a budget for the public demo, logging in production | Low | Proposal from the review 2026-11-15 | Standard |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
