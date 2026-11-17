@@ -23,8 +23,8 @@
 | F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | D-046 | Design | Where EU rooms run: find which data centre a room is placed in and whether EU rooms can be placed nearer Sweden, to cut the round trip (110–120 ms measured, four legs through one room) | Low | Idea from the phone/iPad test 2026-11-17 (D-025); not started | Standard |
-| F-047 | Feature | Demo: measurement report: per device the time from key press to visible movement, response time, how evenly positions arrive and the frame rate; a Send report button stores it in the demo Worker so the agent can read it | High | Proposal from the phone/iPad test 2026-11-17 (D-025); owner's idea | Standard |
-| F-048 | Feature | Demo: the player's own ship moves at once in their browser and is corrected towards the host's position, with an on/off switch to compare | High | Proposal from the phone/iPad test 2026-11-17 (D-025) | Standard |
+| F-047 | Feature | Demo: measurement report: per device the time from key press to visible movement, response time, how evenly positions arrive and the frame rate; a Send report button stores it in the demo Worker so the agent can read it | High | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf, owner's go-ahead). Proposal from the phone/iPad test 2026-11-17 (D-025); owner's idea | Standard |
+| F-048 | Feature | Demo: the player's own ship moves at once in their browser and is corrected towards the host's position, with an on/off switch to compare | High | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf, owner's go-ahead). Proposal from the phone/iPad test 2026-11-17 (D-025) | Standard |
 
 ## Done
 
