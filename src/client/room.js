@@ -11,7 +11,9 @@
 // that cannot reach the server slows down and finally gives up, so a
 // forgotten tab does not keep knocking for ever.
 
-import { PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, normalizeCode } from '../shared/protocol.js';
+import {
+  PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, normalizeCode, isValidCode,
+} from '../shared/protocol.js';
 import { tabSession } from './tab.js';
 
 // Identities already renewed in this page because the tab was a copy.
@@ -186,6 +188,8 @@ export class NetworkRoom {
 
   /** Join an existing room. */
   static async join(server, options) {
+    // No game uses codes shorter than 4 or longer than 12 characters.
+    if (!isValidCode(normalizeCode(options?.code))) throw new RoomError(CLOSE.NOT_FOUND, 'not-found');
     const room = new NetworkRoom({ ...options, server });
     await room.connect();
     return room;

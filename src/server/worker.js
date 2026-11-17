@@ -131,7 +131,11 @@ export function createRoomServer(gameOptions = {}) {
 
     const code = normalizeCode(parts[0]);
     // A code of the wrong length cannot be one of this game's rooms: answer without waking a room.
-    if (!isValidCode(code, opts.codeLength)) return json({ error: 'not-found' }, 404, cors);
+    // A WebSocket gets a proper "Room not found", so the player is told at once.
+    if (!isValidCode(code, opts.codeLength)) {
+      const ws = parts.length === 2 && parts[1] === 'ws' && request.headers.get('upgrade')?.toLowerCase() === 'websocket';
+      return ws ? closedSocket(CLOSE.NOT_FOUND, 'not-found') : json({ error: 'not-found' }, 404, cors);
+    }
 
     if (parts.length === 1 && request.method === 'GET') {
       const res = await stub(env, code).fetch('https://room/info');

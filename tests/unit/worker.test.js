@@ -67,14 +67,18 @@ test('room codes have the length the game chose, 4 to 12 characters', async () =
   }
   const server = createRoomServer({});
   const res = await server.fetch(new Request('https://rooms.example/rooms', { method: 'POST', body: '{}' }), { ROOMS: fakeRooms() });
-  assert.equal((await res.json()).code.length, 5, 'five by default');
+  assert.equal((await res.json()).code.length, 4, 'four by default');
 });
 
 test('a code of another length is refused without waking a room', async () => {
   const server = createRoomServer({ codeLength: 4 });
   const asleep = { ROOMS: { idFromName: () => { throw new Error('the room must not be woken'); } } };
   assert.equal((await server.fetch(new Request('https://rooms.example/rooms/ABCDE'), asleep)).status, 404);
-  assert.equal((await server.fetch(new Request('https://rooms.example/rooms/ABCDEFGH/ws', { headers: { upgrade: 'websocket' } }), asleep)).status, 404);
+  // A WebSocket gets a closed socket with "Room not found" (Cloudflare only); it must not wake a room either.
+  await assert.rejects(
+    server.fetch(new Request('https://rooms.example/rooms/ABCDEFGH/ws', { headers: { upgrade: 'websocket' } }), asleep),
+    (err) => !/woken/.test(err.message),
+  );
   const ok = await server.fetch(new Request('https://rooms.example/rooms/abcd'), { ROOMS: fakeRooms() });
   assert.equal(ok.status, 200);
 });

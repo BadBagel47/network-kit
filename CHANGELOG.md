@@ -10,6 +10,19 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.4.0 (2026-11-17)
+
+Affects: games that do not set `codeLength` (new rooms get four-character codes). Owner's decision (F-035).
+
+- Changed: room codes have 4 characters by default instead of 5.
+- Fixed: joining with a code of the wrong length now says "Room not found" at once; before, the client tried until it timed out.
+
+### Upgrade guide from 0.3
+
+- To keep five-character codes, add `codeLength: 5` to the game's room options.
+- Otherwise: rooms made before the update have five-character codes, which the updated server refuses as "Room not found". Deploy when no rooms are in use, or set `codeLength: 5` for a day first. Make sure the game's code field accepts four characters.
+- Four characters are easier to guess in open rooms (about 1 million codes); see *Room codes* in the guide for when to make rooms private.
+
 ## 0.3.0 (2026-11-17)
 
 Affects: nobody has to change anything (the default stays 5 characters). Games that want another code length set one option. Needed by Bricks and Buzzy, which use four-character codes today (F-035).

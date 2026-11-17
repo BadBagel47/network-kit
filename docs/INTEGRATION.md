@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.3** (0.3.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.4** (0.4.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -111,7 +111,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `maxActiveMinutesPerDay` | 720 | Per room and UTC day: minutes in which messages arrived. Stops a forgotten room that trickles messages from staying awake all day. 0: no limit. |
 | `maxPendingSockets` | 8 | Connections that have not introduced themselves yet. |
 | `nameMaxLength` | 24 | Nicknames are trimmed to this. |
-| `codeLength` | 5 | Characters in this game's room codes, 4 to 12. See *Room codes* below. |
+| `codeLength` | 4 | Characters in this game's room codes, 4 to 12. See *Room codes* below. |
 | `binding` | `'ROOMS'` | Durable Object binding name. |
 | `basePath` | `'/rooms'` | URL prefix of the room API. |
 | `allowedOrigins` | `'*'` | Pages allowed to use the API (the game's site). |
@@ -121,7 +121,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 
 ### Room codes
 
-A room code is made of 32 easy-to-read characters (no 0, O, 1 or I). Each game chooses the length with `codeLength`, 4 to 12; the default is 5. Typed codes may contain spaces or dashes (`abcd-efgh` is read as `ABCDEFGH`). `GET /rooms` tells the game page the length (`{ codeLength }`), for example for the size of a code field; `isValidCode(code, length)` and `CODE_MIN_LENGTH` / `CODE_MAX_LENGTH` are exported by the client.
+A room code is made of 32 easy-to-read characters (no 0, O, 1 or I). Each game chooses the length with `codeLength`, 4 to 12; the default is 4. Typed codes may contain spaces or dashes (`abcd-efgh` is read as `ABCDEFGH`). `GET /rooms` tells the game page the length (`{ codeLength }`), for example for the size of a code field; `isValidCode(code, length)` and `CODE_MIN_LENGTH` / `CODE_MAX_LENGTH` are exported by the client.
 
 A shorter code is easier to read out and type, and easier to guess:
 

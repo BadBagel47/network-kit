@@ -45,7 +45,12 @@ test('crew game: create, info, join and relay between the host and the others', 
 });
 
 test('room not found and closed rooms are refused with a reason', async () => {
-  await assert.rejects(join('ZZZZZ', 'X'), (err) => err instanceof RoomError && err.code === CLOSE.NOT_FOUND);
+  await assert.rejects(join('ZZZZ', 'X'), (err) => err instanceof RoomError && err.code === CLOSE.NOT_FOUND);
+  // A code of another length is refused at once, not after a timeout.
+  const started = Date.now();
+  await assert.rejects(join('ZZZZZ', 'X'), (err) => err.code === CLOSE.NOT_FOUND);
+  await assert.rejects(join('ZZ', 'X'), (err) => err.code === CLOSE.NOT_FOUND);
+  assert.ok(Date.now() - started < 3000, 'without waiting for a timeout');
   const host = await create('Host');
   const a = await join(host.code, 'A');
   const closed = next(a, 'closed');
@@ -209,7 +214,7 @@ test('quiz: the leader does not play, and nobody takes over when the leader is l
   const quiz = { basePath: '/quiz' };
   const leader = await create('Leader', quiz);
   assert.equal(leader.role, 'leader');
-  assert.equal(leader.code.length, 4, 'the quiz chose four-character codes');
+  assert.equal(leader.code.length, 4, 'four characters by default');
   const a = await join(leader.code, 'A', quiz);
   const b = await join(leader.code, 'B', quiz);
   const tv = await join(leader.code, 'TV', { ...quiz, role: 'viewer' });

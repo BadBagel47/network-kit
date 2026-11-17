@@ -49,7 +49,7 @@
 | B-027 | Bug | Documentation disagrees with the code in several places | 2026-11-15, v0.2.0 |
 | B-033 | Bug | A new tab opened from a game page in the same browser becomes the same participant (here: the owner and host) and closes the first tab; the demo then also skips the name | 2026-11-15, v0.2.2 (tested in Chromium and on an emulated phone; not yet on the owner's phone) |
 | B-034 | Bug | The host role moves to another player in the lobby when the owner's phone switches app for a few seconds, and stays there when the owner is back; the demo then tells the owner to wait for the host although the owner can start | 2026-11-16, v0.2.3 (tested on the fake host, in local workerd and in Chromium; not yet on the owner's phone) |
-| F-035 | Feature | Room code length set by the game, 4 to 12 characters | 2026-11-17, v0.3.0 (tested; the demo's quiz uses 4 characters, the memory game 6) |
+| F-035 | Feature | Room code length set by the game, 4 to 12 characters | 2026-11-17, v0.3.0; 4 characters by default from v0.4.0 (owner's decision) |
 
 ## Proposed runs (2026-11-17, after v0.3.0)
 
@@ -68,7 +68,7 @@
 
 Owner tasks: D-025 (try the demo on phones; on one phone, use two different browser apps) and D-028 (decide how Boomers runs its game).
 
-Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.3.0 following `docs/INTEGRATION.md`. Neither run here is needed for it.
+Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.4.0 following `docs/INTEGRATION.md`. Neither run here is needed for it.
 
 ## Details
 
@@ -299,4 +299,4 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 
 ### F-035 Room code length (2026-11-17, v0.3.0)
 - Asked for by Buzzy (#408) and Bricks (F-007), which use four-character codes; the owner decided on 4 to 12 characters, easy for each game to set.
-- Built as one server option, `codeLength` (default 5). The guide has a table of how many codes each length gives and when to make rooms private.
+- Built as one server option, `codeLength` (default 5 in v0.3.0; the owner then chose 4 as the default, v0.4.0). The guide has a table of how many codes each length gives and when to make rooms private.

@@ -6,7 +6,7 @@ export const PROTOCOL = 2;
 
 // Room codes: no 0/O or 1/I so codes are easy to read out loud.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-export const CODE_LENGTH = 5; // the default; each game may choose 4 to 12 (codeLength)
+export const CODE_LENGTH = 4; // the default; each game may choose 4 to 12 (codeLength)
 export const CODE_MIN_LENGTH = 4;
 export const CODE_MAX_LENGTH = 12;
 
