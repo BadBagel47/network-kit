@@ -10,6 +10,17 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.3.0 (2026-11-17)
+
+Affects: nobody has to change anything (the default stays 5 characters). Games that want another code length set one option. Needed by Bricks and Buzzy, which use four-character codes today (F-035).
+
+- New: `codeLength`, the number of characters in a game's room codes, 4 to 12 (default 5). Codes of another length are refused without waking a room. `GET /rooms` reports the length; the client exports `isValidCode(code, length)`, `CODE_MIN_LENGTH` and `CODE_MAX_LENGTH`. Share links read codes of any allowed length. The guide explains how much easier short codes are to guess, and when to make rooms private.
+- Demo: the quiz uses four-character codes, the memory game six.
+
+### Upgrade guide from 0.2
+
+Nothing to change. To use another code length, add `codeLength: 4` (or 6, 8, ...) to the game's room options, and make the game's code field long enough.
+
 ## 0.2.3 (2026-11-16)
 
 Affects: games with `takeover: true` (Critical ST8 will be one); a bug fix, no change needed in games (take 0.2.3). Found in the owner's phone test (B-034).

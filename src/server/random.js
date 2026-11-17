@@ -11,7 +11,7 @@ function randomChars(alphabet, length) {
   return out;
 }
 
-export const newRoomCode = () => randomChars(CODE_ALPHABET, CODE_LENGTH);
+export const newRoomCode = (length = CODE_LENGTH) => randomChars(CODE_ALPHABET, length);
 export const newPlayerId = () => randomChars(ID_ALPHABET, 6);
 
 function base64url(bytes) {

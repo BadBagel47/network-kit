@@ -17,7 +17,16 @@ test('room codes', () => {
   assert.equal(normalizeCode(' ab cd-e '), 'ABCDE');
   assert.ok(isValidCode('ABCDE'));
   assert.ok(!isValidCode('ABCD0'), 'no zero');
-  assert.ok(!isValidCode('ABCDEF'));
+  // F-035: any length a game may choose, 4 to 12; with a length, exactly that.
+  assert.ok(isValidCode('ABCD'));
+  assert.ok(isValidCode('ABCDEFGHJKLM'));
+  assert.ok(!isValidCode('ABC'));
+  assert.ok(!isValidCode('ABCDEFGHJKLMN'));
+  assert.ok(isValidCode('ABCDEF', 6));
+  assert.ok(!isValidCode('ABCDEF', 5));
+  assert.deepEqual(readShareLink('#room=wxyz'), { code: 'WXYZ', key: null });
+  assert.deepEqual(readShareLink('#room=abcd-efgh-jklm&key=k'), { code: 'ABCDEFGHJKLM', key: 'k' });
+  assert.equal(readShareLink('#room=abc'), null);
 });
 
 test('QR codes decode back to the link', () => {

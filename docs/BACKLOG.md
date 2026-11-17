@@ -21,7 +21,6 @@
 | F-030 | Feature | A room-kept state for newcomers, optionally per role, so joiners and reloading participants get it without relying on the host | Medium | Idea from the games pass (D-012) | Strong, high |
 | F-031 | Feature | Smaller additions found in the games pass: automatic placement, ready flags, pause timeline in server time, grace period per phase, unban and ban list, admit one by one, access per role, private kept state per participant, server time on relayed messages, state saved in parts, rate caps per role | Low | Ideas from the games pass (D-012); each is added when a game needs it | Standard |
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
-| F-035 | Feature | Room code length set by the game with one option, 4 to 12 characters (default 5); shorter codes are easier to guess in open rooms, so the docs say so | Medium | Pågår 2026-11-17; scope widened to 4–12 by the owner (needed by Bricks and Buzzy, 4 characters) | Standard |
 
 ## Done
 
@@ -50,25 +49,26 @@
 | B-027 | Bug | Documentation disagrees with the code in several places | 2026-11-15, v0.2.0 |
 | B-033 | Bug | A new tab opened from a game page in the same browser becomes the same participant (here: the owner and host) and closes the first tab; the demo then also skips the name | 2026-11-15, v0.2.2 (tested in Chromium and on an emulated phone; not yet on the owner's phone) |
 | B-034 | Bug | The host role moves to another player in the lobby when the owner's phone switches app for a few seconds, and stays there when the owner is back; the demo then tells the owner to wait for the host although the owner can start | 2026-11-16, v0.2.3 (tested on the fake host, in local workerd and in Chromium; not yet on the owner's phone) |
+| F-035 | Feature | Room code length set by the game, 4 to 12 characters | 2026-11-17, v0.3.0 (tested; the demo's quiz uses 4 characters, the memory game 6) |
 
-## Proposed runs (2026-11-15, after v0.2.0)
+## Proposed runs (2026-11-17, after v0.3.0)
 
 - **A** – strong model, high level – Administration and budget
   - D-011 – Check Cloudflare's current free limits first, so the numbers below are right.
   - F-008 – Show usage per game today and this month, with plan, estimated cost and an optional spending cap.
   - F-004 – Give each game a share of the daily free budget that closes it for the day when used up.
-  - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game; the gate is checked inside the room (new joins and round starts, not reconnects) and running rooms can be stopped.
+  - F-003 – Add one admin page with on/off/until, private only and an emergency stop per game; the gate is checked inside the room, also when a round starts (needed by Bricks), not on reconnects, and running rooms can be stopped.
   - F-026 – Show players a clear message when the quota is used up, give the public demo a budget and turn on logging.
-- **B** – strong model, high level – Additions for the next games to move
-  - F-029 – Let a game's server create a room nobody in it created, so two people opening the same invitation land in one room.
+- **B** – strong model, high level – Additions for Bricks and Buzzy
+  - F-029 – Let an invitation create a room nobody in it created, so two people opening the same link land in one room (Bricks).
   - F-030 – Let the room keep a state for newcomers, so joiners and reloading participants get it without relying on the host.
-
-- **C** – standard model, medium level – Follow-ups from the check of v0.2.0
-  - F-032 – Notice a room nobody is playing in, and test the update and release workflows automatically, so a forgotten room costs less and workflow mistakes are caught early.
+- **C** – standard model, medium level – Smaller additions and follow-ups
+  - F-031 – Unban and the other small additions from the games pass, so Buzzy's leader can undo a ban.
+  - F-032 – Notice a room nobody is playing in, and test the update and release workflows automatically.
 
 Owner tasks: D-025 (try the demo on phones; on one phone, use two different browser apps) and D-028 (decide how Boomers runs its game).
 
-Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.2.3 following `docs/INTEGRATION.md`. Neither run here is needed for it.
+Critical ST8 F-040 (online mode, in `BadBagel47/critical`) can build on v0.3.0 following `docs/INTEGRATION.md`. Neither run here is needed for it.
 
 ## Details
 
@@ -296,3 +296,7 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - Cause: takeover starts whenever the host drops, also when no game is running (lobby, between rounds), where there is nothing to continue; and the host role only returns to the owner by a handover.
 - Fixed in v0.2.3 as proposed: with `takeover` on, a lost host is replaced only while a game is in progress (countdown or playing, also paused); in the lobby and after a round the room just waits. An owner who comes back while no game is in progress gets the host role back (with the kept state, so a series of rounds continues). The demo's text: the owner, who may start, is told to press Start.
 - Phones close a background tab's connection within seconds, so during a game a short app switch by the host still hands the game over (that is what takeover is for). If that is too eager, `takeoverMs` can be raised per game.
+
+### F-035 Room code length (2026-11-17, v0.3.0)
+- Asked for by Buzzy (#408) and Bricks (F-007), which use four-character codes; the owner decided on 4 to 12 characters, easy for each game to set.
+- Built as one server option, `codeLength` (default 5). The guide has a table of how many codes each length gives and when to make rooms private.

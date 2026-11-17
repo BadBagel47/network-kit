@@ -6,7 +6,9 @@ export const PROTOCOL = 2;
 
 // Room codes: no 0/O or 1/I so codes are easy to read out loud.
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-export const CODE_LENGTH = 5;
+export const CODE_LENGTH = 5; // the default; each game may choose 4 to 12 (codeLength)
+export const CODE_MIN_LENGTH = 4;
+export const CODE_MAX_LENGTH = 12;
 
 // WebSocket close codes sent by the server. The client stops reconnecting
 // on all of them (see FINAL_CLOSE_CODES).
@@ -56,8 +58,15 @@ export function normalizeCode(text) {
   return String(text ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-export function isValidCode(code) {
-  if (typeof code !== 'string' || code.length !== CODE_LENGTH) return false;
+/**
+ * Is `code` a room code? With `length`, it must have exactly that many
+ * characters; without, any length a game may choose (4 to 12).
+ */
+export function isValidCode(code, length) {
+  if (typeof code !== 'string') return false;
+  if (length !== undefined ? code.length !== length : code.length < CODE_MIN_LENGTH || code.length > CODE_MAX_LENGTH) {
+    return false;
+  }
   for (const ch of code) if (!CODE_ALPHABET.includes(ch)) return false;
   return true;
 }

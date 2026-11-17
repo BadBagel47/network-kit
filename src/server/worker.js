@@ -11,7 +11,9 @@
 //   GET  /rooms/CODE          room info → { code, phase, access, participants }
 //   GET  /rooms/CODE/ws       WebSocket into the room (first message: hello)
 
-import { CLOSE, isValidCode, normalizeCode } from '../shared/protocol.js';
+import {
+  CLOSE, CODE_LENGTH, CODE_MAX_LENGTH, CODE_MIN_LENGTH, isValidCode, normalizeCode,
+} from '../shared/protocol.js';
 import { VERSION } from '../version.js';
 import { RoomCore, resolveOptions } from './room-core.js';
 import { newRoomCode } from './random.js';
@@ -19,6 +21,7 @@ import { newRoomCode } from './random.js';
 const SERVER_OPTIONS = {
   binding: 'ROOMS', // Durable Object namespace binding name in the wrangler config
   basePath: '/rooms',
+  codeLength: CODE_LENGTH, // characters in a room code, 4 to 12
   allowedOrigins: '*', // '*' or a list such as ['https://badbagel47.github.io']
   jurisdiction: null, // 'eu' keeps rooms in the EU; may be a function (env) => 'eu' | null
   gate: null, // experimental: async ({ request, env, action }) => true | { open: false, reason }
@@ -50,6 +53,9 @@ export function createRoomServer(gameOptions = {}) {
     else coreOptions[key] = value;
   }
   const opts = { ...SERVER_OPTIONS, ...serverOptions };
+  if (!Number.isInteger(opts.codeLength) || opts.codeLength < CODE_MIN_LENGTH || opts.codeLength > CODE_MAX_LENGTH) {
+    throw new Error(`network-kit: codeLength must be a whole number from ${CODE_MIN_LENGTH} to ${CODE_MAX_LENGTH}`);
+  }
   resolveOptions(coreOptions); // fail early on bad options
 
   function namespace(env) {
@@ -108,7 +114,7 @@ export function createRoomServer(gameOptions = {}) {
         body = {};
       }
       for (let attempt = 0; attempt < 6; attempt++) {
-        const code = newRoomCode();
+        const code = newRoomCode(opts.codeLength);
         const res = await stub(env, code).fetch('https://room/create', {
           method: 'POST',
           body: JSON.stringify({ code, settings: body.settings ?? {} }),
@@ -120,11 +126,12 @@ export function createRoomServer(gameOptions = {}) {
     }
 
     if (parts.length === 0 && request.method === 'GET') {
-      return json({ name: 'network-kit', version: VERSION }, 200, cors);
+      return json({ name: 'network-kit', version: VERSION, codeLength: opts.codeLength }, 200, cors);
     }
 
     const code = normalizeCode(parts[0]);
-    if (!isValidCode(code)) return json({ error: 'not-found' }, 404, cors);
+    // A code of the wrong length cannot be one of this game's rooms: answer without waking a room.
+    if (!isValidCode(code, opts.codeLength)) return json({ error: 'not-found' }, 404, cors);
 
     if (parts.length === 1 && request.method === 'GET') {
       const res = await stub(env, code).fetch('https://room/info');

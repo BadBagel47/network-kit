@@ -182,6 +182,7 @@ test('a connection that floods the room is closed, and the others are not distur
 test('memory game: rules in the room, turns and a hidden board', async () => {
   const turns = { basePath: '/turns' };
   const host = await create('Host', turns);
+  assert.equal(host.code.length, 6, 'the memory game chose six-character codes');
   const b = await join(host.code, 'B', turns);
   const board = next(b, 'message', (m) => m.data?.type === 'board');
   host.start();
@@ -208,6 +209,7 @@ test('quiz: the leader does not play, and nobody takes over when the leader is l
   const quiz = { basePath: '/quiz' };
   const leader = await create('Leader', quiz);
   assert.equal(leader.role, 'leader');
+  assert.equal(leader.code.length, 4, 'the quiz chose four-character codes');
   const a = await join(leader.code, 'A', quiz);
   const b = await join(leader.code, 'B', quiz);
   const tv = await join(leader.code, 'TV', { ...quiz, role: 'viewer' });

@@ -2,7 +2,7 @@
 
 A shared multiplayer room server and browser client for small browser games, running on Cloudflare (Workers Free plan).
 
-- Rooms with short codes, share links with a key per role, and QR codes.
+- Rooms with codes of 4 to 12 characters (each game chooses), share links with a key per role, and QR codes.
 - Roles defined by each game (players, viewers, a quiz leader, a referee …), seats per role, places such as posts or teams, late join, kick and ban.
 - Host-run rooms (one participant's browser runs the game) or server-run rooms (the game's rules run in the room).
 - An owner who keeps the rights to the room, and a host who runs the game. A lost host is waited for, or replaced by another participant where the game allows it.

@@ -19,6 +19,7 @@ export const crew = {
 /** A turn-based memory game with its rules in the room. */
 export const turns = {
   mode: 'server',
+  codeLength: 6,
   rules: memoryRules,
   roles: { player: { seats: 4 }, viewer: { seats: 2 } },
   lateJoin: 'never',
@@ -32,6 +33,7 @@ export const turns = {
 /** A quiz: the leader runs it without playing, and nobody may take over. */
 export const quiz = {
   mode: 'host',
+  codeLength: 4, // short codes are read aloud and typed on phones; see the guide on guessing
   roles: { leader: { seats: 1, plays: false }, player: { seats: 12 }, viewer: { seats: 4 } },
   ownerRole: 'leader',
   lateJoin: 'next',
