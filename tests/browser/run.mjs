@@ -32,7 +32,7 @@ try {
   await a.p.click('#create');
   await a.p.waitForSelector('#game:not([hidden])');
   const code = await a.p.textContent('#room-code');
-  assert.match(code, /^[A-Z2-9]{5}$/);
+  assert.match(code, /^[A-Z2-9]{4}$/);
 
   await a.p.click('#share');
   await a.p.waitForSelector('#qr svg');
