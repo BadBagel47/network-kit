@@ -21,7 +21,6 @@
 | F-030 | Feature | A room-kept state for newcomers, optionally per role, so joiners and reloading participants get it without relying on the host | Medium | Idea from the games pass (D-012) | Strong, high |
 | F-031 | Feature | Smaller additions found in the games pass: automatic placement, ready flags, pause timeline in server time, grace period per phase, unban and ban list, admit one by one, access per role, private kept state per participant, server time on relayed messages, state saved in parts, rate caps per role | Low | Ideas from the games pass (D-012); each is added when a game needs it | Standard |
 | F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Ideas from the check 2026-11-15 | Standard |
-| F-038 | Feature | Demo: arrow buttons on the screen, so phones and tablets without a keyboard can steer in the phone test | Medium | Pågår 2026-11-17 (owner's request before the phone test) | Standard |
 
 ## Done
 
@@ -53,6 +52,7 @@
 | F-035 | Feature | Room code length set by the game, 4 to 12 characters | 2026-11-17, v0.3.0; 4 characters by default from v0.4.0 (owner's decision) |
 | F-036 | Feature | Large states: send a full state to a joiner and keep a snapshot when the game's state is larger than the default limits, by packing (compression) and/or splitting into parts; check Cloudflare's limit on one stored value for the snapshot | 2026-11-17, v0.5.0: split into parts (owner's answer to question A1), messages and stored snapshots; tested in local workerd |
 | F-037 | Feature | Values where only the latest counts (an aim that changes 60 times a second): when the client holds back sends to keep the room's pace, keep and send the newest value per kind instead of dropping it | 2026-11-17, v0.5.0: `send(data, { latest: kind })` |
+| F-038 | Feature | Demo: arrow buttons on the screen for phones and tablets | 2026-11-17 (demo only; tested in Chromium and on an emulated Pixel, not yet on the owner's devices) |
 
 ## Proposed runs (2026-11-17, rules v1.11)
 

@@ -42,7 +42,13 @@
         <canvas id="canvas" width="600" height="360"></canvas>
         <div id="overlay" hidden></div>
       </div>
-      <p class="hint">Move with the arrow keys or WASD.</p>
+      <div id="pad" class="pad" hidden>
+        <button id="pad-up" data-key="up" aria-label="Up">▲</button>
+        <button id="pad-left" data-key="left" aria-label="Left">◀</button>
+        <button id="pad-down" data-key="down" aria-label="Down">▼</button>
+        <button id="pad-right" data-key="right" aria-label="Right">▶</button>
+      </div>
+      <p class="hint">Move with the arrow keys, WASD or the arrows on the screen.</p>
       <ul id="players"></ul>
       <ul id="log"></ul>
     </section>

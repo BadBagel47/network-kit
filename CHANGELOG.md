@@ -10,6 +10,8 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+- Demo: arrow buttons on the screen, so phones and tablets can steer (F-038). The kit itself is unchanged.
+
 ## 0.5.0 (2026-11-17)
 
 Affects: games with large states or fast-changing values (Critical ST8 first). Nothing to change in a game that keeps its current code (F-036, F-037).

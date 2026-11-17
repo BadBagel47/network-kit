@@ -84,6 +84,14 @@ try {
   // Bo's screen follows the host's positions.
   await b.p.waitForFunction(([id, x]) => window.demo.world.ships[id].x > x + 20, [bId, x0]);
 
+  // F-038: the arrows on the screen steer too (held while pressed).
+  assert.equal(await b.p.isVisible('#pad'), true);
+  const y0 = await a.p.evaluate((id) => window.demo.world.ships[id].y, bId);
+  await b.p.dispatchEvent('#pad-down', 'pointerdown', { pointerId: 1 });
+  await b.p.waitForTimeout(600);
+  await b.p.dispatchEvent('#pad-down', 'pointerup', { pointerId: 1 });
+  await a.p.waitForFunction(([id, y]) => window.demo.world.ships[id].y > y + 20, [bId, y0]);
+
   await b.p.click('#posts button:nth-child(2)');
   await a.p.waitForFunction(() => document.querySelector('#posts').textContent.includes('gunner: Bo'));
   assert.equal(await b.p.locator('#players button').count(), 0, 'only the owner can remove people');

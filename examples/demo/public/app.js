@@ -149,6 +149,7 @@ function render(r) {
   $('start-game').textContent = r.phase === 'lobby' ? 'Start' : 'Restart';
   $('pause').textContent = r.paused ? 'Resume' : 'Pause';
   $('pause').hidden = me?.role !== 'player' || me.waiting;
+  $('pad').hidden = me?.role !== 'player' || me.waiting;
   $('phase').textContent = me?.waiting ? 'Waiting for the next round…' : '';
 
   const places = $('posts');
@@ -216,17 +217,42 @@ $('renew-viewer').onclick = () => room.renewKey('viewer');
 // ------------------------------------------------------------------- input
 
 const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
-function key(event, down) {
-  const k = KEYMAP[event.code];
-  if (!k || !room || room.self?.role !== 'player') return;
-  event.preventDefault();
+/** A direction pressed or released, from the keyboard or the arrows on the screen. */
+function press(k, down) {
+  if (!room || room.self?.role !== 'player') return;
   if (myKeys[k] === down) return;
   myKeys = { ...myKeys, [k]: down };
+  document.querySelector(`#pad [data-key="${k}"]`)?.setAttribute('aria-pressed', String(down));
   if (room.isHost) inputs[room.me] = myKeys;
   else room.send({ type: 'input', keys: myKeys }); // only when the keys change
 }
+function key(event, down) {
+  const k = KEYMAP[event.code];
+  if (!k) return;
+  event.preventDefault();
+  press(k, down);
+}
 addEventListener('keydown', (e) => key(e, true));
 addEventListener('keyup', (e) => key(e, false));
+
+// Arrows on the screen for phones and tablets (F-038): held while the finger is down.
+for (const button of document.querySelectorAll('#pad button')) {
+  const k = button.dataset.key;
+  const down = (e) => {
+    e.preventDefault();
+    button.setPointerCapture?.(e.pointerId);
+    press(k, true);
+  };
+  const up = (e) => {
+    e.preventDefault();
+    press(k, false);
+  };
+  button.addEventListener('pointerdown', down);
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(type, up);
+  button.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+// Let go of everything when the page is left, so no direction stays held.
+addEventListener('blur', () => { for (const k of Object.keys(myKeys)) press(k, false); });
 
 // -------------------------------------------------------------- simulation
 
