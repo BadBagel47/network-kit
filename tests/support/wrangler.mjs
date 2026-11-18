@@ -17,7 +17,7 @@ export async function startWrangler() {
   const child = spawn('npx', [
     'wrangler', 'dev', '--port', String(port), '--ip', '127.0.0.1', '--inspector-port', String(inspector),
     // Local workerd has no jurisdictions; production uses the "eu" var in wrangler.jsonc.
-    '--var', 'ROOM_JURISDICTION:', '--var', 'DIAG_KEY:test-diag-key', '--persist-to', '.wrangler/test-state', '--log-level', 'warn',
+    '--var', 'ROOM_JURISDICTION:', '--var', 'DIAG_KEY:test-diag-key', '--var', 'ROOM_LIMITS:off', '--persist-to', '.wrangler/test-state', '--log-level', 'warn',
   ], { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let output = '';
   child.stdout.on('data', (d) => { output += d; });

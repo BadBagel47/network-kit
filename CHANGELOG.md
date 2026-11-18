@@ -10,6 +10,9 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+- New (F-053): server option `limits` (default 10 room creations and 60 look-ups or joins per visitor and minute), checked before a room is woken, so guessing codes or creating rooms in bulk cannot find open rooms or use up the free quota. The demo turns it off in local test runs (`ROOM_LIMITS=off`).
+- Docs (D-056): the security model (what codes, keys, bans and the room protect, and what they do not) in `docs/INTEGRATION.md`.
+- Admin page and demo (F-054, B-055): security headers (a content security policy without inline scripts, no framing, no referrer); the admin page's record of wrong passwords per address is deleted a day after the last one.
 ## 0.6.0 (2026-11-18)
 
 Affects: every game may take it in; nothing has to change in a game. New features for Vättigt (F-039, F-040), Bricks (F-029, F-030), Buzzy (F-030, F-031) and every game (F-051, F-032).

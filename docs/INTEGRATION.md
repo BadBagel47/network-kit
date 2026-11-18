@@ -128,6 +128,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `basePath` | `'/rooms'` | URL prefix of the room API. |
 | `allowedOrigins` | `'*'` | Pages allowed to use the API (the game's site). |
 | `jurisdiction` | `null` | `'eu'` keeps rooms in the EU; may be a function `(env) => 'eu' \| null`. |
+| `limits` | 10 creations, 60 tries a minute | Per visitor address, checked before a room is woken: `{ createsPerMinute, attemptsPerMinute }` (attempts are look-ups and joins at a room code). Over the limit a visitor gets 429 or close code `RATE` for the rest of the minute. Counted per Worker instance, which is enough to make guessing codes or creating rooms in bulk pointless; `null` turns it off; may be a function of `env` (from 0.7, F-053). |
 | `gate` | – | **Experimental**, will change with the admin page (F-003): `async ({ request, env, action }) => true \| { open: false, reason }`, checked before a room is created or a connection is opened. |
 | `fallback` | – | `async (request, env, ctx) => Response` for other paths. |
 
@@ -329,12 +330,24 @@ The seed is not sent to clients in server-run rooms, so rules can shuffle hidden
 
 ## 8. Cost and limits
 
-The Workers Free plan has daily limits shared by every game on the account. The figures the kit was designed around (about 100,000 requests and 13,000 GB-s of Durable Object time a day, incoming WebSocket messages counted 20 to 1, heartbeats answered for free) **have not been verified against Cloudflare's own pages** (network-kit D-011); check the account's usage page before relying on them.
+The Workers Free plan has daily limits shared by every game on the account, reset at 00:00 UTC (checked in Cloudflare's documentation 2026-11-17, D-011): 100,000 Worker requests; 100,000 Durable Object requests (incoming WebSocket messages counted 20 to 1, outgoing ones and heartbeats free); 13,000 GB-s of Durable Object time (only while a room is awake; hibernating rooms cost nothing); 5 million rows read and 100,000 rows written; 5 GB stored. Over a limit, further operations of that kind fail until midnight UTC. The admin page (`docs/ADMIN.md`) shows each game's use against these.
 
 What the kit does to stay cheap: rooms sleep between messages; relayed messages and commands that change nothing cause no storage writes; snapshots are written at most every few seconds; a host alone in a room sends nothing; a client that cannot reach the server slows down and gives up; each connection has a message pace, and each room a daily cap on messages and on busy minutes.
 
 What a game should do: send inputs on change only, choose the host's send rate deliberately (it decides how many hours of play a day the free plan gives), and set `maxMessagesPerDay` to what a long session of the game really needs.
 
-## 9. Privacy
+## 9. Security model
+
+What protects a room, and what does not (D-056, from the lessons of an external review of Buzzy, `docs/reviews/2026-11-18-buzzy-review-lessons.md`):
+
+- **The room code is not a secret.** It is short so people can type it (4 characters, about a million codes). In an `open` room the code alone lets anyone in; per-visitor limits (`limits`) make guessing pointless, but a game where strangers must not get in uses `access: 'private'` and invitation links, whose keys are the secret (one per role).
+- **The room enforces, the page does not.** Who may send, start, pause, take a place, host or own is decided in the room; a modified page gets no further than the room allows. Hidden game state belongs in server-run rules (`room.game`) or in the host's snapshot, which is only ever sent to whoever runs the game; `setWelcomeState` and messages reach participants.
+- **Identity is per browser.** Each browser keeps a random identity key; there are no accounts. A kick or a ban removes that identity, closes its connection at once, and a ban renews every invitation key and makes the room private, so no old link works. A person with a new browser and a new link is a new participant: a ban is not a ban on the person.
+- **Seats and places are freed by the room** after the grace period, on leaving and on a kick; a page cannot keep them.
+- **No secrets in pages.** The kit puts no keys in pages; the owner key and invitation keys are per room and only reach the owner. Tokens (Cloudflare) stay in Workers.
+- **Data is deleted on a schedule** (see Privacy).
+- **Not covered:** proof that a page is the game's own (anything that speaks the protocol can join a room it has the key for); `allowedOrigins` only stops other web pages.
+
+## 10. Privacy
 
 A room stores: nicknames; a hash of each participant's random identity key (never the key itself), also for the last 100 who left, and for those banned; room settings, invitation keys and the owner key; the latest snapshot from the host (host-run) or the game state (server-run); the room data; today's message count. A room is deleted 24 hours after the last participant left and one hour after it was closed. Cloudflare processes participants' IP addresses to deliver the connection. Each game's privacy notice should say so.

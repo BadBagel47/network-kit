@@ -8,10 +8,12 @@ import { diagRoute, DiagStore } from './diag-store.js';
 
 // Rooms are kept in the EU where the variable says so (not available in local workerd).
 const jurisdiction = (env) => env.ROOM_JURISDICTION || null;
+// Limits per visitor (F-053); the local test runs turn them off, since every test comes from one address.
+const limits = (env) => (env.ROOM_LIMITS === 'off' ? null : { createsPerMinute: 10, attemptsPerMinute: 60 });
 
-const crewRooms = createRoomServer({ ...crew, jurisdiction });
-const turnRooms = createRoomServer({ ...turns, binding: 'TURNS', basePath: '/turns', jurisdiction });
-const quizRooms = createRoomServer({ ...quiz, binding: 'QUIZ', basePath: '/quiz', jurisdiction });
+const crewRooms = createRoomServer({ ...crew, jurisdiction, limits });
+const turnRooms = createRoomServer({ ...turns, binding: 'TURNS', basePath: '/turns', jurisdiction, limits });
+const quizRooms = createRoomServer({ ...quiz, binding: 'QUIZ', basePath: '/quiz', jurisdiction, limits });
 
 export const Room = crewRooms.RoomObject;
 export const TurnRoom = turnRooms.RoomObject;

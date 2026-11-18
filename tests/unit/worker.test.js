@@ -125,3 +125,28 @@ test('F-032: a closed game refuses joining with a reason, without waking a room'
     delete globalThis.WebSocketPair;
   }
 });
+
+test('F-053: creating rooms and trying codes is limited per visitor, before any room is woken', async () => {
+  let woken = 0;
+  const env2 = {
+    ROOMS: {
+      idFromName: (n) => n,
+      get: () => ({ fetch: async () => (woken += 1, new Response(JSON.stringify({ error: 'not-found' }), { status: 404 })) }),
+    },
+  };
+  const server = createRoomServer({ limits: { createsPerMinute: 2, attemptsPerMinute: 3 } });
+  const from = (ip) => ({ headers: { 'cf-connecting-ip': ip } });
+  for (let i = 0; i < 3; i++) await server.fetch(new Request('https://rooms.example/rooms/ABCD', from('1.1.1.1')), env2);
+  assert.equal(woken, 3);
+  const blocked = await server.fetch(new Request('https://rooms.example/rooms/ABCE', from('1.1.1.1')), env2);
+  assert.equal(blocked.status, 429);
+  assert.equal(woken, 3, 'the fourth try woke no room');
+  const other = await server.fetch(new Request('https://rooms.example/rooms/ABCE', from('2.2.2.2')), env2);
+  assert.equal(other.status, 404, 'another visitor is not affected');
+  const create = (ip) => server.fetch(new Request('https://rooms.example/rooms', { method: 'POST', body: '{}', ...from(ip) }), env2);
+  await create('3.3.3.3');
+  await create('3.3.3.3');
+  assert.equal((await create('3.3.3.3')).status, 429);
+  const off = createRoomServer({ limits: () => null });
+  for (let i = 0; i < 5; i++) assert.equal((await off.fetch(new Request('https://rooms.example/rooms/ABCD', from('4.4.4.4')), env2)).status, 404);
+});

@@ -25,6 +25,10 @@ const SERVER_OPTIONS = {
   allowedOrigins: '*', // '*' or a list such as ['https://badbagel47.github.io']
   jurisdiction: null, // 'eu' keeps rooms in the EU; may be a function (env) => 'eu' | null
   gate: null, // experimental: async ({ request, env, action }) => true | { open: false, reason }
+  // Per visitor (address) and minute, checked before a room is woken (F-053):
+  // rooms created, and look-ups or joins at a room code. null turns it off;
+  // may be a function (env) => limits | null.
+  limits: { createsPerMinute: 10, attemptsPerMinute: 60 },
   fallback: null, // async (request, env, ctx) => Response for other paths
 };
 
@@ -109,6 +113,25 @@ export function createRoomServer(gameOptions = {}) {
     return made.body;
   }
 
+  // Counters per address, kept in this Worker instance's memory: cheap, and
+  // enough to make guessing codes or creating rooms in bulk pointless (F-053).
+  const visitors = new Map();
+  function overLimit(request, env, kind) {
+    const limits = typeof opts.limits === 'function' ? opts.limits(env) : opts.limits;
+    const max = limits?.[kind === 'create' ? 'createsPerMinute' : 'attemptsPerMinute'];
+    if (!max) return false;
+    const address = request.headers.get('cf-connecting-ip') || 'unknown';
+    const minute = Math.floor(Date.now() / 60_000);
+    let v = visitors.get(address);
+    if (!v || v.minute !== minute) {
+      if (visitors.size > 10_000) visitors.clear(); // never let the table grow without end
+      v = { minute, create: 0, attempt: 0 };
+      visitors.set(address, v);
+    }
+    v[kind] += 1;
+    return v[kind] > max;
+  }
+
   async function gate(request, env, action) {
     if (!opts.gate) return { open: true };
     const result = await opts.gate({ request, env, action });
@@ -129,6 +152,7 @@ export function createRoomServer(gameOptions = {}) {
     const parts = url.pathname.slice(base.length).split('/').filter(Boolean);
 
     if (parts.length === 0 && request.method === 'POST') {
+      if (overLimit(request, env, 'create')) return json({ error: 'too-many-requests' }, 429, { ...cors, 'retry-after': '60' });
       const open = await gate(request, env, 'create');
       if (!open.open) return json({ error: open.reason }, 503, cors);
       let body = {};
@@ -151,6 +175,15 @@ export function createRoomServer(gameOptions = {}) {
     if (!isValidCode(code, opts.codeLength)) {
       const ws = parts.length === 2 && parts[1] === 'ws' && request.headers.get('upgrade')?.toLowerCase() === 'websocket';
       return ws ? closedSocket(CLOSE.NOT_FOUND, 'not-found') : json({ error: 'not-found' }, 404, cors);
+    }
+
+    const wantsSocket = parts.length === 2 && parts[1] === 'ws';
+    if ((parts.length === 1 && request.method === 'GET') || wantsSocket) {
+      if (overLimit(request, env, 'attempt')) {
+        return wantsSocket && request.headers.get('upgrade')?.toLowerCase() === 'websocket'
+          ? closedSocket(CLOSE.RATE, 'too-many-attempts')
+          : json({ error: 'too-many-requests' }, 429, { ...cors, 'retry-after': '60' });
+      }
     }
 
     if (parts.length === 1 && request.method === 'GET') {
