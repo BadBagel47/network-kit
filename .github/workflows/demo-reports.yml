@@ -1,5 +1,6 @@
-# Prints the demo's measurement reports (F-047) sealed with the reader's public
-# key, so nothing readable reaches this public log. Started by the agent.
+# Seals the demo's measurement reports (F-047) with the reader's public key and
+# keeps them on the branch demo-reports (the agent cannot download workflow
+# logs), so nothing readable reaches this public repository. Started by the agent.
 name: Demo reports
 
 on:
@@ -14,7 +15,7 @@ on:
         default: '0'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   read:
@@ -34,4 +35,17 @@ jobs:
           # The same key the demo deploy gives the Worker (see deploy-demo.yml).
           DIAG_KEY=$(printf 'network-kit demo diag\n%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)
           echo "::add-mask::$DIAG_KEY"
-          DIAG_KEY="$DIAG_KEY" node scripts/demo-reports.mjs
+          DIAG_KEY="$DIAG_KEY" OUT="$RUNNER_TEMP/sealed.txt" node scripts/demo-reports.mjs
+      - name: Keep the sealed reports on the branch demo-reports
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code origin refs/heads/demo-reports >/dev/null; then
+            git fetch -q origin demo-reports && git checkout -q -B demo-reports FETCH_HEAD
+          else
+            git checkout -q --orphan demo-reports && git rm -rqf .
+          fi
+          cp "$RUNNER_TEMP/sealed.txt" sealed.txt
+          git add sealed.txt
+          git commit -q -m "Sealed demo reports (F-047)" || echo "Nothing new"
+          git push -q origin demo-reports

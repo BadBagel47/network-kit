@@ -3,9 +3,10 @@
 // they can pass through a public workflow log: gzip, AES-256-GCM with a fresh
 // key, and that key wrapped with the reader's RSA public key (RSA-OAEP-SHA256).
 // Only the holder of the private key can open them (scripts/open-reports.mjs).
-//   DEMO_URL=… DIAG_KEY=… PUBLIC_KEY=<base64 SPKI DER> [SINCE=<ms>] node scripts/demo-reports.mjs
+//   DEMO_URL=… DIAG_KEY=… PUBLIC_KEY=<base64 SPKI DER> [SINCE=<ms>] [OUT=<file>] node scripts/demo-reports.mjs
 import { createPublicKey, publicEncrypt, randomBytes, createCipheriv, constants } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
+import { writeFileSync } from 'node:fs';
 
 const { DEMO_URL, DIAG_KEY, PUBLIC_KEY, SINCE = '0' } = process.env;
 if (!DEMO_URL || !DIAG_KEY || !PUBLIC_KEY) {
@@ -31,7 +32,9 @@ const sealed = {
   d: data.toString('base64'),
 };
 const blob = Buffer.from(JSON.stringify(sealed)).toString('base64');
+const lines = ['-----BEGIN SEALED REPORTS-----'];
+for (let i = 0; i < blob.length; i += 1000) lines.push(blob.slice(i, i + 1000));
+lines.push('-----END SEALED REPORTS-----');
 console.log(`${count} report(s), sealed for the reader.`);
-console.log('-----BEGIN SEALED REPORTS-----');
-for (let i = 0; i < blob.length; i += 1000) console.log(blob.slice(i, i + 1000));
-console.log('-----END SEALED REPORTS-----');
+if (process.env.OUT) writeFileSync(process.env.OUT, `${lines.join('\n')}\n`);
+else console.log(lines.join('\n'));
