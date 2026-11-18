@@ -74,11 +74,13 @@ export function ownPosition(x, y, t) {
     push(samples.startMs, t - pendingStart);
     pendingStart = null;
   }
+  // A stop shows as two updates with the same position; the ship stood still
+  // from the first of them, so that is when it stopped (not when the second came).
   if (pendingStop !== null && lastOwn && !moved) {
-    push(samples.stopMs, t - pendingStop);
+    push(samples.stopMs, Math.max(0, Math.max(lastOwn.t, pendingStop) - pendingStop));
     pendingStop = null;
   }
-  lastOwn = { x, y };
+  lastOwn = moved || !lastOwn ? { x, y, t } : lastOwn;
 }
 
 let lastFrame = null;
