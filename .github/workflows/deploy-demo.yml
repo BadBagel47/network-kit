@@ -48,6 +48,11 @@ jobs:
           npm ci
           npm test
           npm run deploy:demo 2>&1 | tee deploy.log
+          # The key for reading the measurement reports (F-047), derived from the
+          # token so the reading workflow can make the same key.
+          DIAG_KEY=$(printf 'network-kit demo diag\n%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)
+          echo "::add-mask::$DIAG_KEY"
+          printf '%s' "$DIAG_KEY" | npx wrangler secret put DIAG_KEY
           url=$(grep -o 'https://[a-z0-9.-]*workers\.dev' deploy.log | head -1)
           if [ -z "$url" ]; then echo "::warning::Could not find the demo URL in the deploy output"; exit 0; fi
           echo "Demo: $url" >> "$GITHUB_STEP_SUMMARY"

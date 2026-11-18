@@ -11,6 +11,7 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 ## Unreleased
 
 - Demo: ships without inertia and a response-time meter, to judge how fast the game answers (F-045). The kit itself is unchanged.
+- Demo: "Instant own ship" moves a player's own ship at once and corrects it towards the host (F-048), and "Send report" sends the device's measurements for the agent to read (F-047). The kit itself is unchanged.
 
 ## 0.5.1 (2026-11-17)
 

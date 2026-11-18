@@ -4,6 +4,7 @@
 //   /quiz   a quiz: the leader runs it without playing, and nobody may take over
 import { createRoomServer } from '../../src/server/index.js';
 import { crew, turns, quiz } from './options.js';
+import { diagRoute, DiagStore } from './diag-store.js';
 
 // Rooms are kept in the EU where the variable says so (not available in local workerd).
 const jurisdiction = (env) => env.ROOM_JURISDICTION || null;
@@ -15,12 +16,14 @@ const quizRooms = createRoomServer({ ...quiz, binding: 'QUIZ', basePath: '/quiz'
 export const Room = crewRooms.RoomObject;
 export const TurnRoom = turnRooms.RoomObject;
 export const QuizRoom = quizRooms.RoomObject;
+export { DiagStore };
 
 const routes = [['/turns', turnRooms], ['/quiz', quizRooms]];
 
 export default {
-  fetch(request, env, ctx) {
+  async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
+    if (pathname === '/diag') return diagRoute(request, env); // measurement reports (F-047)
     for (const [prefix, server] of routes) {
       if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return server.fetch(request, env, ctx);
     }

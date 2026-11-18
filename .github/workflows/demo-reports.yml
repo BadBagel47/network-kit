@@ -1,0 +1,37 @@
+# Prints the demo's measurement reports (F-047) sealed with the reader's public
+# key, so nothing readable reaches this public log. Started by the agent.
+name: Demo reports
+
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: Reader's RSA public key (base64 SPKI DER)
+        required: true
+      since:
+        description: Only reports after this time (ms since 1970)
+        required: false
+        default: '0'
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DEMO_URL: https://network-kit-demo.l8p1.workers.dev
+      PUBLIC_KEY: ${{ inputs.public_key }}
+      SINCE: ${{ inputs.since }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch and seal the reports
+        run: |
+          # The same key the demo deploy gives the Worker (see deploy-demo.yml).
+          DIAG_KEY=$(printf 'network-kit demo diag\n%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)
+          echo "::add-mask::$DIAG_KEY"
+          DIAG_KEY="$DIAG_KEY" node scripts/demo-reports.mjs

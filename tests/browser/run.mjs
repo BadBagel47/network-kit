@@ -96,6 +96,24 @@ try {
   await b.p.waitForFunction(() => /^Response: \d+ ms$/.test(document.querySelector('#response').textContent), null, { timeout: 6000 });
   assert.equal(await a.p.textContent('#response'), 'You run the game: no delay');
 
+  // F-048: Bo's own ship moves at once in Bo's browser, before the host's answer can arrive.
+  const mine0 = await b.p.evaluate(() => window.demo.mine?.x);
+  assert.equal(typeof mine0, 'number', 'Bo predicts the own ship');
+  await b.p.keyboard.down('ArrowLeft');
+  await b.p.waitForTimeout(80);
+  assert.ok(await b.p.evaluate((x) => window.demo.mine.x < x, mine0), 'the own ship moved at once');
+  await b.p.keyboard.up('ArrowLeft');
+  // F-047: Bo sends a report; it is kept and can be read with the key.
+  await b.p.waitForTimeout(800);
+  await b.p.click('#report');
+  await b.p.waitForFunction(() => /Report [A-Z0-9]{4} sent/.test(document.querySelector('#log').textContent));
+  const reports = await (await fetch(`${server.base}/diag`, { headers: { 'x-diag-key': 'test-diag-key' } })).json();
+  const mine = reports.find((r) => r.report.room?.name === 'Bo');
+  assert.ok(mine, 'the report is kept');
+  assert.ok(mine.report.measured.rttMs.n > 0, 'it has response times');
+  assert.ok(mine.report.measured.keyToMoveMs.n > 0, 'it has key-to-move times');
+  assert.equal((await fetch(`${server.base}/diag`)).status, 403, 'nobody reads them without the key');
+
   // F-038: the arrows on the screen steer too (held while pressed).
   assert.equal(await b.p.isVisible('#pad'), true);
   const y0 = await a.p.evaluate((id) => window.demo.world.ships[id].y, bId);

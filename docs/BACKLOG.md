@@ -23,8 +23,6 @@
 | F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
 | D-046 | Design | Where EU rooms run: find which data centre a room is placed in and whether EU rooms can be placed nearer Sweden, to cut the round trip (110–120 ms measured, four legs through one room) | Low | Idea from the phone/iPad test 2026-11-17 (D-025); not started | Standard |
-| F-047 | Feature | Demo: measurement report: per device the time from key press to visible movement, response time, how evenly positions arrive and the frame rate; a Send report button stores it in the demo Worker so the agent can read it | High | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf, owner's go-ahead). Proposal from the phone/iPad test 2026-11-17 (D-025); owner's idea | Standard |
-| F-048 | Feature | Demo: the player's own ship moves at once in their browser and is corrected towards the host's position, with an on/off switch to compare | High | Pågår 2026-11-17 (session ccr-d6b5c771-fnfalf, owner's go-ahead). Proposal from the phone/iPad test 2026-11-17 (D-025) | Standard |
 
 ## Done
 
@@ -63,6 +61,8 @@
 | B-043 | Bug | "Someone joined" instead of the name: the room told the others that a participant joined before it sent the room's new list | 2026-11-17, v0.5.1 (list first, name in every event; unit tests) |
 | B-044 | Bug | A participant away longer than the grace period came back without the place and was announced as joined | 2026-11-17, v0.5.1 (place given back if free, `returning` on the join, the demo says "is back"; unit tests) |
 | F-045 | Feature | Demo: ships without inertia (they stop at once) and a response-time meter in milliseconds, so the owner can judge how fast the game answers | 2026-11-17 (demo only; the meter measures this browser to the host's browser and back every 2 seconds; tested in Chromium, not yet on the owner's devices) |
+| F-047 | Feature | Demo: measurement report per device (key to movement, key to stop, response time, how evenly positions arrive, frame rate, device and network), sent with "Send report", kept 7 days in the demo Worker and read by the agent through a workflow that seals it with the agent's key (the repository is public) | 2026-11-17 (tested in Chromium and local workerd; not yet used on the owner's devices) |
+| F-048 | Feature | Demo: the player's own ship moves at once in their browser and is corrected towards the host's position after it stops; switch "Instant own ship: on/off" to compare | 2026-11-17 (tested in Chromium; not yet on the owner's devices) |
 
 ## Proposed runs (2026-11-17, rules v1.12)
 

@@ -2,8 +2,9 @@
 // everyone's ship; the others send their keys only when they change; the
 // host sends positions often and gives the room a full snapshot now and then.
 import {
-  NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession,
+  NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession, VERSION,
 } from './network-kit/client/index.js';
+import * as diag from './diag.js';
 
 const SERVER = location.origin;
 const OPTIONS = { hostSilentMs: 4_000 }; // report a host that has gone quiet
@@ -98,13 +99,16 @@ function showGame() {
     log(snapshot ? 'You run the game now, from the latest state.' : 'You run the game.');
   });
   room.on('role', ({ isHost }) => {
+    diag.event(isHost ? 'this browser runs the game' : 'another browser runs the game');
     responseMs = null;
+    mine = null;
     if (!isHost) inputs = {};
   });
 
   room.on('peer', ({ event, id, name, returning }) => {
     const words = { join: 'joined', back: 'is back', drop: 'lost the connection', gone: 'left', host: 'runs the game', waiting: 'is waiting', owner: 'owns the room' };
     log(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}.`);
+    diag.event(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}`);
     if (room.isHost) {
       if (event === 'join' || event === 'back') {
         ensureShips();
@@ -122,12 +126,14 @@ function showGame() {
   });
 
   room.on('message', ({ from, data }) => {
+    diag.messageIn();
     if (data?.type === 'ping') {
       room.send({ type: 'pong', t: data.t }, { to: [from] }); // answered at once
       return;
     }
     if (data?.type === 'pong') {
       const ms = performance.now() - data.t;
+      diag.rtt(ms);
       responseMs = responseMs === null ? ms : responseMs * 0.6 + ms * 0.4; // a little smoothed
       return;
     }
@@ -144,7 +150,13 @@ function showGame() {
   render(room.room);
 }
 
+let lastStatus = null;
 function renderStatus(status) {
+  if (status !== lastStatus) {
+    diag.event(`status ${status}`);
+    if (status === 'reconnecting') diag.reconnect();
+    lastStatus = status;
+  }
   const words = { online: 'Online', connecting: 'Connecting…', reconnecting: 'Reconnecting…', offline: 'Offline', closed: 'Closed' };
   $('status').textContent = words[status] ?? status;
   $('status').dataset.status = status;
@@ -232,6 +244,7 @@ function press(k, down) {
   if (!room || room.self?.role !== 'player') return;
   if (myKeys[k] === down) return;
   myKeys = { ...myKeys, [k]: down };
+  diag.keys(Object.values(myKeys).some(Boolean), now());
   document.querySelector(`#pad [data-key="${k}"]`)?.setAttribute('aria-pressed', String(down));
   if (room.isHost) inputs[room.me] = myKeys;
   else room.send({ type: 'input', keys: myKeys }); // only when the keys change
@@ -289,7 +302,12 @@ const GLIDE_MS = 1000 / 15;
 const now = () => performance.now();
 function applyPositions(p, tick) {
   const t = now();
+  diag.posArrived(t);
   for (const [id, x, y] of p) {
+    if (id === room.me) {
+      diag.ownPosition(x, y, t);
+      reconcile(world.ships[id], x, y);
+    }
     const s = (world.ships[id] ??= { x, y, vx: 0, vy: 0, color: COLORS[Object.keys(world.ships).length % COLORS.length], name: '' });
     const at = drawnAt(s, t);
     Object.assign(s, { x, y, fromX: at.x, fromY: at.y, glideFrom: t });
@@ -304,6 +322,70 @@ function drawnAt(s, t) {
 }
 
 const SPEED = 4; // pixels per step, 120 a second
+const clampX = (x) => Math.max(10, Math.min(590, x));
+const clampY = (y) => Math.max(10, Math.min(350, y));
+
+// Instant own ship (F-048): a player who does not run the game moves their own
+// ship at once in their own browser, with the same rules as the host, and
+// corrects it towards the game's position. While the ship moves the game's
+// position is a little behind (by the response time), so the correction waits
+// until the player has let go and the game shows the ship standing still.
+let predict = localStorage.getItem('demo:predict') !== 'off';
+let mine = null; // where this browser draws its own ship while predicting
+let lastServerOwn = null;
+const SNAP_PX = 60;
+function predicting() {
+  return predict && room && !room.isHost && room.self?.role === 'player' && !room.self.waiting;
+}
+function reconcile(ship, x, y) {
+  const stopped = lastServerOwn && lastServerOwn.x === x && lastServerOwn.y === y;
+  lastServerOwn = { x, y };
+  if (!predicting()) return void (mine = null);
+  if (!mine) return void (mine = { x, y });
+  const err = Math.hypot(mine.x - x, mine.y - y);
+  if (err > SNAP_PX) {
+    diag.correction(err, true);
+    mine = { x, y };
+  } else if (stopped && !Object.values(myKeys).some(Boolean)) {
+    if (err > 0.5) diag.correction(err, false);
+    mine = { x: mine.x + (x - mine.x) * 0.5, y: mine.y + (y - mine.y) * 0.5 };
+  }
+}
+setInterval(() => {
+  if (!predicting() || !room.running || !mine) return;
+  mine.x = clampX(mine.x + ((myKeys.right ? 1 : 0) - (myKeys.left ? 1 : 0)) * SPEED);
+  mine.y = clampY(mine.y + ((myKeys.down ? 1 : 0) - (myKeys.up ? 1 : 0)) * SPEED);
+}, 1000 / 30);
+function showPredict() {
+  $('predict').setAttribute('aria-pressed', String(predict));
+  $('predict').textContent = `Instant own ship: ${predict ? 'on' : 'off'}`;
+}
+$('predict').onclick = () => {
+  predict = !predict;
+  localStorage.setItem('demo:predict', predict ? 'on' : 'off');
+  mine = null;
+  diag.event(`instant own ship ${predict ? 'on' : 'off'}`);
+  showPredict();
+};
+showPredict();
+
+// Measurement report (F-047): sent to the demo's server, read by the agent.
+$('report').onclick = async () => {
+  const button = $('report');
+  button.disabled = true;
+  try {
+    const body = diag.report(room, { instantOwnShip: predict, kit: VERSION, page: location.pathname });
+    const res = await fetch('/diag', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const answer = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(answer.error ?? `HTTP ${res.status}`);
+    log(`Report ${answer.id} sent (${body.period.seconds} s of measurements).`);
+    diag.reset();
+  } catch (err) {
+    log(`The report could not be sent: ${err.message}`);
+  } finally {
+    button.disabled = false;
+  }
+};
 
 // Response time: how long a message takes from this browser to the one running
 // the game and back, measured every 2 seconds (F-045). The host has no delay.
@@ -331,6 +413,7 @@ setInterval(() => {
     ship.vy = ((k.down ? 1 : 0) - (k.up ? 1 : 0)) * SPEED;
     ship.x = Math.max(10, Math.min(590, ship.x + ship.vx));
     ship.y = Math.max(10, Math.min(350, ship.y + ship.vy));
+    if (id === room.me) diag.ownPosition(ship.x, ship.y, now());
   }
   // Positions 15 times a second; only the newest counts, so the kit sends the
   // latest one whenever the pace allows. (Nothing is sent while the host is alone.)
@@ -351,8 +434,9 @@ function draw() {
   const r = room.room;
   ctx.clearRect(0, 0, 600, 360);
   const t = now();
+  diag.frame(t);
   for (const [id, s] of Object.entries(world.ships)) {
-    const at = drawnAt(s, t);
+    const at = id === room.me && mine && predicting() ? mine : drawnAt(s, t);
     ctx.fillStyle = s.color;
     ctx.beginPath();
     ctx.arc(at.x, at.y, id === room.me ? 10 : 8, 0, Math.PI * 2);
@@ -377,4 +461,4 @@ function draw() {
 draw();
 
 // For the browser test and for poking around in the console.
-window.demo = { get room() { return room; }, get world() { return world; } };
+window.demo = { get room() { return room; }, get world() { return world; }, get mine() { return mine; } };
