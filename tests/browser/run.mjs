@@ -132,6 +132,20 @@ try {
   const tick = await a.p.evaluate(() => window.demo.world.tick);
   await a.p.waitForFunction((t) => window.demo.world.tick > t + 95, tick);
 
+  // B-050: the game steps by the clock, 30 steps a second, whatever the timer does.
+  const tick0 = await a.p.evaluate(() => window.demo.world.tick);
+  await a.p.waitForTimeout(2000);
+  const steps = (await a.p.evaluate(() => window.demo.world.tick)) - tick0;
+  assert.ok(steps >= 54 && steps <= 66, `about 60 steps in 2 seconds (${steps})`);
+
+  // B-049: Bo moves the ship just before the host goes, so the room's kept
+  // state (stored every 3 seconds) is older than what Bo has seen.
+  await b.p.keyboard.down('ArrowDown');
+  await b.p.waitForTimeout(500);
+  await b.p.keyboard.up('ArrowDown');
+  await b.p.waitForTimeout(400);
+  const seen = await b.p.evaluate((id) => window.demo.world.ships[id].y, bId);
+
   // The host's tab disappears: Bo takes over after the short wait.
   await a.context.close();
   await b.p.waitForFunction(() => window.demo.room.isHost, null, { timeout: 15000 });
@@ -141,6 +155,8 @@ try {
   // Bo's ship is where it was: the game continued from the state the room kept.
   const after = await b.p.evaluate((id) => window.demo.world.ships[id].x, bId);
   assert.ok(after > x0 + 20, `the ship kept its position (${after})`);
+  const afterY = await b.p.evaluate((id) => window.demo.world.ships[id].y, bId);
+  assert.ok(Math.abs(afterY - seen) <= 8, `no jump back at the change of host (${seen} → ${afterY})`);
 
   // A reload in the same tab keeps the seat and the game.
   await b.p.reload();

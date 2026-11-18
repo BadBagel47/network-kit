@@ -101,7 +101,19 @@ function showGame() {
   room.on('host', ({ snapshot }) => {
     // How old the kept state was compared with what this browser last saw.
     diag.event(`took over the game: ${snapshot ? `from a state ${Math.max(0, world.tick - (snapshot.tick ?? 0))} steps behind what this page last saw` : 'from scratch'}`);
-    world = snapshot ?? { ships: {}, tick: 0 };
+    // This page may have seen newer positions than the room's kept state (it is
+    // stored every 3 seconds): continue from the newest, so ships do not jump back (B-049).
+    const kept = snapshot ?? { ships: {}, tick: 0 };
+    if (world.tick > (kept.tick ?? 0)) {
+      for (const [id, s] of Object.entries(world.ships)) {
+        const ship = (kept.ships[id] ??= { ...s, vx: 0, vy: 0 });
+        const at = id === room.me && mine ? mine : s;
+        Object.assign(ship, { x: at.x, y: at.y });
+        delete ship.glideFrom;
+      }
+      kept.tick = world.tick;
+    }
+    world = kept;
     inputs = { [room.me]: myKeys };
     ensureShips();
     log(snapshot ? 'You run the game now, from the latest state.' : 'You run the game.');
@@ -362,6 +374,26 @@ function drawnAt(s, t) {
   return { x: s.fromX + (s.x - s.fromX) * k, y: s.fromY + (s.y - s.fromY) * k };
 }
 
+// The game steps 30 times a second by the clock, not by how often the browser
+// runs the timer: Safari on the iPad runs a 33 ms timer about every 36 ms,
+// which made the game 8 % slower with the iPad as host (B-050).
+const STEP_MS = 1000 / 30;
+/** Calls step() once for every 33 ms that has passed since the last call (at most 5 at a time). */
+function clock() {
+  let last = null;
+  return (running, step) => {
+    const t = now();
+    if (!running) return void (last = null);
+    if (last === null) last = t - STEP_MS;
+    let n = Math.floor((t - last) / STEP_MS);
+    last += n * STEP_MS;
+    if (n > 5) {
+      n = 5; // the page was asleep: do not race to catch up
+      last = t;
+    }
+    for (let i = 0; i < n; i++) step();
+  };
+}
 const SPEED = 4; // pixels per step, 120 a second
 const clampX = (x) => Math.max(10, Math.min(590, x));
 const clampY = (y) => Math.max(10, Math.min(350, y));
@@ -392,11 +424,11 @@ function reconcile(ship, x, y) {
     mine = { x: mine.x + (x - mine.x) * 0.5, y: mine.y + (y - mine.y) * 0.5 };
   }
 }
-setInterval(() => {
-  if (!predicting() || !room.running || !mine) return;
+const ownClock = clock();
+setInterval(() => ownClock(Boolean(predicting() && room.running && mine), () => {
   mine.x = clampX(mine.x + ((myKeys.right ? 1 : 0) - (myKeys.left ? 1 : 0)) * SPEED);
   mine.y = clampY(mine.y + ((myKeys.down ? 1 : 0) - (myKeys.up ? 1 : 0)) * SPEED);
-}, 1000 / 30);
+}), 1000 / 60);
 function showPredict() {
   $('predict').setAttribute('aria-pressed', String(predict));
   $('predict').textContent = `Instant own ship: ${predict ? 'on' : 'off'}`;
@@ -443,8 +475,10 @@ function showResponse() {
 }
 setInterval(showResponse, 500);
 
-setInterval(() => {
-  if (!room?.isHost || !room.running) return;
+const hostClock = clock();
+setInterval(() => hostClock(Boolean(room?.isHost && room.running), hostStep), STEP_MS / 2);
+
+function hostStep() {
   world.tick += 1;
   for (const [id, ship] of Object.entries(world.ships)) {
     // No inertia: a ship moves at an even speed while a key is held and stops
@@ -465,7 +499,7 @@ setInterval(() => {
   }
   // The full state every 3 seconds, kept by the room for a reload or a takeover.
   if (world.tick % 90 === 1) room.sendSnapshot(world);
-}, 1000 / 30);
+}
 
 // ------------------------------------------------------------------ render
 
