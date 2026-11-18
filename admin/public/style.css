@@ -114,3 +114,8 @@ td .bar { min-width: 72px; }
 .add-row label.wide { flex: 1 1 280px; }
 .add-row label.wide input { width: 100%; }
 #messages td.text { white-space: normal; text-align: left; min-width: 240px; }
+div.timer { display: flex; gap: 6px; flex-wrap: wrap; }
+div.timer [hidden] { display: none; }
+button.stop { border-color: var(--critical); color: var(--critical); font-weight: 600; }
+button.lift { border-color: var(--critical); background: var(--critical); color: #fff; font-weight: 600; }
+.pass-link button { margin-top: 6px; }

@@ -50,7 +50,7 @@
           <label>Monthly cap (USD, Paid plan)
             <input name="capUsd" type="number" min="0" step="1" inputmode="decimal">
           </label>
-          <label class="check"><input name="autoClose" type="checkbox"> Close a game for the day when it passes its share (on the Paid plan: when the cap is reached)</label>
+          <label class="check"><input name="autoClose" type="checkbox"> Cloudflare limiting: close a game for new players for the rest of the day when it passes its share (on the Paid plan: when the cap is reached), with a warning to its players at 90 %</label>
           <p class="muted" id="cost"></p>
         </fieldset>
         <button type="submit">Save</button>
@@ -66,12 +66,15 @@
       <p class="muted" id="period-note"></p>
       <div class="table-wrap"><table id="games"></table></div>
 
-      <h2>Admin links</h2>
-      <p class="muted">A personal link per game lets your own browser create, join and start games while the game is Off (not after Stop). Open it once on each device; it works 30 days and can be revoked here.</p>
+      <h2>Game links</h2>
+      <p class="muted">A game link lets whoever opens it create, join and start games, alone or with others, while the game or a mode takes no new players or is closed by Cloudflare limiting (not after an emergency stop). Friends invited from a room made with the link get in too, as long as the link is valid. Open it once on each device; revoke it here.</p>
       <form id="new-pass" class="add-row">
         <label>Game <input name="game" required placeholder="e.g. bricks" autocomplete="off"></label>
         <label>Game page <input name="page" type="url" placeholder="https://…" autocomplete="off"></label>
-        <label>Device <input name="label" placeholder="e.g. Pixel" autocomplete="off"></label>
+        <label>For <input name="label" placeholder="e.g. Pixel, or a friend's name" autocomplete="off"></label>
+        <label>Valid for
+          <select name="hours"><option value="1">1 hour</option><option value="24">1 day</option><option value="168" selected>7 days</option><option value="720">30 days</option><option value="2160">90 days</option></select>
+        </label>
         <button type="submit">Make a link</button>
       </form>
       <div id="pass-link" class="pass-link" role="status"></div>

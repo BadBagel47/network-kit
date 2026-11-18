@@ -88,7 +88,7 @@ export const FINAL_CLOSE_CODES = new Set(Object.values(CLOSE));
 // Why a game is closed (close code GAME_CLOSED, or a refused start or room),
 // as the admin page decides it (F-003, F-004, F-026). `until` is filled in.
 export const GAME_CLOSED_TEXT = Object.freeze({
-  off: 'The game is closed right now.',
+  off: 'The game is not taking new players right now.',
   until: 'The game is closed until {until}.',
   budget: "The game has used up today's free quota. It opens again at {until}.",
   stopped: 'The game was stopped by its owner.',
@@ -158,7 +158,7 @@ export const NOTICE_TEXT = Object.freeze({
     title: 'Closed for today',
     text: 'This game has used its share of today\'s free server time. No new games until {until}. Games already running can finish.',
   },
-  // For the timer ("on until a time", run A): ready texts, not sent yet.
+  // The timer ("on until a time", F-067): before and after it ends.
   'timer-soon': {
     level: 'warning',
     title: 'Open play ends soon',
@@ -173,6 +173,11 @@ export const NOTICE_TEXT = Object.freeze({
     level: 'warning',
     title: 'The game stops soon',
     text: 'The game stops at {until}. Everyone will be disconnected then.',
+  },
+  'timer-stopped': {
+    level: 'warning',
+    title: 'The game has stopped',
+    text: 'No games can be started or joined now.',
   },
   message: { level: 'info', title: 'Message', text: '' },
 });

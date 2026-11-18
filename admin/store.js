@@ -6,7 +6,10 @@ import { CloudflareAnalytics } from './analytics.js';
 import { normalizeSettings, budgetState, gameStatus, gameNotices } from './control.js';
 
 const BUDGET_EVERY_MS = 5 * 60_000;
-const PASS_DAYS = 30; // admin passes (F-058) last 30 days and can be revoked
+// Game links (F-058, F-068): valid as long as the owner chooses (7 days unless
+// chosen), from an hour to 90 days, and can be revoked.
+const PASS_DEFAULT_HOURS = 7 * 24;
+const PASS_MAX_HOURS = 90 * 24;
 const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const hashText = async (text) => b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
 const MESSAGE_MAX = 20; // the owner's messages to players (F-066) kept at once
@@ -56,7 +59,7 @@ export class AdminStore {
   }
 
   async settings() {
-    return normalizeSettings((await this.storage.get('settings')) ?? {});
+    return normalizeSettings((await this.storage.get('settings')) ?? {}, this.now());
   }
 
   async budget() {
@@ -78,7 +81,7 @@ export class AdminStore {
     const settings = await this.settings();
     const budget = await this.budget();
     const now = this.now();
-    return { ...gameStatus(settings, budget, game, now, mode), notices: gameNotices(settings, budget, game, now, await this.messages()) };
+    return { ...gameStatus(settings, budget, game, now, mode), notices: gameNotices(settings, budget, game, now, await this.messages(), mode) };
   }
 
   // ---- the owner's messages to players (F-066)
@@ -116,11 +119,12 @@ export class AdminStore {
     return all.filter((p) => p.expires > now);
   }
 
-  async createPass(game, label) {
+  async createPass(game, label, hours) {
     const id = b64url(crypto.getRandomValues(new Uint8Array(6)));
     const secret = b64url(crypto.getRandomValues(new Uint8Array(32)));
     const now = this.now();
-    const pass = { id, game, label: String(label ?? '').slice(0, 40), hash: await hashText(secret), created: now, expires: now + PASS_DAYS * 86_400_000 };
+    const h = Math.min(PASS_MAX_HOURS, Math.max(1, Math.round(Number(hours) || PASS_DEFAULT_HOURS)));
+    const pass = { id, game, label: String(label ?? '').slice(0, 40), hash: await hashText(secret), created: now, expires: now + h * 3_600_000 };
     await this.storage.put(`pass:${id}`, pass);
     return { token: `${id}.${secret}`, pass: { ...pass, hash: undefined } };
   }
@@ -139,7 +143,7 @@ export class AdminStore {
       return json({ settings: await this.settings(), budget: await this.budget() });
     }
     if (url.pathname === '/settings' && request.method === 'PUT') {
-      const settings = normalizeSettings(await request.json());
+      const settings = normalizeSettings(await request.json(), this.now());
       await this.storage.put('settings', settings);
       // Automatic closing reads the budget every 5 minutes while it is on.
       if (settings.account.autoClose) await this.storage.setAlarm(this.now() + 1_000);
@@ -174,10 +178,10 @@ export class AdminStore {
       return json((await this.passes()).map(({ hash, ...p }) => p));
     }
     if (url.pathname === '/passes' && request.method === 'POST') {
-      const { game, label } = await request.json();
+      const { game, label, hours } = await request.json();
       if (typeof game !== 'string' || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(game)) return json({ error: 'bad-game' }, 400);
       if ((await this.passes()).length >= 50) return json({ error: 'too-many' }, 400);
-      return json(await this.createPass(game, label));
+      return json(await this.createPass(game, label, hours));
     }
     if (url.pathname.startsWith('/passes/') && request.method === 'DELETE') {
       await this.storage.delete(`pass:${url.pathname.slice('/passes/'.length)}`);

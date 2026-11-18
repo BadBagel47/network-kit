@@ -2,11 +2,13 @@
 // independent of Cloudflare so it is tested in Node.
 //
 // Settings (stored by AdminStore):
-//   account: { plan: 'free' | 'paid', capUsd: number | null, autoClose: boolean }
-//   games:   { [game]: { mode: 'on' | 'off' | 'until', until: ISO | null,
-//                        privateOnly: boolean, stopped: boolean, share: number | null,
-//                        url: string | null,           the page players open (for admin passes)
-//                        modes: { [name]: { mode, until } } } }  e.g. Bricks' 1 Player / 2 Players (F-057)
+//   account: { plan: 'free' | 'paid', capUsd: number | null, autoClose: boolean }   autoClose is "Cloudflare limiting"
+//   games:   { [game]: { mode: 'on' | 'off' | 'timer', timer: { until: ISO, then: 'off' | 'stop' } | null,
+//                        stopped: boolean, share: number | null,
+//                        url: string | null,           the page players open (for game links)
+//                        modes: { [name]: { mode, timer } } } }  e.g. Bricks' 1 Player / 2 Players (F-057)
+//   'off' is shown as "No new players". A timer makes the game or mode work as On until
+//   `until`, then as `then` (no new players, or an emergency stop for that game or mode) (F-067).
 // A game is a Worker's script name (as the usage figures name it).
 
 import { METRICS } from './limits.js';
@@ -14,17 +16,33 @@ import { NOTICE_TEXT } from '../src/shared/protocol.js';
 
 export { NOTICE_TEXT };
 
-export const MODES = ['on', 'off', 'until'];
+export const MODES = ['on', 'off', 'timer'];
+const THEN = ['off', 'stop'];
+
+/** Players are warned this long before a timer ends (F-067). */
+export const TIMER_WARN_MS = 10 * 60_000;
+/** ... and told for this long after it ended. */
+export const TIMER_ENDED_MS = 60 * 60_000;
 
 /** Players are warned when a game has used this part of its share of the day (F-065). */
 export const NEAR = 0.9;
 
 export function defaultGame() {
-  return { mode: 'on', until: null, privateOnly: false, stopped: false, share: null, url: null, modes: {} };
+  return { mode: 'on', timer: null, stopped: false, share: null, url: null, modes: {} };
 }
 
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const cleanUntil = (u) => (u && !Number.isNaN(Date.parse(u)) ? new Date(u).toISOString() : null);
+
+/** One game's or mode's mode and timer; the removed "off until" becomes No new players or On. */
+function cleanMode(v, now) {
+  let mode = MODES.includes(v?.mode) ? v.mode : v?.mode === 'until' ? 'until' : 'on';
+  if (mode === 'until') mode = v.until && Date.parse(v.until) > now ? 'off' : 'on';
+  const until = cleanUntil(v?.timer?.until);
+  const timer = until ? { until, then: THEN.includes(v.timer.then) ? v.timer.then : 'off' } : null;
+  if (mode === 'timer' && !timer) mode = 'off';
+  return { mode, timer: mode === 'timer' ? timer : null };
+}
 const cleanUrl = (u) => {
   try {
     const url = new URL(String(u));
@@ -34,7 +52,7 @@ const cleanUrl = (u) => {
   }
 };
 
-export function normalizeSettings(raw = {}) {
+export function normalizeSettings(raw = {}, now = Date.now()) {
   const a = raw.account ?? {};
   const account = {
     plan: a.plan === 'paid' ? 'paid' : 'free',
@@ -45,17 +63,14 @@ export function normalizeSettings(raw = {}) {
   const games = {};
   for (const [name, g] of Object.entries(raw.games ?? {})) {
     if (!NAME.test(name)) continue;
-    const until = cleanUntil(g?.until);
     const modes = {};
     for (const [m, v] of Object.entries(g?.modes ?? {}).slice(0, 8)) {
       if (!NAME.test(m)) continue;
-      modes[m] = { mode: MODES.includes(v?.mode) ? v.mode : 'on', until: cleanUntil(v?.until) };
+      modes[m] = cleanMode(v, now);
     }
     const share = g?.share === null || g?.share === '' || g?.share === undefined ? null : Math.max(0, Math.min(100, Number(g.share) || 0));
     games[name] = {
-      mode: MODES.includes(g?.mode) ? g.mode : 'on',
-      until,
-      privateOnly: g?.privateOnly === true,
+      ...cleanMode(g, now),
       stopped: g?.stopped === true,
       share,
       url: g?.url ? cleanUrl(g.url) : null,
@@ -156,33 +171,46 @@ export function budgetState(settings, usage) {
   return { day: usage.today, share, over: closing, near: nearing, warnings, cost, at: usage.generatedAt };
 }
 
+/** What a game's or mode's setting means at `now`: 'on', 'off' or 'stop' (a timer, F-067). */
+export function effectiveMode(entry, now = Date.now()) {
+  if (entry?.mode === 'timer' && entry.timer) {
+    if (now < Date.parse(entry.timer.until)) return 'on';
+    return entry.timer.then === 'stop' ? 'stop' : 'off';
+  }
+  return entry?.mode === 'off' ? 'off' : 'on';
+}
+
+const STOPPED = { open: false, reason: 'stopped', stopped: true, until: null };
+const NO_NEW = { open: false, reason: 'off', stopped: false, until: null };
+
 /**
  * Is the game (or one of its modes, F-057) open for new rooms, new
  * participants and new rounds? The game's own settings come first; a mode can
- * only close more, never open what the game has closed.
+ * only close more, never open what the game has closed. A stop wins over
+ * everything, also over game links.
  */
 export function gameStatus(settings, budget, game, now = Date.now(), mode = null) {
   const g = settings.games[game] ?? defaultGame();
   const status = gameOnly(settings, budget, game, g, now);
   const m = mode ? g.modes?.[mode] : null;
-  if (!status.open || !m) return status;
-  if (m.mode === 'off') return { ...status, open: false, reason: 'off' };
-  if (m.mode === 'until' && m.until && Date.parse(m.until) > now) return { ...status, open: false, reason: 'until', until: m.until };
+  if (status.stopped || !m) return status;
+  const eff = effectiveMode(m, now);
+  if (eff === 'stop') return { ...STOPPED };
+  if (!status.open) return status;
+  if (eff === 'off') return { ...NO_NEW };
   return status;
 }
 
 function gameOnly(settings, budget, game, g, now) {
-  if (g.stopped) return { open: false, reason: 'stopped', stopped: true, privateOnly: g.privateOnly, until: null };
-  if (g.mode === 'off') return { open: false, reason: 'off', stopped: false, privateOnly: g.privateOnly, until: null };
-  if (g.mode === 'until' && g.until && Date.parse(g.until) > now) {
-    return { open: false, reason: 'until', stopped: false, privateOnly: g.privateOnly, until: g.until };
-  }
+  const eff = effectiveMode(g, now);
+  if (g.stopped || eff === 'stop') return { ...STOPPED };
+  if (eff === 'off') return { ...NO_NEW };
   const today = new Date(now).toISOString().slice(0, 10);
   if (settings.account.autoClose && budget?.day === today && budget.over?.[game]) {
     const midnight = `${new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString()}`;
-    return { open: false, reason: 'budget', stopped: false, privateOnly: g.privateOnly, until: midnight };
+    return { open: false, reason: 'budget', stopped: false, until: midnight };
   }
-  return { open: true, reason: null, stopped: false, privateOnly: g.privateOnly, until: null };
+  return { open: true, reason: null, stopped: false, until: null };
 }
 
 // ---- notices to players (F-066)
@@ -193,6 +221,16 @@ function gameOnly(settings, budget, game, g, now) {
 // the local time of `until`. English only (owner's decision 2026-11-18).
 
 
+function timerNotices(entry, scope, now) {
+  if (entry.mode !== 'timer' || !entry.timer) return [];
+  const end = Date.parse(entry.timer.until);
+  const stop = entry.timer.then === 'stop';
+  const key = `${scope}-${end}`;
+  if (now < end) return end - now <= TIMER_WARN_MS ? [notice(`timer-soon-${key}`, stop ? 'timer-stop-soon' : 'timer-soon', entry.timer.until)] : [];
+  if (now - end < TIMER_ENDED_MS) return [notice(`timer-ended-${key}`, stop ? 'timer-stopped' : 'timer-ended', entry.timer.until)];
+  return [];
+}
+
 const notice = (id, kind, until, extra = {}) => ({ id, kind, level: NOTICE_TEXT[kind].level, title: NOTICE_TEXT[kind].title, text: NOTICE_TEXT[kind].text, until, ...extra });
 
 /**
@@ -200,8 +238,17 @@ const notice = (id, kind, until, extra = {}) => ({ id, kind, level: NOTICE_TEXT[
  * reached (only while automatic closing is on) and the owner's own messages
  * to this game or to every game. `messages` are the stored ones (AdminStore).
  */
-export function gameNotices(settings, budget, game, now = Date.now(), messages = []) {
+export function gameNotices(settings, budget, game, now = Date.now(), messages = [], mode = null) {
   const list = [];
+  // Timers (F-067): the game's, and the asked mode's (or every mode's, named, when no mode is asked).
+  const g = settings.games[game];
+  if (g) {
+    list.push(...timerNotices(g, 'game', now));
+    for (const [m, entry] of Object.entries(g.modes ?? {})) {
+      if (mode && m !== mode) continue;
+      list.push(...timerNotices(entry, m, now).map((n) => (mode ? n : { ...n, title: `${n.title} (${m})` })));
+    }
+  }
   const today = new Date(now).toISOString().slice(0, 10);
   if (settings.account.autoClose && budget?.day === today) {
     const midnight = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString();

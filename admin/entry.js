@@ -15,7 +15,7 @@ export class GameApi extends WorkerEntrypoint {
     return this.env.STORE.get(this.env.STORE.idFromName('main'));
   }
 
-  /** { open, reason, until, privateOnly, stopped } for the game (its Worker's name). */
+  /** { open, reason, until, stopped, notices } for the game (its Worker's name). */
   async status(game, mode = null) {
     const q = new URLSearchParams({ game: String(game), ...(mode ? { mode: String(mode) } : {}) });
     const res = await this.store().fetch(`https://store/status?${q}`);

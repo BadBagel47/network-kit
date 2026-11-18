@@ -343,18 +343,18 @@ async function loadPasses() {
   const table = $('passes');
   table.replaceChildren();
   if (!list.length) {
-    $('passes-note').textContent = 'No admin links yet.';
+    $('passes-note').textContent = 'No game links yet.';
     return;
   }
   $('passes-note').textContent = '';
   const head = el('tr');
-  for (const h of ['Game', 'Device', 'Made', 'Valid until', '']) head.append(el('th', { scope: 'col' }, h));
+  for (const h of ['Game', 'For', 'Made', 'Valid until', '']) head.append(el('th', { scope: 'col' }, h));
   table.append(el('thead'));
   table.tHead.append(head);
   const body = el('tbody');
   for (const p of list) {
     const tr = el('tr');
-    tr.append(el('th', { scope: 'row' }, p.game), el('td', {}, p.label || '–'), el('td', {}, new Date(p.created).toLocaleDateString()), el('td', {}, new Date(p.expires).toLocaleDateString()));
+    tr.append(el('th', { scope: 'row' }, p.game), el('td', {}, p.label || '–'), el('td', {}, new Date(p.created).toLocaleDateString()), el('td', {}, new Date(p.expires).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })));
     const revoke = el('button', { type: 'button' }, 'Revoke');
     revoke.addEventListener('click', async () => {
       await fetch(`/api/passes/${encodeURIComponent(p.id)}`, { method: 'DELETE' });
@@ -371,17 +371,23 @@ $('new-pass').addEventListener('submit', async (e) => {
   const form = e.currentTarget;
   const game = form.game.value.trim().toLowerCase();
   const page = form.page.value.trim();
-  const res = await fetch('/api/passes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ game, label: form.label.value.trim() }) });
+  const res = await fetch('/api/passes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ game, label: form.label.value.trim(), hours: Number(form.hours.value) }) });
   const out = $('pass-link');
   if (!res.ok) {
     out.textContent = `Not made (${res.status}).`;
     return;
   }
-  const { token } = await res.json();
+  const { token, pass } = await res.json();
   const link = page ? `${page.split('#')[0]}#nk-admin=${token}` : `#nk-admin=${token}`;
+  const copy = el('button', { type: 'button' }, 'Copy');
+  copy.addEventListener('click', async () => {
+    await navigator.clipboard?.writeText(link);
+    copy.textContent = 'Copied';
+  });
   out.replaceChildren(
-    el('p', {}, 'Open this link once on the device (it is shown only now; it works 30 days):'),
+    el('p', {}, `Open or send this link (it is shown only now; valid until ${new Date(pass.expires).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}):`),
     el('code', { class: 'pass' }, link),
+    copy,
   );
   form.label.value = '';
   loadPasses();
@@ -445,13 +451,56 @@ const cell = (child) => {
   td.append(child);
   return td;
 };
-const REASONS = { off: 'Off', until: 'Off until', budget: 'Closed for today (budget)', stopped: 'Stopped' };
+const REASONS = { off: 'No new players', until: 'No new players', budget: 'Closed for today (Cloudflare limiting)', stopped: 'Emergency stop' };
+const MODE_CHOICES = [['on', 'On'], ['off', 'No new players'], ['timer', 'Timer: on until']];
+const THEN_CHOICES = [['off', 'then No new players'], ['stop', 'then Emergency stop']];
 const toLocalInput = (iso) => {
   if (!iso) return '';
   const d = new Date(iso);
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
+const select = (name, choices, value, label) => {
+  const sel = el('select', { name, 'aria-label': label });
+  for (const [v, t] of choices) {
+    const o = el('option', { value: v }, t);
+    if (value === v) o.selected = true;
+    sel.append(o);
+  }
+  return sel;
+};
+const nowText = (st) => {
+  if (!st) return ['', ''];
+  if (st.open) return [st.timerUntil ? `Open until ${new Date(st.timerUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Open', 'state-open'];
+  return [REASONS[st.reason] ?? 'Closed', 'state-closed'];
+};
+
+/** Mode, timer and what follows it, for a game's or a mode's row (F-067). */
+function modeCells(entry, label) {
+  const mode = select('mode', MODE_CHOICES, entry.mode === 'until' ? 'off' : entry.mode, `${label}: mode`);
+  const until = el('input', { name: 'timerUntil', type: 'datetime-local', value: toLocalInput(entry.timer?.until), 'aria-label': `${label}: on until` });
+  const then = select('timerThen', THEN_CHOICES, entry.timer?.then ?? 'off', `${label}: when the timer ends`);
+  const show = () => {
+    until.hidden = mode.value !== 'timer';
+    then.hidden = mode.value !== 'timer';
+    until.required = mode.value === 'timer';
+  };
+  mode.addEventListener('change', show);
+  show();
+  const box = el('div', { class: 'timer' });
+  box.append(until, then);
+  return [cell(mode), cell(box)];
+}
+
+function readMode(tr) {
+  const get = (n) => tr.querySelector(`[name=${n}]`);
+  const mode = get('mode').value;
+  const untilValue = get('timerUntil').value;
+  return {
+    mode,
+    timer: mode === 'timer' && untilValue ? { until: new Date(untilValue).toISOString(), then: get('timerThen').value } : null,
+  };
+}
 
 function renderControls() {
   const control = data.control;
@@ -461,52 +510,43 @@ function renderControls() {
   const table = $('control-table');
   table.replaceChildren();
   const head = el('tr');
-  for (const h of ['Game', 'Now', 'Mode', 'Until', 'Private only', 'Stop', 'Share %']) head.append(el('th', { scope: 'col' }, h));
+  for (const h of ['Game', 'Now', 'Mode', 'Timer', 'Emergency stop', 'Share %']) head.append(el('th', { scope: 'col' }, h));
   table.append(el('thead'));
   table.tHead.append(head);
   const body = el('tbody');
   for (const name of names) {
-    const g = settings.games[name] ?? { mode: 'on', until: null, privateOnly: false, stopped: false, share: null };
+    const g = settings.games[name] ?? { mode: 'on', timer: null, stopped: false, share: null, modes: {} };
     const st = status[name];
     const tr = el('tr', { 'data-game': name });
     tr.append(el('th', { scope: 'row' }, name));
-    const now = el('td', { class: st.open ? 'state-open' : 'state-closed' }, st.open ? (st.privateOnly ? 'Open (private only)' : 'Open') : REASONS[st.reason] ?? 'Closed');
-    tr.append(now);
-    const mode = el('select', { name: 'mode', 'aria-label': `${name}: mode` });
-    for (const [v, t] of [['on', 'On'], ['off', 'Off'], ['until', 'Off until']]) {
-      const o = el('option', { value: v }, t);
-      if (g.mode === v) o.selected = true;
-      mode.append(o);
-    }
-    tr.append(cell(mode));
-    const until = el('input', { name: 'until', type: 'datetime-local', value: toLocalInput(g.until), 'aria-label': `${name}: off until` });
-    tr.append(cell(until));
-    const priv = el('input', { name: 'privateOnly', type: 'checkbox', 'aria-label': `${name}: private rooms only` });
-    priv.checked = g.privateOnly;
-    tr.append(cell(priv));
-    const stop = el('input', { name: 'stopped', type: 'checkbox', 'aria-label': `${name}: emergency stop (closes running rooms too)` });
-    stop.checked = g.stopped;
-    tr.append(cell(stop));
+    const [text, cls] = nowText(st);
+    tr.append(el('td', { class: cls }, text));
+    tr.append(...modeCells(g, name));
+    // The emergency stop is a button: it acts at once (F-067).
+    const stopped = el('input', { name: 'stopped', type: 'hidden', value: g.stopped ? '1' : '' });
+    const stop = el('button', { type: 'button', class: g.stopped ? 'lift' : 'stop' }, g.stopped ? 'Lift the stop' : 'Stop now');
+    stop.addEventListener('click', () => {
+      if (!g.stopped && !confirm(`Stop ${name} now? Everyone playing it is disconnected, and no game link gets past the stop.`)) return;
+      stopped.value = g.stopped ? '' : '1';
+      $('controls').requestSubmit();
+    });
+    const stopCell = cell(stop);
+    stopCell.append(stopped);
+    tr.append(stopCell);
     const share = el('input', { name: 'share', type: 'number', min: '0', max: '100', step: '1', placeholder: String(Math.round(budget.share[name] ?? 0)), 'aria-label': `${name}: share of the free quota in percent (empty: equal shares)` });
     if (g.share !== null && g.share !== undefined) share.value = String(g.share);
     tr.append(cell(share));
     body.append(tr);
-    // Modes of the game (F-057): their own On / Off / Until, under the game.
+    // Modes of the game (F-057): their own mode and timer, under the game.
     for (const [m, mv] of Object.entries(g.modes ?? {})) {
       const mr = el('tr', { 'data-mode-of': name, 'data-mode': m, class: 'mode-row' });
       mr.append(el('th', { scope: 'row' }, `· ${m}`));
-      mr.append(el('td', { class: 'muted' }, 'mode'));
-      const msel = el('select', { name: 'mode', 'aria-label': `${name} ${m}: mode` });
-      for (const [v, t] of [['on', 'On'], ['off', 'Off'], ['until', 'Off until']]) {
-        const o = el('option', { value: v }, t);
-        if (mv.mode === v) o.selected = true;
-        msel.append(o);
-      }
-      mr.append(cell(msel));
-      mr.append(cell(el('input', { name: 'until', type: 'datetime-local', value: toLocalInput(mv.until), 'aria-label': `${name} ${m}: off until` })));
+      const [mt, mc] = nowText(st?.modes?.[m]);
+      mr.append(el('td', { class: mc }, mt));
+      mr.append(...modeCells(mv, `${name} ${m}`));
       const remove = el('button', { type: 'button', 'aria-label': `Remove the mode ${m} of ${name}` }, 'Remove');
       remove.addEventListener('click', () => mr.remove());
-      mr.append(cell(remove), el('td'), el('td'));
+      mr.append(cell(remove), el('td'));
       body.append(mr);
     }
   }
@@ -518,8 +558,8 @@ function renderControls() {
   $('warnings').replaceChildren(...budget.warnings.map((w) => el('li', {}, w)));
   $('cost').textContent = `This month on the Paid plan would cost about ${budget.cost.usd.toFixed(2)} USD (5 USD a month included). ${budget.cost.note}`;
   $('control-note').textContent = settings.account.autoClose
-    ? 'Games close for the rest of the UTC day when they pass their share. Running games finish; new rooms, newcomers and new rounds are refused.'
-    : 'Automatic closing is off: shares and warnings are shown, nothing is closed by itself. Off, Off until and Stop act at once (within 30 s). Running games finish, except after Stop.';
+    ? 'Cloudflare limiting is on: a game closes for new players for the rest of the UTC day when it passes its share, and its players are warned at 90 %. Running games finish.'
+    : 'Cloudflare limiting is off: shares and warnings are shown, nothing is closed by itself. No new players and timers act within 30 s; running games finish. Emergency stop disconnects everyone.';
 }
 
 $('controls').addEventListener('submit', async (e) => {
@@ -529,30 +569,23 @@ $('controls').addEventListener('submit', async (e) => {
   const old = data.control?.settings.games ?? {};
   for (const tr of form.querySelectorAll('tr[data-game]')) {
     const get = (n) => tr.querySelector(`[name=${n}]`);
-    const untilValue = get('until').value;
     games[tr.dataset.game] = {
-      mode: get('mode').value,
-      until: untilValue ? new Date(untilValue).toISOString() : null,
-      privateOnly: get('privateOnly').checked,
-      stopped: get('stopped').checked,
+      ...readMode(tr),
+      stopped: get('stopped').value === '1',
       share: get('share').value === '' ? null : Number(get('share').value),
       url: old[tr.dataset.game]?.url ?? null,
       modes: {},
     };
   }
   for (const tr of form.querySelectorAll('tr[data-mode-of]')) {
-    const untilValue = tr.querySelector('[name=until]').value;
-    games[tr.dataset.modeOf].modes[tr.dataset.mode] = {
-      mode: tr.querySelector('[name=mode]').value,
-      until: untilValue ? new Date(untilValue).toISOString() : null,
-    };
+    games[tr.dataset.modeOf].modes[tr.dataset.mode] = readMode(tr);
   }
   // A new game or mode typed below the table (F-057).
   const newGame = form.newGame.value.trim().toLowerCase();
   const newMode = form.newMode.value.trim().toLowerCase();
   if (newGame) {
-    games[newGame] ??= { mode: 'on', until: null, privateOnly: false, stopped: false, share: null, url: null, modes: {} };
-    if (newMode) games[newGame].modes[newMode] ??= { mode: 'on', until: null };
+    games[newGame] ??= { mode: 'on', timer: null, stopped: false, share: null, url: null, modes: {} };
+    if (newMode) games[newGame].modes[newMode] ??= { mode: 'on', timer: null };
   }
   form.newGame.value = '';
   form.newMode.value = '';

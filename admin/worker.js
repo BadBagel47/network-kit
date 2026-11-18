@@ -101,8 +101,18 @@ async function usageWithControl(env, deps) {
   const { settings } = await readSettings(env);
   const budget = budgetState(settings, data);
   const now = deps.now();
+  // What each game and each of its modes says now, and when a running timer ends (F-067).
+  const one = (n, m) => {
+    const entry = m ? settings.games[n]?.modes?.[m] : settings.games[n];
+    const st = gameStatus(settings, budget, n, now, m);
+    const timerUntil = st.open && entry?.mode === 'timer' && entry.timer && Date.parse(entry.timer.until) > now ? entry.timer.until : null;
+    return { ...st, timerUntil };
+  };
   const status = Object.fromEntries(
-    [...new Set([...data.games.map((g) => g.name), ...Object.keys(settings.games)])].map((n) => [n, gameStatus(settings, budget, n, now)]),
+    [...new Set([...data.games.map((g) => g.name), ...Object.keys(settings.games)])].map((n) => [n, {
+      ...one(n, null),
+      modes: Object.fromEntries(Object.keys(settings.games[n]?.modes ?? {}).map((m) => [m, one(n, m)])),
+    }]),
   );
   return { ...data, control: { settings, budget, status } };
 }

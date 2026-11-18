@@ -10,6 +10,19 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.11.0 (2026-11-18)
+
+Affects: the admin page and games connected to it (owner's decisions 2026-11-18); games need no change.
+
+- New (F-067): a timer per game and per mode: *on until* a time, then *No new players* (default) or an emergency stop for that game or mode. Players are warned ten minutes before and told when it has ended (notices, F-066).
+- New (F-068): game links. The admin links become game links that anyone may use, valid from an hour to 90 days (7 days unless chosen), with Copy and revoking. Invitations from a room made with a valid game link get past *No new players*; a room code alone does not.
+- Changed: *Off* is called *No new players*, automatic closing *Cloudflare limiting*; the emergency stop is a button. The closed text for `off` reads "The game is not taking new players right now."
+- Removed: *Off until a time* (an old setting still in the future becomes No new players) and *Private only* (the admin page's status no longer has `privateOnly`; with six-character codes and per-address limits it added little).
+
+### Upgrade guide from 0.10
+
+- Nothing to change. A game that read `privateOnly` or the reason `until` from the status can drop that code.
+
 ## 0.10.0 (2026-11-18)
 
 Affects: games connected to the admin page; nothing has to change, but a game shows notices only once it calls `watchNotices` (asked by the owner).

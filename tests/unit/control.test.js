@@ -2,7 +2,7 @@
 // budget, cost, and what rooms do with the admin page's word.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSettings, shares, budgetState, gameStatus, estimateCost, gameNotices, NOTICE_TEXT } from '../../admin/control.js';
+import { normalizeSettings, shares, budgetState, gameStatus, estimateCost, gameNotices, effectiveMode, NOTICE_TEXT } from '../../admin/control.js';
 import { AdminStore } from '../../admin/store.js';
 import { buildUsage, lastDays } from '../../admin/analytics.js';
 import { createRoomServer } from '../../src/server/worker.js';
@@ -44,16 +44,67 @@ test('F-004: a game over its share is closed for the day only when automatic clo
   assert.equal(gameStatus(on, budgetState(on, usage), 'vattigt', NOW + 86_400_000).open, true, 'open again the next day');
 });
 
-test('F-003: off, until, private only and an emergency stop', () => {
+test('F-003, F-067: no new players and an emergency stop; off until and private only are gone', () => {
   const s = normalizeSettings({ games: {
     a: { mode: 'off' }, b: { mode: 'until', until: '2026-11-18T18:00:00Z' }, c: { privateOnly: true }, d: { stopped: true, mode: 'on' },
-  } });
+    e: { mode: 'until', until: '2026-11-18T06:00:00Z' },
+  } }, NOW);
   assert.equal(gameStatus(s, null, 'a', NOW).reason, 'off');
-  assert.equal(gameStatus(s, null, 'b', NOW).reason, 'until');
-  assert.equal(gameStatus(s, null, 'b', Date.parse('2026-11-18T19:00:00Z')).open, true);
-  assert.deepEqual([gameStatus(s, null, 'c', NOW).open, gameStatus(s, null, 'c', NOW).privateOnly], [true, true]);
+  assert.equal(s.games.b.mode, 'off', 'an old "off until" still in the future becomes No new players');
+  assert.equal(s.games.e.mode, 'on', 'one that has passed becomes On');
+  assert.equal(s.games.c.privateOnly, undefined, 'private only is removed');
+  assert.equal(gameStatus(s, null, 'c', NOW).open, true);
   assert.deepEqual([gameStatus(s, null, 'd', NOW).reason, gameStatus(s, null, 'd', NOW).stopped], ['stopped', true]);
   assert.equal(gameStatus(s, null, 'unknown', NOW).open, true);
+});
+
+test('F-067: a timer opens the game until a time, then No new players or an emergency stop', () => {
+  const until = '2026-11-18T13:00:00.000Z'; // NOW is 12:00
+  const s = normalizeSettings({ games: {
+    a: { mode: 'timer', timer: { until } },
+    b: { mode: 'timer', timer: { until, then: 'stop' } },
+    c: { mode: 'timer' },
+  } }, NOW);
+  assert.deepEqual(s.games.a.timer, { until, then: 'off' }, 'No new players is the default afterwards');
+  assert.equal(s.games.c.mode, 'off', 'a timer without a time is No new players');
+  assert.equal(gameStatus(s, null, 'a', NOW).open, true);
+  assert.equal(gameStatus(s, null, 'b', NOW).open, true);
+  const after = Date.parse(until) + 1;
+  assert.deepEqual([gameStatus(s, null, 'a', after).reason, gameStatus(s, null, 'a', after).stopped], ['off', false]);
+  assert.deepEqual([gameStatus(s, null, 'b', after).reason, gameStatus(s, null, 'b', after).stopped], ['stopped', true]);
+  assert.equal(effectiveMode(s.games.b, after), 'stop');
+});
+
+test('F-067: a timer per mode; a stop when it ends stops only that mode', () => {
+  const until = '2026-11-18T13:00:00.000Z';
+  const s = normalizeSettings({ games: { bricks: { mode: 'off', modes: {
+    solo: { mode: 'timer', timer: { until } },
+    duo: { mode: 'timer', timer: { until, then: 'stop' } },
+  } } } }, NOW);
+  // A mode can only close more: with the game on No new players, a mode's timer does not open it.
+  assert.equal(gameStatus(s, null, 'bricks', NOW, 'solo').open, false);
+  s.games.bricks.mode = 'on';
+  assert.equal(gameStatus(s, null, 'bricks', NOW, 'solo').open, true);
+  const after = Date.parse(until) + 1;
+  assert.equal(gameStatus(s, null, 'bricks', after, 'solo').reason, 'off');
+  assert.equal(gameStatus(s, null, 'bricks', after, 'duo').stopped, true);
+  assert.equal(gameStatus(s, null, 'bricks', after).open, true, 'the game itself is not stopped');
+});
+
+test('F-067: players are warned ten minutes before a timer ends and told when it has ended', () => {
+  const until = '2026-11-18T13:00:00.000Z';
+  const end = Date.parse(until);
+  const s = normalizeSettings({ games: { bricks: { mode: 'timer', timer: { until }, modes: { duo: { mode: 'timer', timer: { until, then: 'stop' } } } } } }, NOW);
+  const kinds = (t, mode = null) => gameNotices(s, null, 'bricks', t, [], mode).map((n) => [n.kind, n.title]);
+  assert.deepEqual(kinds(end - 11 * 60_000), []);
+  assert.deepEqual(kinds(end - 9 * 60_000, 'duo'), [['timer-soon', 'Open play ends soon'], ['timer-stop-soon', 'The game stops soon']]);
+  assert.deepEqual(kinds(end - 9 * 60_000), [['timer-soon', 'Open play ends soon'], ['timer-stop-soon', 'The game stops soon (duo)']], 'without a mode, every mode is named');
+  assert.deepEqual(kinds(end + 60_000, 'solo'), [['timer-ended', 'Open play has ended']]);
+  assert.deepEqual(kinds(end + 60_000, 'duo').map(([k]) => k), ['timer-ended', 'timer-stopped']);
+  assert.deepEqual(kinds(end + 61 * 60_000), [], 'not after an hour');
+  const [soon] = gameNotices(s, null, 'bricks', end - 60_000, [], 'solo');
+  assert.equal(soon.until, until);
+  assert.match(soon.id, /^timer-soon-game-/);
 });
 
 test('F-008: the cost on the Paid plan, and the monthly cap', () => {
@@ -112,16 +163,12 @@ test('F-003: a closed game turns newcomers away, lets those already in come back
   assert.equal(core.state.phase, 'lobby');
 });
 
-test('F-003: private only lets only invitation links in; an emergency stop closes running rooms', async () => {
+test('F-003: an emergency stop closes running rooms', async () => {
   const { world, core, owner, created } = await setup(CREW);
-  world.word = { open: true, reason: null, privateOnly: true, stopped: false };
-  core.host = world.host();
-  const noKey = await connect(world, core, { name: 'NoKey' });
-  assert.equal(noKey.closedWith.code, CLOSE.KEY);
   const withKey = await connect(world, core, { name: 'Invited', key: created.keys.player.k });
   assert.ok(withKey.id);
   await cmd(core, owner, 'start');
-  world.word = { open: false, reason: 'stopped', stopped: true, privateOnly: false };
+  world.word = { open: false, reason: 'stopped', stopped: true };
   core.host = world.host();
   await world.advance(31_000);
   await cmd(core, owner, 'pause');
@@ -146,10 +193,10 @@ test('F-003: a closed game refuses new rooms at the Worker; an unreachable admin
 // ------------------------------------------------- F-057 modes, F-058 admin passes
 
 test('F-057: a mode can be closed on its own; it never opens what the game has closed', () => {
-  const s = normalizeSettings({ games: { bricks: { modes: { solo: { mode: 'off' }, duo: { mode: 'until', until: '2026-11-18T18:00:00Z' }, 'Bad!': {} } } } });
+  const s = normalizeSettings({ games: { bricks: { modes: { solo: { mode: 'off' }, duo: { mode: 'on' }, 'Bad!': {} } } } });
   assert.deepEqual(Object.keys(s.games.bricks.modes), ['solo', 'duo']);
   assert.equal(gameStatus(s, null, 'bricks', NOW, 'solo').reason, 'off');
-  assert.equal(gameStatus(s, null, 'bricks', NOW, 'duo').reason, 'until');
+  assert.equal(gameStatus(s, null, 'bricks', NOW, 'duo').open, true);
   assert.equal(gameStatus(s, null, 'bricks', NOW).open, true, 'the game itself is open');
   const off = normalizeSettings({ games: { bricks: { mode: 'off', modes: { solo: { mode: 'on' } } } } });
   assert.equal(gameStatus(off, null, 'bricks', NOW, 'solo').open, false);
@@ -166,7 +213,7 @@ function storeWith(now = () => NOW) {
   return new AdminStore({ storage }, {}, { now });
 }
 
-test('F-058: an admin pass is for one game, lasts 30 days and can be revoked', async () => {
+test('F-058, F-068: a game link is for one game, lasts 7 days unless chosen, and can be revoked', async () => {
   let t = NOW;
   const store = storeWith(() => t);
   const call = async (path, method = 'GET', body) => (await store.fetch(new Request(`https://store${path}`, { method, body: body && JSON.stringify(body) }))).json();
@@ -182,8 +229,15 @@ test('F-058: an admin pass is for one game, lasts 30 days and can be revoked', a
   await call(`/passes/${pass.id}`, 'DELETE');
   assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token })).valid, false, 'revoked');
   const second = await call('/passes', 'POST', { game: 'bricks' });
-  t += 31 * 86_400_000;
-  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: second.token })).valid, false, 'expired');
+  const hour = await call('/passes', 'POST', { game: 'bricks', hours: 1 });
+  const long = await call('/passes', 'POST', { game: 'bricks', hours: 10_000 });
+  assert.equal(long.pass.expires - long.pass.created, 90 * 86_400_000, 'at most 90 days');
+  t += 2 * 3_600_000;
+  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: hour.token })).valid, false, 'an hour has passed');
+  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: second.token })).valid, true);
+  t = NOW + 7 * 86_400_000 + 1;
+  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: second.token })).valid, false, 'expired after 7 days');
+  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: long.token })).valid, true);
 });
 
 test('F-058: with an admin pass the owner creates, joins and starts while public play is off, not after a stop', async () => {
@@ -294,5 +348,49 @@ test('F-066: pages get the notices with the status, open or closed, cleaned', as
   const body = await (await server.fetch(new Request('https://x/rooms/status'), env)).json();
   assert.equal(body.open, false);
   assert.deepEqual(body.notices, [{ id: 'budget-soon-2026-11-18', kind: 'budget-soon', level: 'warning', title: 'Closing soon for today', text: 'Soon {until}.', until: '2026-11-19T00:00:00.000Z' }]);
-  for (const kind of ['budget-soon', 'budget-closed', 'timer-soon', 'timer-ended', 'timer-stop-soon']) assert.ok(NOTICE_TEXT[kind].text.length > 20, kind);
+  for (const kind of ['budget-soon', 'budget-closed', 'timer-soon', 'timer-ended', 'timer-stop-soon', 'timer-stopped']) assert.ok(NOTICE_TEXT[kind].text.length > 20, kind);
+});
+
+// ------------------------------------------------- game links in rooms (F-068)
+
+test('F-068: invitations from a room made with a game link get past No new players while the link is valid', async () => {
+  const GOOD = 'good.pass-xxxxxxxxxxxxxxxxxxxxx';
+  let valid = true;
+  const { world, core, created } = await setup(CREW);
+  world.word = { open: false, reason: 'off', until: null, stopped: false };
+  core.host = { ...world.host(), checkAdminPass: async (t) => valid && t === GOOD };
+  // The owner's page comes back with its game link: the room is now a game-link room.
+  const owner = await connect(world, core, { name: 'Owner', owner: created.ownerKey, pk: 'owner-player-key-xxxxxxxx', sid: 's2', adminPass: GOOD });
+  assert.ok(owner.last('welcome'));
+  assert.equal(core.state.pass, GOOD);
+  const friend = await connect(world, core, { name: 'Friend', key: created.keys.player.k });
+  assert.ok(friend.last('welcome'), 'the invited friend gets in');
+  const stranger = await connect(world, core, { name: 'Stranger' });
+  assert.equal(stranger.closedWith.code, CLOSE.GAME_CLOSED, 'a room code alone is not an invitation');
+  // The friend may start a round in this room (a rematch too).
+  await cmd(core, owner, 'handover', { id: friend.id });
+  await cmd(core, friend, 'host-ready');
+  await cmd(core, friend, 'start');
+  assert.notEqual(core.state.phase, 'lobby');
+  // The view sent to the players never holds the link.
+  assert.ok(!friend.sent.join('').includes(GOOD));
+  // Revoked: new invitations stop working; those already in stay.
+  valid = false;
+  const late = await connect(world, core, { name: 'Late', key: created.keys.player.k });
+  assert.equal(late.closedWith.code, CLOSE.GAME_CLOSED);
+  // A stop beats the link.
+  valid = true;
+  world.word = { open: false, reason: 'stopped', stopped: true };
+  core.host = { ...world.host(), checkAdminPass: async (t) => t === GOOD };
+  const afterStop = await connect(world, core, { name: 'AfterStop', key: created.keys.viewer.k });
+  assert.equal(afterStop.closedWith.code, CLOSE.GAME_CLOSED);
+});
+
+test('F-068: a room made without a game link lets no invited newcomer in while the game takes no new players', async () => {
+  const { world, core, created } = await setup(CREW);
+  world.word = { open: false, reason: 'off', until: null, stopped: false };
+  core.host = { ...world.host(), checkAdminPass: async () => false };
+  const friend = await connect(world, core, { name: 'Friend', key: created.keys.player.k });
+  assert.equal(friend.closedWith.code, CLOSE.GAME_CLOSED);
+  assert.equal(core.state.pass, undefined);
 });

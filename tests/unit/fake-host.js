@@ -160,13 +160,13 @@ export class FakeWorld {
 let playerCounter = 0;
 
 /** Connect a fake client and say hello. */
-export async function connect(world, core, { name = 'P', pk, role, key, owner, sid = 's1' } = {}) {
+export async function connect(world, core, { name = 'P', pk, role, key, owner, sid = 's1', adminPass } = {}) {
   playerCounter += 1;
   const ws = new FakeSocket(name);
   world.socketList.push(ws);
   core.opened(ws);
   const playerKey = pk ?? `player-key-${playerCounter}-xxxxxxxxxxxx`;
-  await core.message(ws, JSON.stringify({ t: 'hello', v: PROTOCOL, pk: playerKey, sid, name, role, key, owner }));
+  await core.message(ws, JSON.stringify({ t: 'hello', v: PROTOCOL, pk: playerKey, sid, name, role, key, owner, adminPass }));
   ws.id = ws.last('welcome')?.you.id ?? null;
   ws.pk = playerKey;
   return ws;

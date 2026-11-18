@@ -40,33 +40,33 @@ Cloudflare does not document every field of these datasets, so the page asks the
 | `CLOUDFLARE_ANALYTICS_TOKEN` | a read-only Cloudflare token with *Account Analytics: Read* and *Workers Scripts: Read* | the figures; the second permission names the games when Cloudflare reports rooms per namespace |
 | `CLOUDFLARE_ACCOUNT_ID` | optional | found with the deploy token when missing |
 
-## Games: on, off, budget (F-003, F-004, F-008, F-026)
+## Games: on, no new players, timer, stop (F-003, F-004, F-008, F-026, F-067)
 
-The *Games* section has one row per game (each game is a Worker; its name is the Worker's name, as in the usage figures):
+The *Games* section has one row per game (each game is a Worker; its name is the Worker's name, as in the usage figures), and one row per mode under it:
 
-- **Mode:** On, Off, or Off until a time. Off refuses new rooms, newcomers and new rounds (also rematches); running games finish, and participants who were already in a room can come back.
-- **Private only:** only invitation links let newcomers in; a room code alone does not.
-- **Stop:** an emergency stop. Everyone is turned away and running rooms close within about 30 seconds.
+- **Mode:** *On*, *No new players* or *Timer: on until*. No new players refuses new rooms, newcomers and new rounds (also rematches); running games finish, and participants who were already in a room can come back. A timer makes the game or mode work as On until the chosen time, and then as what was chosen with it: *No new players* (the default) or *Emergency stop* (for that game or mode only). Players are warned ten minutes before and told when it has ended. (Off until a time and Private only were removed in 0.11; an old Off until still in the future became No new players.)
+- **Emergency stop:** a button. *Stop now* turns everyone away and closes running rooms within about 30 seconds; no game link gets past it. *Lift the stop* opens again.
 - **Share %:** the game's share of each daily free limit. Empty means an equal share of what the other games leave.
+- **Now:** what the game or mode says at this moment, and when a running timer ends.
 
 Under *Account*:
 
 - **Plan:** Free or Paid. On the Paid plan the page shows what this month would cost (5 USD a month plus what goes past the included amounts; prices checked 2026-11-18; Workers CPU time is not counted).
 - **Monthly cap:** on the Paid plan, the cost at which games close.
-- **Close a game for the day when it passes its share:** off until the owner turns it on. When on, the admin Worker reads the usage every 5 minutes and closes a game that has passed its share (Free plan) for the rest of the UTC day, or every game when the cap is reached (Paid plan). Warnings at 80 % are shown either way.
+- **Cloudflare limiting:** off until the owner turns it on. When on, the admin Worker reads the usage every 5 minutes and closes a game that has passed its share (Free plan) for new players for the rest of the UTC day, or every game when the cap is reached (Paid plan); players are warned at 90 %. Warnings at 80 % are shown on the page either way.
 
-Players see why in plain words (`Off`, `Off until …`, `used up today's free quota … opens again at …`, `stopped by its owner`), in the game's own language if the game translates the kit's reasons.
+Players see why in plain words (`not taking new players`, `used up today's free quota … opens again at …`, `stopped by its owner`), in the game's own language if the game translates the kit's reasons.
 
-**Modes (F-057):** a game can have modes with their own On / Off / Until under the game's row (for example Bricks' 1 Player and 2 Players). Add a game or a mode under the table. A mode can only close more than the game: when the game is Off, its modes are too. Rooms ask for their own mode (`admin: { …, mode }`); a page asks for any mode with `NetworkRoom.status(server, { mode })`, without waking a room.
+**Modes (F-057):** a game can have modes with their own mode and timer under the game's row (for example Bricks' 1 Player and 2 Players). Add a game or a mode under the table. A mode can only close more than the game: when the game takes no new players, its modes do not either. Rooms ask for their own mode (`admin: { …, mode }`); a page asks for any mode with `NetworkRoom.status(server, { mode })`, without waking a room.
 
-**Admin links (F-058):** a personal link per game for the owner's own devices. With it, that browser can create, join and start games while the game is Off, Off until or over its budget, also with *Private only* on; an emergency stop still stops it. Make one under *Admin links* (game, the game's page, the device's name); the link is shown once, works 30 days and can be revoked. The game's Worker checks it with the admin page (kept a minute).
+**Game links (F-058, F-068):** a link per game that lets whoever opens it create, join and start games, alone or with others, while the game or a mode takes no new players or is closed by Cloudflare limiting; an emergency stop still stops it. It can be used by anyone it is given to. Friends invited from a room made with a game link (the room's own invitation link, made in the game) get in too, as long as the room lives and the game link is valid; a room code alone is not enough. Make one under *Game links* (game, the game's page, who it is for, valid for 1 hour to 90 days, 7 days unless chosen); the link is shown once with *Copy*, and can be revoked, which also stops its rooms' invitations (within a minute). The game's Worker checks it with the admin page (kept a minute).
 
 **Notices to players (F-065, F-066):** games that run `watchNotices` show the admin page's notices on every page, in a box with a strong background and a warning sound, until the player presses OK (once per browser, within about a minute):
 
 - *Closing soon for today:* sent by itself when Cloudflare limiting is on and a game has used 90 % of its share of a daily free limit (on the Paid plan: 90 % of the monthly cap).
 - *Closed for today:* sent by itself when the game has passed its share; running games finish.
 - *Messages to players:* write a message (English) to one game or to every game (`*`), as a message (blue) or a warning (yellow), shown for 15 minutes to a day; it can be removed before then. At most 20 at a time.
-- Ready for the timer (run A): *Open play ends soon*, *Open play has ended*, *The game stops soon*.
+- *Open play ends soon* / *The game stops soon* ten minutes before a timer ends, and *Open play has ended* / *The game has stopped* when it has (shown for an hour). A page that asks without a mode gets every mode's timer notices, with the mode's name in the title.
 
 A preview of every notice, with the sound, is on the demo's page `/notices.html`.
 
