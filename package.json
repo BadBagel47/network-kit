@@ -1,6 +1,6 @@
 {
   "name": "network-kit",
-  "version": "0.13.2",
+  "version": "0.13.3",
   "description": "Shared multiplayer room server and browser client for small browser games on Cloudflare.",
   "private": true,
   "type": "module",

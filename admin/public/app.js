@@ -38,6 +38,26 @@ function bytes(v) {
 const format = (metric, v) => (metric.unit === 'bytes' ? bytes(v) : metric.unit === 'GB-s' ? `${nf1.format(v)} GB-s` : nf.format(Math.round(v)));
 const formatTick = (metric, v) => (metric.unit === 'bytes' ? bytes(v) : v >= 10_000 ? compact.format(v) : nf.format(v));
 
+// Figures arriving (F-078): numbers count up, bars grow, rings draw; not
+// when the device asks for less motion.
+const motion = () => animateNext && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+function countUp(node, to, fmt) {
+  if (!motion() || !Number.isFinite(to)) {
+    node.textContent = fmt(to);
+    return;
+  }
+  node.textContent = fmt(0);
+  node.classList.add('arrive');
+  const start = performance.now();
+  const step = (t) => {
+    const p = Math.min(1, (t - start) / 800);
+    node.textContent = fmt(to * (1 - (1 - p) ** 3));
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+const skeleton = (cls = '') => el('span', { class: `skeleton ${cls}`, 'aria-hidden': 'true' });
+
 // The metrics in Swedish (the API names them in English).
 const SV = {
   workerRequests: ['Förfrågningar', 'Förfrågningar som kör en Worker (statiska filer räknas inte). Över gränsen svarar Workern med fel 1027 till kl 01.'],
@@ -83,28 +103,47 @@ let timers = []; // timer buttons to update every second
 
 /* ---------- loading and signing in ---------- */
 
+// Cloudflare's figures come after the cards (F-078): the cards need only the
+// admin page's own settings; the figures fill in, animated, when they arrive.
+let usageData = null;
+let animateNext = false;
+
 async function load() {
-  const res = await fetch('/api/usage', { headers: { accept: 'application/json' } });
+  const res = await fetch('/api/control', { headers: { accept: 'application/json' } });
   const body = await res.json().catch(() => ({ error: 'bad-answer' }));
   if (res.status === 401) return showSignIn(body);
   $('logout').hidden = false;
-  if (body.error === 'no-token') {
-    $('message').textContent = 'Inloggad. Siffrorna kräver en Cloudflare-nyckel som bara kan läsa (CLOUDFLARE_ANALYTICS_TOKEN).';
-    return;
-  }
   if (body.error) {
-    $('message').textContent = `Cloudflares siffror gick inte att läsa: ${body.message ?? body.error}`;
+    $('message').textContent = `Sidan kunde inte läsa inställningarna: ${body.error}`;
     return;
   }
-  data = body;
+  data = { ...(usageData ?? {}), control: usageData?.control ? { ...body, budget: usageData.control.budget } : body };
   $('message').textContent = '';
   $('dashboard').hidden = false;
   render();
-  loadQuality().catch(() => {});
   loadPasses().catch(() => {});
   loadLobbies().catch(() => {});
   loadMessages().catch(() => {});
   if (tab === 'logg') loadLog().catch(() => {});
+  loadUsage().catch(() => {});
+}
+
+async function loadUsage() {
+  const res = await fetch('/api/usage', { headers: { accept: 'application/json' } });
+  const body = await res.json().catch(() => ({ error: 'bad-answer' }));
+  if (res.status === 401) return;
+  if (body.error) {
+    $('message').textContent = body.error === 'no-token'
+      ? 'Siffrorna från Cloudflare kräver en nyckel som bara kan läsa (CLOUDFLARE_ANALYTICS_TOKEN). Allt annat fungerar.'
+      : `Cloudflares siffror gick inte att läsa: ${body.message ?? body.error}`;
+    return;
+  }
+  animateNext = !usageData; // the first time only: later refreshes just update
+  usageData = body;
+  data = { ...body, control: body.control };
+  render();
+  animateNext = false;
+  loadQuality().catch(() => {});
 }
 
 function showSignIn(body) {
@@ -212,22 +251,35 @@ function card(name) {
   }
   article.append(head);
 
-  // Rooms and players (F-072), version, deploy and errors (F-074).
+  // Rooms and players (F-072), version, deploy and errors (F-074): Cloudflare's
+  // figures, a placeholder until they arrive (F-078).
   const facts = el('div', { class: 'facts' });
   const act = data.activity?.[name];
   const fact = (value, rest, bad = false) => {
     const span = el('span', bad ? { class: 'bad' } : {});
-    span.append(el('strong', {}, value), document.createTextNode(` ${rest}`));
+    const strong = el('strong');
+    countUp(strong, value, (v) => nf.format(Math.round(v)));
+    span.append(strong, document.createTextNode(` ${rest}`));
     return span;
   };
-  if (act) facts.append(fact(nf.format(act.rooms), 'rum'), fact(nf.format(act.players), 'spelare nu'), fact(nf.format(act.peak), 'som mest i dag'));
-  else facts.append(el('span', {}, 'Inga rum i dag'));
+  if (!data.games) {
+    facts.append(skeleton('w5'), skeleton('w7'), skeleton('w6'));
+  } else {
+    if (act) facts.append(fact(act.rooms, 'rum'), fact(act.players, 'spelare nu'), fact(act.peak, 'som mest i dag'));
+    else facts.append(el('span', {}, 'Inga rum i dag'));
+  }
   const version = data.control.versions?.[name];
-  if (version) facts.append(fact(`v${version}`, ''));
-  const deployed = data.deployed?.[name];
-  if (deployed) facts.append(el('span', {}, `driftsatt ${dayTime(deployed)}`));
-  const errors = data.games.find((x) => x.name === name)?.daily.errors?.[data.today] ?? 0;
-  facts.append(fact(nf.format(errors), 'fel i dag', errors > 0));
+  if (version) {
+    const v = el('span');
+    v.append(el('strong', {}, `v${version}`));
+    facts.append(v);
+  }
+  if (data.games) {
+    const deployed = data.deployed?.[name];
+    if (deployed) facts.append(el('span', { class: motion() ? 'arrive' : '' }, `driftsatt ${dayTime(deployed)}`));
+    const errors = data.games.find((x) => x.name === name)?.daily.errors?.[data.today] ?? 0;
+    facts.append(fact(errors, 'fel i dag', errors > 0));
+  }
   article.append(facts);
 
   if (st.stopped) {
@@ -348,7 +400,13 @@ const levelOf = (f) => (f >= 0.9 ? 'bad' : f >= 0.8 ? 'warn' : '');
 function bar(fraction) {
   const outer = el('span', { class: `bar ${levelOf(fraction)}` });
   const fill = el('span');
-  fill.style.width = `${Math.max(1, Math.min(100, fraction * 100))}%`;
+  const width = `${Math.max(1, Math.min(100, fraction * 100))}%`;
+  if (motion()) {
+    fill.style.width = '0%';
+    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = width; }));
+  } else {
+    fill.style.width = width;
+  }
   outer.append(fill);
   return outer;
 }
@@ -366,6 +424,16 @@ function pace(metric, used) {
 }
 
 function renderUsage() {
+  if (!data.games) {
+    $('today-note').textContent = 'Hämtar Cloudflares siffror …';
+    $('meters').replaceChildren(...[0, 1, 2, 3, 4].map(() => {
+      const item = el('div', { class: 'meter placeholder' });
+      item.append(skeleton('w8'), skeleton('bar'));
+      return item;
+    }));
+    $('shares').replaceChildren(skeleton('w10'), skeleton('bar'));
+    return;
+  }
   const at = new Date(data.generatedAt);
   const sumOf = (key) => data.games.reduce((sum, g) => sum + (g.daily[key]?.[data.today] ?? 0), 0);
   const messages = sumOf('doMessages');
@@ -382,7 +450,11 @@ function renderUsage() {
     const b = el('button', { type: 'button', 'aria-expanded': String(open) });
     const top = el('span', { class: 'meter-top' });
     const nums = el('span', { class: 'nums' });
-    nums.append(el('span', { class: 'short' }, format(m, used)), el('span', { class: `pct ${levelOf(f)}` }, pctText(f, used)), el('span', { class: 'chev', 'aria-hidden': 'true' }, open ? '▲' : '▼'));
+    const short = el('span', { class: 'short' });
+    countUp(short, used, (v) => format(m, v));
+    const pct = el('span', { class: `pct ${levelOf(f)}` });
+    countUp(pct, f, (v) => pctText(v, v * m.limit));
+    nums.append(short, pct, el('span', { class: 'chev', 'aria-hidden': 'true' }, open ? '▲' : '▼'));
     top.append(el('span', { class: 'name' }, label(m)), nums);
     b.append(top, bar(f));
     b.addEventListener('click', () => { ui.openMeter = open ? null : m.key; renderUsage(); });
@@ -393,7 +465,15 @@ function renderUsage() {
       const C = 2 * Math.PI * R;
       const ring = svg('svg', { class: 'ring', width: 84, height: 84, viewBox: '0 0 84 84', role: 'img', 'aria-label': `${label(m)}: ${pctText(f, used)} av gratisgränsen` });
       ring.append(svg('circle', { cx: 42, cy: 42, r: R, fill: 'none', stroke: '#1e2a37', 'stroke-width': 9 }));
-      ring.append(svg('circle', { cx: 42, cy: 42, r: R, fill: 'none', stroke: f >= 0.9 ? '#ff4d4f' : f >= 0.8 ? '#ffb020' : '#4cc2ff', 'stroke-width': 9, 'stroke-linecap': 'round', 'stroke-dasharray': `${(Math.min(1, Math.max(f, 0.012)) * C).toFixed(1)} ${C.toFixed(1)}`, transform: 'rotate(-90 42 42)' }));
+      // The ring draws itself when the row opens (F-078).
+      const arc = svg('circle', { class: 'arc', cx: 42, cy: 42, r: R, fill: 'none', stroke: f >= 0.9 ? '#ff4d4f' : f >= 0.8 ? '#ffb020' : '#4cc2ff', 'stroke-width': 9, 'stroke-linecap': 'round', 'stroke-dasharray': `${C.toFixed(1)} ${C.toFixed(1)}`, transform: 'rotate(-90 42 42)' });
+      const target = C * (1 - Math.min(1, Math.max(f, 0.012)));
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) arc.style.strokeDashoffset = String(target);
+      else {
+        arc.style.strokeDashoffset = String(C);
+        requestAnimationFrame(() => requestAnimationFrame(() => { arc.style.strokeDashoffset = String(target); }));
+      }
+      ring.append(arc);
       const t = svg('text', { x: 42, y: 47, 'text-anchor': 'middle', 'font-size': 15, 'font-weight': 700, fill: '#e8eef4' });
       t.textContent = pctText(f, used);
       ring.append(t);
@@ -848,7 +928,8 @@ function renderSettings() {
   for (const b of document.querySelectorAll('[data-then]')) b.setAttribute('aria-pressed', String(b.dataset.then === s.account.timerThen));
   $('limiting').setAttribute('aria-checked', String(s.account.autoClose));
   if (document.activeElement !== $('cap')) $('cap').value = s.account.capUsd ?? '';
-  $('cost').textContent = `Den här månaden skulle kosta ungefär ${new Intl.NumberFormat('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(data.control.budget.cost.usd)} USD på betald plan (5 USD i månaden ingår).`;
+  if (!data.games) $('cost').textContent = '';
+  else $('cost').textContent = `Den här månaden skulle kosta ungefär ${new Intl.NumberFormat('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(data.control.budget.cost.usd)} USD på betald plan (5 USD i månaden ingår).`;
   const share = data.control.budget.share ?? {};
   $('share-inputs').replaceChildren(...gameNames().filter(connected).map((name) => {
     const row = el('label', { class: 'share-input' }, name);

@@ -56,7 +56,12 @@ try {
   await page.route('http://admin.test/**', async (route) => {
     const req = route.request();
     const u = new URL(req.url());
-    if (u.pathname === '/api/usage') return route.fulfill({ json: usage() });
+    // F-078: the cards come from the fast answer; Cloudflare's figures arrive later.
+    if (u.pathname === '/api/control') return route.fulfill({ json: usage().control });
+    if (u.pathname === '/api/usage') {
+      await new Promise((r) => setTimeout(r, 600));
+      return route.fulfill({ json: usage() });
+    }
     if (u.pathname === '/api/settings' && req.method() === 'PUT') {
       settings = normalizeSettings(JSON.parse(req.postData()), Date.now());
       saved.push(settings);
@@ -74,6 +79,9 @@ try {
   await page.goto('http://admin.test/');
   await page.waitForSelector('#dashboard:not([hidden])');
   assert.equal(await page.locator('#cards article').count(), 2, 'only connected games get a card');
+  assert.ok(await page.locator('#cards .skeleton').count() > 0, 'the cards show before Cloudflare\'s figures, with placeholders');
+  await page.waitForFunction(() => !document.querySelector('#cards .skeleton'));
+  await page.waitForTimeout(1000); // the numbers count up
   assert.match(await page.textContent('#cards'), /2 rum.*5 spelare nu.*8 som mest i dag/s);
   assert.match(await page.textContent('#cards'), /v0\.12\.0/);
   // The timer counts down inside its button, and the button drains.

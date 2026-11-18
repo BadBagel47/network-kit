@@ -284,3 +284,22 @@ test('B-069: without the message count every room request counts fully, with a n
   results.periodic[0].sum.inboundWebsocketMsgCount = 900;
   assert.equal(buildUsage({ now: NOW, dates, shapes, results }).games[0].daily.doRequests['2026-11-17'], 25);
 });
+
+test('F-078: with keep, the datasets\' fields are asked once a day, and the figures are asked at the same time', async () => {
+  const { forgetShapes } = await import('../../admin/analytics.js');
+  forgetShapes();
+  let t = NOW;
+  const fetch = fakeCloudflare();
+  const make = () => new CloudflareAnalytics({ token: 't', fetch, now: () => t, keep: true });
+  await make().usage({ days: 31 });
+  const asked = () => fetch.calls.filter((c) => c.body?.includes('__type')).length;
+  const first = asked();
+  assert.ok(first > 5, 'the first time, the fields are asked');
+  const second = await make().usage({ days: 31 });
+  assert.equal(asked(), first, 'not again within a day, also from a new instance');
+  assert.equal(second.games.find((g) => g.name === 'vattigt').daily.workerRequests['2026-11-17'], 1200, 'the same figures');
+  t += 86_400_001;
+  await make().usage({ days: 31 });
+  assert.ok(asked() > first, 'asked again after a day');
+  forgetShapes();
+});

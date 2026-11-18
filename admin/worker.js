@@ -9,6 +9,7 @@
 //   GET/POST/DELETE /api/passes, /api/messages  game links (F-058, F-068) and
 //                     messages to players (F-066) (signed in only)
 //   GET  /api/log     the owner's log, 90 days (F-074) (signed in only)
+//   GET  /api/control settings and the games' status without Cloudflare's figures, fast (F-078)
 //   GET/POST/DELETE /api/lobbies  lobbies with host and guest links (F-059) (signed in only)
 //
 // Games ask whether they are open through the GameApi entrypoint (entry.js),
@@ -17,7 +18,7 @@
 // Secrets (set by .github/workflows/deploy-admin.yml): ADMIN_PASSWORD and
 // CF_ANALYTICS_TOKEN (read-only Cloudflare token). Variable: CF_ACCOUNT_ID.
 
-import { CloudflareAnalytics } from './analytics.js';
+import { CloudflareAnalytics, forgetShapes } from './analytics.js';
 import { METRICS, LIMITS_CHECKED } from './limits.js';
 import { budgetState, gameStatus, normalizeSettings } from './control.js';
 import {
@@ -80,6 +81,7 @@ async function usage(env, deps) {
     accountId: env.CF_ACCOUNT_ID || null,
     fetch: deps.fetch,
     now: deps.now,
+    keep: true, // the datasets' fields are asked once a day (F-078)
   });
   const data = { ...(await analytics.usage({ days: 31 })), metrics: METRICS, limitsChecked: LIMITS_CHECKED };
   cache = { at: now, data };
@@ -96,13 +98,8 @@ async function readSettings(env) {
   return (await s.fetch('https://store/settings')).json();
 }
 
-/** The usage with each game's share, budget and status as the games see it. */
-async function usageWithControl(env, deps) {
-  const data = await usage(env, deps);
-  if (data.error) return data;
-  const { settings, connected = {}, versions = {} } = await readSettings(env);
-  const budget = budgetState(settings, data);
-  const now = deps.now();
+/** Each game's and mode's status as the games see it, with the settings (F-067). */
+function controlOf({ settings, budget, connected = {}, versions = {} }, names, now) {
   // What each game and each of its modes says now, and when a running timer ends (F-067).
   const one = (n, m) => {
     const entry = m ? settings.games[n]?.modes?.[m] : settings.games[n];
@@ -111,12 +108,32 @@ async function usageWithControl(env, deps) {
     return { ...st, timerUntil };
   };
   const status = Object.fromEntries(
-    [...new Set([...data.games.map((g) => g.name), ...Object.keys(settings.games)])].map((n) => [n, {
+    [...new Set([...names, ...Object.keys(settings.games)])].map((n) => [n, {
       ...one(n, null),
       modes: Object.fromEntries(Object.keys(settings.games[n]?.modes ?? {}).map((m) => [m, one(n, m)])),
     }]),
   );
-  return { ...data, control: { settings, budget, status, connected, versions } };
+  return { settings, budget, status, connected, versions };
+}
+
+/**
+ * The settings and the games' status without asking Cloudflare: fast, so the
+ * page can show the game cards at once (F-078). The budget is the one the
+ * admin page last worked out (Cloudflare limiting), or none.
+ */
+async function controlOnly(env, deps) {
+  const stored = await readSettings(env);
+  const budget = stored.budget ?? { share: {}, over: {}, near: {}, warnings: [], cost: { usd: 0, lines: [], note: '' } };
+  return controlOf({ ...stored, budget }, Object.keys(stored.connected ?? {}), deps.now());
+}
+
+/** The usage with each game's share, budget and status as the games see it. */
+async function usageWithControl(env, deps) {
+  const data = await usage(env, deps);
+  if (data.error) return data;
+  const stored = await readSettings(env);
+  const budget = budgetState(stored.settings, data);
+  return { ...data, control: controlOf({ ...stored, budget }, data.games.map((g) => g.name), deps.now()) };
 }
 
 /** The request handler; `deps` lets tests replace the clock and the network. */
@@ -137,6 +154,11 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
     } catch (e) {
       return json({ error: 'analytics', message: String(e.message ?? e), metrics: METRICS, limitsChecked: LIMITS_CHECKED }, 502);
     }
+  }
+  if (pathname === '/api/control') {
+    // The game cards' figures, without Cloudflare's (F-078).
+    if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out', passwordSet: passwordConfigured(env) }, 401);
+    return json(await controlOnly(env, deps));
   }
   if (pathname === '/api/quality') {
     if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);
@@ -180,6 +202,7 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
 
 export function resetCache() {
   cache = null;
+  forgetShapes();
 }
 
 export default {

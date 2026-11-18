@@ -210,3 +210,19 @@ details li { margin: 4px 0; }
 .qr-code svg { display: block; width: 100%; height: auto; }
 .qr-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .card-head .qr { margin-left: auto; min-height: 36px; font-size: 13px; }
+
+/* Figures arriving (F-078) */
+.skeleton { display: inline-block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #1a2430 0%, #263445 50%, #1a2430 100%); background-size: 200% 100%; animation: shimmer 1.2s ease-in-out infinite; }
+.skeleton.w5 { width: 52px; } .skeleton.w6 { width: 64px; } .skeleton.w7 { width: 76px; } .skeleton.w8 { width: 120px; } .skeleton.w10 { width: 160px; }
+.skeleton.bar { display: block; width: 100%; height: 8px; margin-top: 10px; }
+.meter.placeholder { padding: 16px; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.arrive { animation: arrive 0.5s ease-out both; }
+@keyframes arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.bar > span { transition: width 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
+svg.ring .arc { transition: stroke-dashoffset 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  .arrive { animation: none; }
+  .bar > span, svg.ring .arc { transition: none; }
+}

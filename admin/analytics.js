@@ -25,6 +25,14 @@ export const EXTRA_KEYS = ['doRequestsAll', 'doMessages', 'errors'];
 /** Cloudflare counts this many incoming WebSocket messages as one room request. */
 export const MESSAGES_PER_REQUEST = 20;
 
+// The datasets' fields and retention, kept a day per Worker instance (F-078).
+const KEEP_SHAPES_MS = 86_400_000;
+let kept = null;
+/** Forget the kept fields (tests). */
+export function forgetShapes() {
+  kept = null;
+}
+
 /** Duration is billed for 128 MB per active Durable Object. */
 const GB_PER_OBJECT = 128 / 1024;
 
@@ -83,13 +91,16 @@ export class CloudflareAnalytics {
    * @param {typeof fetch} [o.fetch]
    * @param {() => number} [o.now]
    */
-  constructor({ token, accountId = null, fetch: f = globalThis.fetch, now = Date.now }) {
+  constructor({ token, accountId = null, fetch: f = globalThis.fetch, now = Date.now, keep = false }) {
     this.token = token;
     this.accountId = accountId || null;
     this.fetch = f;
     this.now = now;
     this.types = new Map();
     this.shapes = null;
+    // keep: remember the datasets' fields and retention for a day in this
+    // Worker instance instead of asking Cloudflare every time (F-078).
+    this.keep = keep;
   }
 
   async api(path) {
@@ -147,6 +158,10 @@ export class CloudflareAnalytics {
    */
   async discover() {
     if (this.shapes) return this.shapes;
+    if (this.keep && kept && this.now() - kept.at < KEEP_SHAPES_MS) {
+      this.shapes = kept.shapes;
+      return this.shapes;
+    }
     const { data } = await this.graphql('{ __schema { queryType { name } } }');
     const queryType = data.__schema.queryType.name;
     const viewer = await this.fieldType(queryType, 'viewer');
@@ -181,11 +196,19 @@ export class CloudflareAnalytics {
       shapes[key] = shape;
     }
     this.shapes = shapes;
+    if (this.keep) kept = { at: this.now(), shapes, retention: null };
     return shapes;
   }
 
   /** How many days back each dataset may be asked for (settings), when offered. */
   async retention(accountTag, shapes) {
+    if (this.keep && kept?.shapes === shapes && kept.retention) return kept.retention;
+    const settings = await this.askRetention(accountTag, shapes);
+    if (this.keep && kept?.shapes === shapes) kept.retention = settings;
+    return settings;
+  }
+
+  async askRetention(accountTag, shapes) {
     const names = Object.values(shapes).filter((s) => s.name).map((s) => s.name);
     const parts = names.map((n) => `${n} { notOlderThan maxDuration }`).join(' ');
     try {
@@ -234,16 +257,13 @@ export class CloudflareAnalytics {
     const settings = await this.retention(accountTag, shapes);
     const dates = lastDays(now, days);
     const results = {};
-    let namespaceMap = null;
-    for (const [key, shape] of Object.entries(shapes)) {
-      if (shape.missing) {
-        notes.push(shape.missing);
-        continue;
-      }
-      if (!shape.day || !shape.dateFilter) {
-        notes.push(`${shape.name}: no per-day field to group by`);
-        continue;
-      }
+    // Everything is asked at the same time (F-078): the datasets, the rooms'
+    // namespaces, the deploy times and the rooms and players.
+    const needsNamespaces = Object.values(shapes).some((sh) => sh.owner === 'namespaceId');
+    const namespacesAsked = this.namespaces(accountTag).then((m) => ({ map: m }), (e) => ({ map: new Map(), error: e }));
+    const datasetsAsked = Object.entries(shapes).map(async ([key, shape]) => {
+      if (shape.missing) return { notes: [shape.missing] };
+      if (!shape.day || !shape.dateFilter) return { notes: [`${shape.name}: no per-day field to group by`] };
       // Ask only for the days the dataset keeps.
       let from = dates[0];
       const older = settings?.[shape.name]?.notOlderThan;
@@ -254,40 +274,35 @@ export class CloudflareAnalytics {
       try {
         const { rows, warnings } = await this.queryDataset(accountTag, shape, from, dates[dates.length - 1]);
         results[key] = rows;
-        notes.push(...warnings.map((w) => `${shape.name}: ${w}`));
+        return { notes: warnings.map((w) => `${shape.name}: ${w}`) };
       } catch (e) {
-        notes.push(`${shape.name}: ${e.message}`);
-        continue;
+        return { notes: [`${shape.name}: ${e.message}`] };
       }
-      if (shape.owner === 'namespaceId' && !namespaceMap) {
-        try {
-          namespaceMap = await this.namespaces(accountTag);
-        } catch (e) {
-          namespaceMap = new Map();
-          notes.push(`Room usage is shown per namespace: ${e.message}`);
-        }
-      }
-    }
+    });
+    const deployedAsked = this.api(`/accounts/${accountTag}/workers/scripts`).then(
+      (list) => ({ deployed: Object.fromEntries((list ?? []).map((w) => [w.id, w.modified_on ?? null])) }),
+      (e) => ({ deployed: {}, note: `Deploy times: ${e.message}` }),
+    );
+    const day = utcDate(now);
+    const activityQuery = `query ($a: String!, $d: Date!) { viewer { accounts(filter: { accountTag: $a }) {
+        durableObjectsPeriodicGroups(limit: 10000, filter: { date_geq: $d, date_leq: $d }) { max { activeWebsocketConnections } dimensions { namespaceId objectId datetimeFiveMinutes } } } } }`;
+    const activityAsked = this.graphql(activityQuery, { a: accountTag, d: day }).then(
+      (body) => ({ rows: body.data?.viewer?.accounts?.[0]?.durableObjectsPeriodicGroups ?? [] }),
+      (e) => ({ rows: null, note: `Rooms and players: ${e.message}` }),
+    );
+    for (const done of await Promise.all(datasetsAsked)) notes.push(...done.notes);
+    const ns = await namespacesAsked;
+    if (ns.error && needsNamespaces) notes.push(`Room usage is shown per namespace: ${ns.error.message}`);
+    const namespaceMap = needsNamespaces || ns.map.size ? ns.map : null;
     const usage = buildUsage({ now, dates, shapes, results, namespaceMap, notes });
     // When each Worker was last deployed (F-074).
-    try {
-      usage.deployed = Object.fromEntries((await this.api(`/accounts/${accountTag}/workers/scripts`) ?? []).map((w) => [w.id, w.modified_on ?? null]));
-    } catch (e) {
-      usage.deployed = {};
-      usage.notes.push(`Deploy times: ${e.message}`);
-    }
+    const dep = await deployedAsked;
+    usage.deployed = dep.deployed;
+    if (dep.note) usage.notes.push(dep.note);
     // Rooms and players now and today's peak (F-072).
-    try {
-      if (!namespaceMap) namespaceMap = await this.namespaces(accountTag);
-      const day = utcDate(now);
-      const q = `query ($a: String!, $d: Date!) { viewer { accounts(filter: { accountTag: $a }) {
-        durableObjectsPeriodicGroups(limit: 10000, filter: { date_geq: $d, date_leq: $d }) { max { activeWebsocketConnections } dimensions { namespaceId objectId datetimeFiveMinutes } } } } }`;
-      const body = await this.graphql(q, { a: accountTag, d: day });
-      usage.activity = activityFrom(body.data?.viewer?.accounts?.[0]?.durableObjectsPeriodicGroups ?? [], namespaceMap, now);
-    } catch (e) {
-      usage.activity = {};
-      usage.notes.push(`Rooms and players: ${e.message}`);
-    }
+    const act = await activityAsked;
+    usage.activity = act.rows ? activityFrom(act.rows, ns.map, now) : {};
+    if (act.note) usage.notes.push(act.note);
     return usage;
   }
 }

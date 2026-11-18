@@ -10,6 +10,12 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.13.3 (2026-11-18)
+
+Affects: the admin page only.
+
+- Faster (F-078): the game cards show at once from the admin page's own settings (`GET /api/control`); Cloudflare's figures fill in when they arrive, with placeholders until then, and on the first arrival the numbers count up, the bars grow and a meter's ring draws itself (not when the device asks for less motion). The datasets' fields are asked of Cloudflare once a day instead of every time, and the figures are asked at the same time instead of one after another.
+
 ## 0.13.2 (2026-11-18)
 
 Affects: the admin page only.
