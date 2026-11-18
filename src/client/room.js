@@ -225,9 +225,10 @@ export class NetworkRoom {
     try {
       const res = await fetch(url, { headers: token ? { 'x-admin-pass': token } : {} });
       const body = await res.json();
-      return { open: body.open !== false, reason: body.reason ?? null, until: body.until ?? null, text: gameClosedText(body.reason, body.until) };
+      const notices = Array.isArray(body.notices) ? body.notices : []; // F-066
+      return { open: body.open !== false, reason: body.reason ?? null, until: body.until ?? null, text: gameClosedText(body.reason, body.until), notices };
     } catch {
-      return { open: true, reason: null, until: null, text: null };
+      return { open: true, reason: null, until: null, text: null, notices: [] };
     }
   }
 

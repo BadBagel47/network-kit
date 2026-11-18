@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.9** (0.9.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.10** (0.10.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -196,10 +196,11 @@ Every role has its own invitation key, so a viewer link can never play. In an op
 ## 4. The browser client
 
 ```js
-import { NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg }
+import { NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, watchNotices }
   from './vendor/network-kit/client/index.js';
 
 const SERVER = 'https://my-game-rooms.example.workers.dev';
+watchNotices(SERVER);                                         // the admin page's notices (F-066)
 
 // Create (the creator becomes owner and host) or join.
 const room = await NetworkRoom.create(SERVER, { name: 'Ada', settings: { access: 'private' } });
@@ -254,7 +255,8 @@ Identities and owner keys are stored per game server, so games on the same site 
 
 ### Methods and properties
 
-- `NetworkRoom.status(server, { basePath, mode })` (static, from 0.9, F-057): is the game, or one of its modes, open now? `{ open, reason, until, text }`, asked without waking a room; for a mode played alone in the browser. Open when the admin page cannot be reached.
+- `NetworkRoom.status(server, { basePath, mode })` (static, from 0.9, F-057): is the game, or one of its modes, open now? `{ open, reason, until, text, notices }`, asked without waking a room; for a mode played alone in the browser. Open when the admin page cannot be reached.
+- **Notices (from 0.10, F-066):** `watchNotices(SERVER, { basePath, mode })` asks the game's status at once, every minute while the page is visible and when it becomes visible again, and shows each new notice from the admin page (Cloudflare limiting soon or reached, a message from the owner, later a timer running out) in a box at the top of the screen with a strong background and a warning sound, until the player presses OK. Each notice is shown once per browser. Start it on every page of the game, also outside rooms (a game played alone in the browser too). Returns `{ stop, check, board }`. The box is made with a constructed style sheet, so it works under a strict Content-Security-Policy; colours can be changed with the CSS variables `--nk-notice-warning-bg`, `--nk-notice-warning-ink`, `--nk-notice-info-bg`, `--nk-notice-info-ink` and `--nk-notice-edge`. `new NoticeBoard().show({ id, level, title, text, until })` shows a game's own notice the same way; `playWarningSound({ level })` plays only the sound (browsers allow sound only after the player has touched the page; until then it waits for the first touch or key). The texts are English (`NOTICE_TEXT`); `{until}` becomes the local time. `NetworkRoom.status()` also returns `notices`. Costs one Worker request a minute per visible page.
 - **Admin pass (from 0.9, F-058):** a personal link from the admin page (`…#nk-admin=…`) lets the owner's browser create, join and start games while the game is Off, Off until or over its budget (not after Stop). The client takes it from the address bar into storage by itself and sends it with `create`, `join` and `status`; `forgetAdminPass()` removes it from the browser.
 - `send(data, { to, reliable })`. `to`: `'all'` (default: everyone else who is admitted), `[ids]`, `{ role }` or `{ place }`. The sender never gets its own message. Messages are numbered and resent after a reconnect, and the room counts each once. `reliable: false` is for data the next message replaces anyway (positions). Returns `false` when nothing was sent: nobody is there to get it (a host alone in the room, or the host is away), this participant may not send (a role that does not send, or still waiting), or it is too large.
 - `send(data, { latest: kind })`: for values that change faster than they can be sent, where only the newest counts (an aim, a position, a slider). The client keeps the newest value of each `kind` and sends it as soon as the pace allows, also after a reconnect; older values of the same kind are never sent.

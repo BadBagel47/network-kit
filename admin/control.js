@@ -10,8 +10,14 @@
 // A game is a Worker's script name (as the usage figures name it).
 
 import { METRICS } from './limits.js';
+import { NOTICE_TEXT } from '../src/shared/protocol.js';
+
+export { NOTICE_TEXT };
 
 export const MODES = ['on', 'off', 'until'];
+
+/** Players are warned when a game has used this part of its share of the day (F-065). */
+export const NEAR = 0.9;
 
 export function defaultGame() {
   return { mode: 'on', until: null, privateOnly: false, stopped: false, share: null, url: null, modes: {} };
@@ -107,6 +113,7 @@ export function budgetState(settings, usage) {
   const names = usage.games.map((g) => g.name);
   const share = shares(settings, names);
   const over = {};
+  const near = {}; // past NEAR of the share: players are warned (F-065)
   const warnings = [];
   const daily = METRICS.filter((m) => m.per === 'day' && usage.available.includes(m.key));
   for (const game of usage.games) {
@@ -115,7 +122,10 @@ export function budgetState(settings, usage) {
       const allowed = (m.limit * (share[game.name] ?? 0)) / 100;
       if (allowed > 0 && used > allowed) {
         over[game.name] ??= `${m.label}: ${Math.round(used)} of its ${Math.round(allowed)} today`;
-      } else if (allowed > 0 && used > allowed * 0.8) {
+      } else if (allowed > 0 && used > allowed * NEAR) {
+        near[game.name] ??= `${m.label}: ${Math.round(used)} of its ${Math.round(allowed)} today`;
+      }
+      if (allowed > 0 && used <= allowed && used > allowed * 0.8) {
         warnings.push(`${game.name}: ${m.label} at ${Math.round((used / allowed) * 100)} % of its share`);
       }
     }
@@ -139,7 +149,11 @@ export function budgetState(settings, usage) {
   const closing = settings.account.plan === 'paid'
     ? (capPassed ? Object.fromEntries(names.map((n) => [n, 'the monthly spending cap is reached'])) : {})
     : over;
-  return { day: usage.today, share, over: closing, warnings, cost, at: usage.generatedAt };
+  const capNear = settings.account.plan === 'paid' && settings.account.capUsd !== null && !capPassed && cost.usd >= settings.account.capUsd * NEAR;
+  const nearing = settings.account.plan === 'paid'
+    ? (capNear ? Object.fromEntries(names.map((n) => [n, 'the monthly spending cap is near'])) : {})
+    : Object.fromEntries(Object.entries(near).filter(([n]) => !over[n]));
+  return { day: usage.today, share, over: closing, near: nearing, warnings, cost, at: usage.generatedAt };
 }
 
 /**
@@ -169,4 +183,35 @@ function gameOnly(settings, budget, game, g, now) {
     return { open: false, reason: 'budget', stopped: false, privateOnly: g.privateOnly, until: midnight };
   }
   return { open: true, reason: null, stopped: false, privateOnly: g.privateOnly, until: null };
+}
+
+// ---- notices to players (F-066)
+//
+// A notice is { id, kind, level, title, text, until }. Pages show it in a box
+// that cannot be missed, with a warning sound, until the player presses OK; a
+// page shows each id once. "{until}" in a text is replaced by the page with
+// the local time of `until`. English only (owner's decision 2026-11-18).
+
+
+const notice = (id, kind, until, extra = {}) => ({ id, kind, level: NOTICE_TEXT[kind].level, title: NOTICE_TEXT[kind].title, text: NOTICE_TEXT[kind].text, until, ...extra });
+
+/**
+ * The notices a game's players should see now: Cloudflare limiting soon or
+ * reached (only while automatic closing is on) and the owner's own messages
+ * to this game or to every game. `messages` are the stored ones (AdminStore).
+ */
+export function gameNotices(settings, budget, game, now = Date.now(), messages = []) {
+  const list = [];
+  const today = new Date(now).toISOString().slice(0, 10);
+  if (settings.account.autoClose && budget?.day === today) {
+    const midnight = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString();
+    if (budget.over?.[game]) list.push(notice(`budget-closed-${today}`, 'budget-closed', midnight));
+    else if (budget.near?.[game]) list.push(notice(`budget-soon-${today}`, 'budget-soon', midnight));
+  }
+  for (const m of messages) {
+    if ((m.game === game || m.game === '*') && m.until > now) {
+      list.push({ id: `msg-${m.id}`, kind: 'message', level: m.level === 'warning' ? 'warning' : 'info', title: m.level === 'warning' ? 'Warning' : NOTICE_TEXT.message.title, text: m.text, until: new Date(m.until).toISOString() });
+    }
+  }
+  return list;
 }

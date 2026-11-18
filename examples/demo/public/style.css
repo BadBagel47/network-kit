@@ -28,3 +28,4 @@ a { color: #58a6ff; }
 #pad-left { grid-column: 1; grid-row: 2; }
 #pad-down { grid-column: 2; grid-row: 2; }
 #pad-right { grid-column: 3; grid-row: 2; }
+.kinds { display: grid; gap: 8px; max-width: 360px; }

@@ -61,6 +61,15 @@ Players see why in plain words (`Off`, `Off until …`, `used up today's free qu
 
 **Admin links (F-058):** a personal link per game for the owner's own devices. With it, that browser can create, join and start games while the game is Off, Off until or over its budget, also with *Private only* on; an emergency stop still stops it. Make one under *Admin links* (game, the game's page, the device's name); the link is shown once, works 30 days and can be revoked. The game's Worker checks it with the admin page (kept a minute).
 
+**Notices to players (F-065, F-066):** games that run `watchNotices` show the admin page's notices on every page, in a box with a strong background and a warning sound, until the player presses OK (once per browser, within about a minute):
+
+- *Closing soon for today:* sent by itself when Cloudflare limiting is on and a game has used 90 % of its share of a daily free limit (on the Paid plan: 90 % of the monthly cap).
+- *Closed for today:* sent by itself when the game has passed its share; running games finish.
+- *Messages to players:* write a message (English) to one game or to every game (`*`), as a message (blue) or a warning (yellow), shown for 15 minutes to a day; it can be removed before then. At most 20 at a time.
+- Ready for the timer (run A): *Open play ends soon*, *Open play has ended*, *The game stops soon*.
+
+A preview of every notice, with the sound, is on the demo's page `/notices.html`.
+
 **Connection quality (F-052):** games that turn measuring on (client option `measure`) send anonymous summaries; the page shows per game the response time to the room (typical and slow), how evenly positions arrive at the others, frame time, reconnects, host changes and the kinds of devices. Kept 7 days, then deleted.
 
 **Connecting a game:** the game's Worker gets a service binding to the admin Worker's `GameApi` entrypoint, and the room server the option `admin`:

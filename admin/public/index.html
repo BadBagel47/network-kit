@@ -78,6 +78,22 @@
       <p class="muted" id="passes-note"></p>
       <div class="table-wrap"><table id="passes"></table></div>
 
+      <h2>Messages to players</h2>
+      <p class="muted">Shown in a box with a warning sound on every page of the game, within about a minute, until the player presses OK. Warnings before Cloudflare limiting closes a game are sent by themselves.</p>
+      <form id="new-message" class="add-row">
+        <label>Game <input name="game" required placeholder="e.g. bricks, or * for all" autocomplete="off"></label>
+        <label class="wide">Message (English) <input name="text" required maxlength="300" autocomplete="off"></label>
+        <label>Shown for
+          <select name="minutes"><option value="15">15 min</option><option value="60" selected>1 hour</option><option value="240">4 hours</option><option value="1440">1 day</option></select>
+        </label>
+        <label>Kind
+          <select name="level"><option value="info">Message</option><option value="warning">Warning</option></select>
+        </label>
+        <button type="submit">Send</button>
+      </form>
+      <p class="muted" id="messages-note" role="status"></p>
+      <div class="table-wrap"><table id="messages"></table></div>
+
       <h2>Connection quality</h2>
       <p class="muted" id="quality-note"></p>
       <div class="table-wrap"><table id="quality"></table></div>

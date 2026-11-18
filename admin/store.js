@@ -3,12 +3,15 @@
 // entrypoint (a service binding), never over the internet.
 
 import { CloudflareAnalytics } from './analytics.js';
-import { normalizeSettings, budgetState, gameStatus } from './control.js';
+import { normalizeSettings, budgetState, gameStatus, gameNotices } from './control.js';
 
 const BUDGET_EVERY_MS = 5 * 60_000;
 const PASS_DAYS = 30; // admin passes (F-058) last 30 days and can be revoked
 const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const hashText = async (text) => b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
+const MESSAGE_MAX = 20; // the owner's messages to players (F-066) kept at once
+const MESSAGE_MIN_MS = 5 * 60_000;
+const MESSAGE_MAX_MS = 7 * 86_400_000;
 const KEEP_DAYS = 7; // measurement summaries are kept a week (F-052)
 const PER_DAY_MAX = 3_000;
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -72,7 +75,35 @@ export class AdminStore {
   }
 
   async status(game, mode = null) {
-    return gameStatus(await this.settings(), await this.budget(), game, this.now(), mode);
+    const settings = await this.settings();
+    const budget = await this.budget();
+    const now = this.now();
+    return { ...gameStatus(settings, budget, game, now, mode), notices: gameNotices(settings, budget, game, now, await this.messages()) };
+  }
+
+  // ---- the owner's messages to players (F-066)
+
+  async messages() {
+    const now = this.now();
+    const all = [...(await this.storage.list({ prefix: 'msg:' })).values()];
+    const old = all.filter((m) => m.until <= now);
+    if (old.length) await this.storage.delete(old.map((m) => `msg:${m.id}`));
+    return all.filter((m) => m.until > now).sort((a, b) => a.created - b.created);
+  }
+
+  async addMessage({ game, text, minutes, level }) {
+    const now = this.now();
+    const ms = Math.min(MESSAGE_MAX_MS, Math.max(MESSAGE_MIN_MS, Math.round(Number(minutes) || 60) * 60_000));
+    const message = {
+      id: b64url(crypto.getRandomValues(new Uint8Array(6))),
+      game,
+      text: String(text).replace(/\s+/g, ' ').trim().slice(0, 300),
+      level: level === 'warning' ? 'warning' : 'info',
+      created: now,
+      until: now + ms,
+    };
+    await this.storage.put(`msg:${message.id}`, message);
+    return message;
   }
 
   // ---- admin passes (F-058): a personal link per game for the owner's devices
@@ -150,6 +181,21 @@ export class AdminStore {
     }
     if (url.pathname.startsWith('/passes/') && request.method === 'DELETE') {
       await this.storage.delete(`pass:${url.pathname.slice('/passes/'.length)}`);
+      return json({ ok: true });
+    }
+    if (url.pathname === '/messages' && request.method === 'GET') {
+      return json(await this.messages());
+    }
+    if (url.pathname === '/messages' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const game = body?.game;
+      if (typeof game !== 'string' || !(game === '*' || /^[a-z0-9][a-z0-9-]{0,62}$/.test(game))) return json({ error: 'bad-game' }, 400);
+      if (typeof body.text !== 'string' || !body.text.trim()) return json({ error: 'no-text' }, 400);
+      if ((await this.messages()).length >= MESSAGE_MAX) return json({ error: 'too-many' }, 400);
+      return json(await this.addMessage(body));
+    }
+    if (url.pathname.startsWith('/messages/') && request.method === 'DELETE') {
+      await this.storage.delete(`msg:${url.pathname.slice('/messages/'.length)}`);
       return json({ ok: true });
     }
     if (url.pathname === '/check-pass' && request.method === 'POST') {

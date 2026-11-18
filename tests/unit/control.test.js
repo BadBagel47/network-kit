@@ -2,7 +2,7 @@
 // budget, cost, and what rooms do with the admin page's word.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSettings, shares, budgetState, gameStatus, estimateCost } from '../../admin/control.js';
+import { normalizeSettings, shares, budgetState, gameStatus, estimateCost, gameNotices, NOTICE_TEXT } from '../../admin/control.js';
 import { AdminStore } from '../../admin/store.js';
 import { buildUsage, lastDays } from '../../admin/analytics.js';
 import { createRoomServer } from '../../src/server/worker.js';
@@ -79,6 +79,7 @@ test('the store keeps settings and turns the budget check on and off', async () 
   let alarm = null;
   const storage = {
     get: async (k) => data.get(k), put: async (k, v) => void data.set(k, v),
+    list: async ({ prefix }) => new Map([...data].filter(([k]) => k.startsWith(prefix))),
     setAlarm: async (at) => void (alarm = at), deleteAlarm: async () => void (alarm = null),
   };
   const usage = usageWith({ vattigt: 90_000 });
@@ -219,12 +220,79 @@ test('F-057, F-058: pages ask whether a mode is open without waking a room; a pa
   };
   const server = createRoomServer({ admin: { binding: 'ADMIN', game: 'bricks', mode: 'duo' } });
   const solo = await (await server.fetch(new Request('https://x/rooms/status?mode=solo'), env)).json();
-  assert.deepEqual(solo, { open: false, reason: 'off', until: null });
+  assert.deepEqual(solo, { open: false, reason: 'off', until: null, notices: [] });
   const withPass = await (await server.fetch(new Request('https://x/rooms/status?mode=solo', { headers: { 'x-admin-pass': 'ok.token-xxxxxxxxxxxxxxxxxxxxxxx' } }), env)).json();
-  assert.deepEqual(withPass, { open: true, reason: 'admin', until: null });
+  assert.deepEqual(withPass, { open: true, reason: 'admin', until: null, notices: [] });
   assert.deepEqual(asked[0], ['bricks', 'solo']);
   // Creating a room asks for the rooms' own mode.
   env.ROOMS = { idFromName: (n) => n, get: () => ({ fetch: async () => Response.json({ code: 'ABCDEF', ownerKey: 'k', keys: {} }) }) };
   await server.fetch(new Request('https://x/rooms', { method: 'POST', body: '{}' }), env);
   assert.deepEqual(asked.at(-1), ['bricks', 'duo']);
+});
+
+// ------------------------------------------------- notices (F-065, F-066)
+
+test('F-065: players are warned at 90 % of the share, and told when the game has closed for the day', () => {
+  const on = normalizeSettings({ account: { autoClose: true }, games: { vattigt: { share: 50 }, demo: { share: 50 } } });
+  // Worker requests: 100k a day, so each game may use 50k; 46k is past 90 %.
+  const budget = budgetState(on, usageWith({ vattigt: 46_000, demo: 10_000 }));
+  assert.match(budget.near.vattigt, /Worker requests/);
+  assert.equal(budget.near.demo, undefined);
+  const [soon] = gameNotices(on, budget, 'vattigt', NOW);
+  assert.equal(soon.kind, 'budget-soon');
+  assert.equal(soon.id, 'budget-soon-2026-11-18', 'once per day');
+  assert.equal(soon.until, '2026-11-19T00:00:00.000Z');
+  assert.match(soon.text, /\{until\}/);
+  assert.deepEqual(gameNotices(on, budget, 'demo', NOW), []);
+  const over = budgetState(on, usageWith({ vattigt: 51_000 }));
+  assert.equal(over.near.vattigt, undefined, 'past the share it is closed, not near');
+  assert.equal(gameNotices(on, over, 'vattigt', NOW)[0].kind, 'budget-closed');
+  // Without Cloudflare limiting nothing closes, so nobody is warned.
+  assert.deepEqual(gameNotices(normalizeSettings({}), budget, 'vattigt', NOW), []);
+  // A budget from yesterday says nothing about today.
+  assert.deepEqual(gameNotices(on, { ...budget, day: '2026-11-17' }, 'vattigt', NOW), []);
+});
+
+test('F-065: on the Paid plan players are warned when the month nears the cap', () => {
+  const paid = normalizeSettings({ account: { autoClose: true, plan: 'paid', capUsd: 5 } });
+  const budget = budgetState(paid, usageWith({ vattigt: 10 }));
+  assert.equal(budget.cost.usd, 5, 'the base price');
+  assert.ok(budget.over.vattigt, 'the cap is reached at 5 USD');
+  const higher = budgetState(normalizeSettings({ account: { autoClose: true, plan: 'paid', capUsd: 5.5 } }), usageWith({ vattigt: 10 }));
+  assert.ok(higher.near.vattigt, '5 of 5.5 is past 90 %');
+});
+
+test("F-066: the owner's messages reach one game or every game until they end, and can be removed", async () => {
+  let t = NOW;
+  const store = storeWith(() => t);
+  const call = async (path, method = 'GET', body) => (await store.fetch(new Request(`https://store${path}`, { method, body: body && JSON.stringify(body) }))).json();
+  const one = await call('/messages', 'POST', { game: 'bricks', text: '  Server  update tonight ', minutes: 30, level: 'warning' });
+  assert.equal(one.text, 'Server update tonight');
+  t += 1_000;
+  await call('/messages', 'POST', { game: '*', text: 'Hello everyone', minutes: 120 });
+  assert.equal((await call('/messages', 'POST', { game: 'Bad!', text: 'x' })).error, 'bad-game');
+  assert.equal((await call('/messages', 'POST', { game: 'bricks', text: ' ' })).error, 'no-text');
+  const bricks = await call('/status?game=bricks');
+  assert.deepEqual(bricks.notices.map((n) => [n.kind, n.level, n.text]), [['message', 'warning', 'Server update tonight'], ['message', 'info', 'Hello everyone']]);
+  assert.deepEqual((await call('/status?game=vattigt')).notices.map((n) => n.text), ['Hello everyone']);
+  t += 31 * 60_000;
+  assert.deepEqual((await call('/status?game=bricks')).notices.map((n) => n.text), ['Hello everyone'], 'the first has ended');
+  const [left] = await call('/messages');
+  await call(`/messages/${left.id}`, 'DELETE');
+  assert.deepEqual((await call('/status?game=bricks')).notices, []);
+  const short = await call('/messages', 'POST', { game: 'bricks', text: 'x', minutes: 1 });
+  assert.equal(short.until - short.created, 5 * 60_000, 'at least five minutes');
+});
+
+test('F-066: pages get the notices with the status, open or closed, cleaned', async () => {
+  const notices = [
+    { id: 'budget-soon-2026-11-18', kind: 'budget-soon', level: 'warning', title: 'Closing soon for today', text: 'Soon {until}.', until: '2026-11-19T00:00:00.000Z', extra: 'dropped' },
+    { kind: 'message', text: 'no id, dropped' },
+  ];
+  const env = { ADMIN: { status: async () => ({ open: false, reason: 'off', until: null, stopped: false, notices }), checkPass: async () => false } };
+  const server = createRoomServer({ admin: { binding: 'ADMIN', game: 'bricks' } });
+  const body = await (await server.fetch(new Request('https://x/rooms/status'), env)).json();
+  assert.equal(body.open, false);
+  assert.deepEqual(body.notices, [{ id: 'budget-soon-2026-11-18', kind: 'budget-soon', level: 'warning', title: 'Closing soon for today', text: 'Soon {until}.', until: '2026-11-19T00:00:00.000Z' }]);
+  for (const kind of ['budget-soon', 'budget-closed', 'timer-soon', 'timer-ended', 'timer-stop-soon']) assert.ok(NOTICE_TEXT[kind].text.length > 20, kind);
 });

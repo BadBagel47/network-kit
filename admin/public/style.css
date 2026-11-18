@@ -111,3 +111,6 @@ td .bar { min-width: 72px; }
 .add-row label { display: grid; gap: 4px; font-size: 0.875rem; color: var(--text-secondary); }
 .mode-row th { font-weight: 400; color: var(--text-secondary); padding-left: 24px; }
 .pass-link code.pass { display: block; word-break: break-all; padding: 8px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; font-size: 0.8rem; }
+.add-row label.wide { flex: 1 1 280px; }
+.add-row label.wide input { width: 100%; }
+#messages td.text { white-space: normal; text-align: left; min-width: 240px; }

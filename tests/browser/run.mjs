@@ -165,6 +165,41 @@ try {
   assert.equal(await b.p.evaluate(() => window.demo.room.me), bId);
   await b.p.screenshot({ path: `${shots}/takeover.png` });
 
+  // F-066: a notice from the admin page shows in a box that cannot be missed,
+  // under the demo's strict Content-Security-Policy, until OK; then never again.
+  const c = await page('Notice');
+  const until = new Date(Date.now() + 90 * 60_000).toISOString();
+  const notice = { id: 'budget-soon-test', kind: 'budget-soon', level: 'warning', title: 'Closing soon for today', text: 'No new games after {until}.', until };
+  await c.context.route('**/rooms/status*', (route) => route.fulfill({ json: { open: true, reason: null, until: null, notices: [notice] } }));
+  await c.p.goto(`${server.base}/`);
+  await c.p.waitForSelector('.nk-notice[data-level="warning"]');
+  const shown = await c.p.evaluate(() => {
+    const box = document.querySelector('.nk-notice');
+    const style = getComputedStyle(box);
+    return { text: box.textContent, background: style.backgroundColor, position: getComputedStyle(box.parentElement).position, role: box.getAttribute('role') };
+  });
+  const time = await c.p.evaluate((u) => new Date(u).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), until);
+  assert.ok(shown.text.includes(`No new games after ${time}.`), shown.text);
+  assert.equal(shown.background, 'rgb(255, 204, 51)', 'the style sheet works under the page\'s CSP');
+  assert.equal(shown.position, 'fixed');
+  assert.equal(shown.role, 'alert');
+  await c.p.screenshot({ path: `${shots}/notice.png` });
+  await c.p.click('.nk-notice button');
+  assert.equal(await c.p.locator('.nk-notice').count(), 0);
+  await c.p.reload();
+  await c.p.waitForTimeout(500);
+  assert.equal(await c.p.locator('.nk-notice').count(), 0, 'a notice is shown once per browser');
+  // The preview page shows each kind.
+  await c.p.goto(`${server.base}/notices.html`);
+  const kinds = await c.p.locator('#kinds button').count();
+  assert.equal(kinds, 7);
+  for (let i = 0; i < kinds; i++) {
+    await c.p.locator('#kinds button').nth(i).click({ position: { x: 5, y: 5 } });
+    assert.equal(await c.p.locator('.nk-notice').count(), 1);
+    await c.p.locator('.nk-notice').screenshot({ path: `${shots}/notice-${i}.png` });
+    await c.p.click('.nk-notice button');
+  }
+
   const relevant = errors.filter((e) => !/WebSocket connection .* failed/i.test(e));
   assert.deepEqual(relevant, [], 'no errors in the pages');
   console.log('browser test passed');

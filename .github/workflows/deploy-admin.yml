@@ -11,6 +11,7 @@ on:
     branches: [main]
     paths:
       - admin/**
+      - src/shared/protocol.js
       - scripts/admin-check.mjs
       - .github/workflows/deploy-admin.yml
   workflow_dispatch:

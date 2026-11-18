@@ -55,6 +55,20 @@ function closedSocket(code, reason) {
   return new Response(null, { status: 101, webSocket: pair[0] });
 }
 
+/** The admin page's notices as pages get them (F-066): known fields only, short texts. */
+export function cleanNotices(list) {
+  if (!Array.isArray(list)) return [];
+  const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  return list.slice(0, 20).filter((n) => n && typeof n.id === 'string' && n.id).map((n) => ({
+    id: text(n.id, 80),
+    kind: text(n.kind, 40) || 'message',
+    level: n.level === 'warning' ? 'warning' : 'info',
+    title: text(n.title, 80),
+    text: text(n.text, 400),
+    until: typeof n.until === 'string' && !Number.isNaN(Date.parse(n.until)) ? n.until : null,
+  }));
+}
+
 export function createRoomServer(gameOptions = {}) {
   const serverOptions = {};
   const coreOptions = {};
@@ -227,10 +241,12 @@ export function createRoomServer(gameOptions = {}) {
       if (overLimit(request, env, 'attempt')) return json({ error: 'too-many-requests' }, 429, cors);
       const mode = url.searchParams.get('mode') || null;
       const status = (await adminWord(env, mode)) ?? { open: true, reason: null, until: null };
+      // Notices from the admin page reach every page that asks, open or not (F-066).
+      const notices = cleanNotices(status.notices);
       if (!status.open && !status.stopped && (await passValid(env, request.headers.get('x-admin-pass')))) {
-        return json({ open: true, reason: 'admin', until: null }, 200, cors);
+        return json({ open: true, reason: 'admin', until: null, notices }, 200, cors);
       }
-      return json({ open: status.open, reason: status.reason ?? null, until: status.until ?? null }, 200, cors);
+      return json({ open: status.open, reason: status.reason ?? null, until: status.until ?? null, notices }, 200, cors);
     }
 
     // Anonymous measurement from the game's pages (F-052), handed to the admin page.

@@ -2,7 +2,7 @@
 // everyone's ship; the others send their keys only when they change; the
 // host sends positions often and gives the room a full snapshot now and then.
 import {
-  NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession, VERSION,
+  NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession, VERSION, watchNotices,
 } from './network-kit/client/index.js';
 import * as diag from './diag.js';
 
@@ -12,6 +12,10 @@ const OPTIONS = { hostSilentMs: 4_000, measure: true };
 const PLACES = ['captain', 'gunner', 'engineer'];
 const COLORS = ['#58a6ff', '#3fb950', '#d29922', '#f778ba', '#a5d6ff', '#ff7b72', '#d2a8ff'];
 const $ = (id) => document.getElementById(id);
+
+// Notices from the admin page reach this page whether or not it is in a room:
+// Cloudflare limiting soon or reached, the owner's own messages (F-066).
+watchNotices(SERVER, { onNotice: (n) => diag.event(`notice ${n.kind}`) });
 
 let room = null;
 let world = { ships: {}, tick: 0 };

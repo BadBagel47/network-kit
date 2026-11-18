@@ -54,6 +54,7 @@ async function load() {
   render();
   loadQuality().catch(() => {});
   loadPasses().catch(() => {});
+  loadMessages().catch(() => {});
 }
 
 function showSignIn(body) {
@@ -384,6 +385,57 @@ $('new-pass').addEventListener('submit', async (e) => {
   );
   form.label.value = '';
   loadPasses();
+});
+
+/* ---------- messages to players (F-066) ---------- */
+
+async function loadMessages() {
+  const res = await fetch('/api/messages');
+  if (!res.ok) return;
+  const list = await res.json();
+  const table = $('messages');
+  table.replaceChildren();
+  if (!list.length) {
+    $('messages-note').textContent = 'No messages are being shown.';
+    return;
+  }
+  $('messages-note').textContent = '';
+  const head = el('tr');
+  for (const h of ['Game', 'Message', 'Kind', 'Shown until', '']) head.append(el('th', { scope: 'col' }, h));
+  table.append(el('thead'));
+  table.tHead.append(head);
+  const body = el('tbody');
+  for (const m of list) {
+    const tr = el('tr');
+    const text = el('td', { class: 'text' }, m.text);
+    tr.append(el('th', { scope: 'row' }, m.game === '*' ? 'All games' : m.game), text, el('td', {}, m.level === 'warning' ? 'Warning' : 'Message'), el('td', {}, new Date(m.until).toLocaleString()));
+    const remove = el('button', { type: 'button' }, 'Remove');
+    remove.addEventListener('click', async () => {
+      await fetch(`/api/messages/${encodeURIComponent(m.id)}`, { method: 'DELETE' });
+      loadMessages();
+    });
+    tr.append(cell(remove));
+    body.append(tr);
+  }
+  table.append(body);
+}
+
+$('new-message').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const game = form.game.value.trim().toLowerCase();
+  const res = await fetch('/api/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ game, text: form.text.value, minutes: Number(form.minutes.value), level: form.level.value }),
+  });
+  if (!res.ok) {
+    const answer = await res.json().catch(() => ({}));
+    $('messages-note').textContent = answer.error === 'too-many' ? 'Not sent: 20 messages are already being shown.' : `Not sent (${answer.error ?? res.status}).`;
+    return;
+  }
+  form.text.value = '';
+  loadMessages();
 });
 
 /* ---------- controls (F-003, F-004, F-008) ---------- */

@@ -6,6 +6,8 @@
 //                     and status (signed in only)
 //   GET/PUT /api/settings  on/off/until, private only, stop, shares, plan, cap,
 //                     automatic closing (signed in only) (F-003, F-004, F-008)
+//   GET/POST/DELETE /api/passes, /api/messages  admin links (F-058) and
+//                     messages to players (F-066) (signed in only)
 //
 // Games ask whether they are open through the GameApi entrypoint (entry.js),
 // over a service binding.
@@ -130,16 +132,17 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
     if (!s) return json({ days: 7, quality: {} });
     return json(await (await s.fetch('https://store/quality')).json());
   }
-  if (pathname === '/api/passes' || pathname.startsWith('/api/passes/')) {
-    // The owner's personal links per game (F-058).
+  const listApi = ['/api/passes', '/api/messages'].find((p) => pathname === p || pathname.startsWith(`${p}/`));
+  if (listApi) {
+    // The owner's personal links per game (F-058) and messages to players (F-066).
     if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);
     if (request.method !== 'GET' && !sameOrigin(request)) return new Response('Forbidden', { status: 403 });
     const s = store(env);
     if (!s) return json({ error: 'no-store' }, 500);
-    const rest = pathname.slice('/api/passes'.length);
-    const res = await s.fetch(`https://store/passes${rest}`, {
+    const rest = pathname.slice('/api'.length);
+    const res = await s.fetch(`https://store${rest}`, {
       method: request.method,
-      body: request.method === 'POST' ? (await request.text()).slice(0, 1024) : undefined,
+      body: request.method === 'POST' ? (await request.text()).slice(0, 2048) : undefined,
     });
     return new Response(res.body, { status: res.status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
   }

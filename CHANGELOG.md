@@ -10,6 +10,14 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.10.0 (2026-11-18)
+
+Affects: games connected to the admin page; nothing has to change, but a game shows notices only once it calls `watchNotices` (asked by the owner).
+
+- New (F-066): notices from the admin page to every page of a game. `watchNotices(server, { mode })` shows each new notice in a box with a strong background at the top of the screen and plays a warning sound, until the player presses OK; once per browser. Also `NoticeBoard`, `playWarningSound`, `noticeText` and `NOTICE_TEXT`; `NetworkRoom.status()` and `GET <basePath>/status` return `notices`. The admin page can send its own messages to one game or all games.
+- New (F-065): when Cloudflare limiting is on, players are warned when their game has used 90 % of its share of the day (Paid plan: 90 % of the monthly cap), and told when it has closed for the day.
+- The demo shows notices, and `/notices.html` previews every kind with its sound.
+
 ## 0.9.0 (2026-11-18)
 
 Affects: games connected to the admin page; nothing has to change. For Bricks' move (asked by the Bricks session).

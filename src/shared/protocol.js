@@ -143,3 +143,36 @@ export function isValidCode(code, length) {
   for (const ch of code) if (!CODE_ALPHABET.includes(ch)) return false;
   return true;
 }
+
+// Notices from the admin page to every page of a game (F-066): the admin page
+// sends these texts; pages show them in a box with a warning sound. English
+// only (owner's decision 2026-11-18). "{until}" becomes the local time.
+export const NOTICE_TEXT = Object.freeze({
+  'budget-soon': {
+    level: 'warning',
+    title: 'Closing soon for today',
+    text: 'This game has almost used its share of today\'s free server time. It will soon close for new games until {until}. Games already running can finish.',
+  },
+  'budget-closed': {
+    level: 'warning',
+    title: 'Closed for today',
+    text: 'This game has used its share of today\'s free server time. No new games until {until}. Games already running can finish.',
+  },
+  // For the timer ("on until a time", run A): ready texts, not sent yet.
+  'timer-soon': {
+    level: 'warning',
+    title: 'Open play ends soon',
+    text: 'Open play ends at {until}. After that no new players can join. Games already running can finish.',
+  },
+  'timer-ended': {
+    level: 'warning',
+    title: 'Open play has ended',
+    text: 'No new players can join now. Games already running can finish.',
+  },
+  'timer-stop-soon': {
+    level: 'warning',
+    title: 'The game stops soon',
+    text: 'The game stops at {until}. Everyone will be disconnected then.',
+  },
+  message: { level: 'info', title: 'Message', text: '' },
+});
