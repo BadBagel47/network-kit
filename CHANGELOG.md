@@ -10,6 +10,13 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.13.2 (2026-11-18)
+
+Affects: the admin page only.
+
+- New (F-083): QR codes on the admin page: a game link shows its QR code as soon as it is made, each lobby has QR buttons for the host and the guest link, and each game card has a QR code to the game's page, so links move to a phone or a tablet with the camera.
+- Fixed (B-079): a game link or a lobby needs the game's page, which the admin page remembers per game in that browser; a link without it could not be opened.
+
 ## 0.13.1 (2026-11-18)
 
 Affects: games that use game links; take 0.13.1.
