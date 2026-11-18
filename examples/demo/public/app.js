@@ -447,7 +447,9 @@ $('report').onclick = async () => {
   const button = $('report');
   button.disabled = true;
   try {
-    const body = diag.report(room, { instantOwnShip: predict, kit: VERSION, page: location.pathname });
+    // Where the room runs (D-046): the data centre code, e.g. FRA or ARN.
+    const info = await fetch(`/rooms/${room.code}`).then((r) => r.json()).catch(() => null);
+    const body = diag.report(room, { instantOwnShip: predict, kit: VERSION, page: location.pathname, roomRunsIn: info?.where ?? null });
     const res = await fetch('/diag', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const answer = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(answer.error ?? `HTTP ${res.status}`);

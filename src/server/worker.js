@@ -238,7 +238,7 @@ export function createRoomServer(gameOptions = {}) {
       if (url.pathname === '/info') {
         const info = this.core.info();
         if (!info) return json({ error: 'not-found' }, 404);
-        return json(info, info.closed ? 410 : 200);
+        return json({ ...info, where: await this.where() }, info.closed ? 410 : 200);
       }
       if (url.pathname === '/ws') {
         // eslint-disable-next-line no-undef
@@ -248,6 +248,23 @@ export function createRoomServer(gameOptions = {}) {
         return new Response(null, { status: 101, webSocket: pair[0] });
       }
       return json({ error: 'not-found' }, 404);
+    }
+
+    /**
+     * The data centre this room runs in (e.g. "FRA"), asked once per wake-up
+     * from Cloudflare's trace page; null if that fails (D-046). A room stays
+     * where it was created: near the first visitor, inside the jurisdiction.
+     */
+    async where() {
+      this.whereAt ??= (async () => {
+        try {
+          const res = await globalThis.fetch('https://www.cloudflare.com/cdn-cgi/trace', { signal: AbortSignal.timeout(2_000) });
+          return /^colo=(\w+)$/m.exec(await res.text())?.[1] ?? null;
+        } catch {
+          return null;
+        }
+      })();
+      return this.whereAt;
     }
 
     async webSocketMessage(ws, message) {

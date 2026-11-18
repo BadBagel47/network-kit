@@ -353,6 +353,13 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - After the grace period the participant is removed; the room remembers them (same id when they return), but not their place, so B came back without gunner and was announced as joined.
 - Owner's choice 2026-11-17 (Q4, recommendation): give the place back if it is still free; the grace period stays. Fixed in v0.5.1: the room remembers the place, gives it back when free, and marks the join `returning`.
 
+### D-046 Where EU rooms run (2026-11-18)
+- From Cloudflare's documentation (Durable Objects, "Data location", read from its source on GitHub): a room is created in a data centre near the first request that reaches it (here the creator's), restricted to the EU by the jurisdiction, and it never moves afterwards. A location hint (`weur`, `eeur`, …) is only a best effort and only applies when the room is first created; with a jurisdiction, the EU limit always wins.
+- So a room created by a player in Sweden should land in a nearby EU data centre that runs Durable Objects; which one is not documented (the site where.durableobjects.live lists them).
+- Measured so far: both test devices reach Cloudflare in Stockholm (ARN); the response time through a room is about 45 ms when the Pixel is host, which suggests the room is not in Stockholm itself.
+- Built for measuring: a room now reports its data centre in `GET /rooms/<code>` (`where`, asked once per wake-up from Cloudflare's trace page), and the demo's report includes it (`roomRunsIn`). The next report from the owner shows it.
+- Not changed: no location hint is set; a hint would only matter if the first visitor were often far from the others, which is not the case for games among friends in Sweden. Revisit if the measured data centre turns out far away.
+
 ### F-035 Room code length (2026-11-17, v0.3.0)
 - Asked for by Buzzy (#408) and Bricks (F-007), which use four-character codes; the owner decided on 4 to 12 characters, easy for each game to set.
 - Built as one server option, `codeLength` (default 5 in v0.3.0; the owner then chose 4 as the default, v0.4.0). The guide has a table of how many codes each length gives and when to make rooms private.

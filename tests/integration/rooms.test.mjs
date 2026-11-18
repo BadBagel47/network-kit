@@ -15,6 +15,7 @@ test('crew game: create, info, join and relay between the host and the others', 
   assert.ok(host.inviteKeys.player.k);
   const info = await NetworkRoom.info(BASE, host.code);
   assert.equal(info.phase, 'lobby');
+  assert.ok('where' in info, 'the room tells where it runs (null when the trace page cannot be reached)');
   assert.deepEqual(info.participants, { player: 1, viewer: 0 });
   assert.equal(await NetworkRoom.info(BASE, 'ZZZZZ'), null);
 
