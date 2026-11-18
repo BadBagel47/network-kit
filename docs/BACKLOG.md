@@ -11,6 +11,7 @@
 | ID | Type | Title | Priority | Status | Suggested model |
 | --- | --- | --- | --- | --- | --- |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
+| F-059 | Feature | Private invitations made on the admin page: the owner makes an invitation for a game (a room nobody created, with an expiry), sees its room code and link with Copy, a list with Active / Expired / Revoked, and can revoke an active one (closing its room); the invitation works while public play is off | High | Asked by the Bricks session 2026-11-18 (Bricks' admin page does this today); needed when Bricks moves | Strong, high |
 
 ## Done
 
@@ -351,6 +352,12 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - Bricks rule: the owner and administrators may start and join games while public play is off. The admin page's sign-in is on its own address, so a game page cannot see it. F-058 needs a design: for example a short-lived signed pass the admin page gives the owner for a game, which the game's Worker checks through `GameApi`.
 - Bricks' "private invitations work while public play is off" matches the admin page's **Private only**: newcomers need an invitation key, and rooms made by the game's server (`createRoom`) are not refused. Off, by contrast, refuses everyone new.
 - Owner's decision (relayed by the Bricks session 2026-11-18): when Bricks moves it uses network-kit's admin page and sign-in as they are, and Bricks' own admin Worker is retired. This answers the earlier question about replacing Bricks' admin Worker.
+
+### F-059 Private invitations from the admin page (2026-11-18, from the Bricks session)
+- Bricks' admin page today makes private invitations: a room code and link with Copy, a closing time, a list with Active / Expired / Revoked, and Revoke. Two people open the same link and land in one private room, also while public play is off.
+- network-kit has `createRoom(env)` for the game's Worker (F-029), but nothing on the admin page, no list, no expiry and no way to revoke a room made that way (it has no owner key).
+- To build: the admin page asks the game's Worker (over a service binding the other way, or through a request the game's Worker makes) to create, list and close such rooms; an expiry closes the room; the room is private and allowed while the game is off (like an admin pass for that room).
+- Related, not planned: a private kept state per participant (the rest of F-031). Bricks keeps a guest's own checkpoint in the guest's browser, which needs nothing from the kit.
 
 ### F-035 Room code length (2026-11-17, v0.3.0)
 - Asked for by Buzzy (#408) and Bricks (F-007), which use four-character codes; the owner decided on 4 to 12 characters, easy for each game to set.
