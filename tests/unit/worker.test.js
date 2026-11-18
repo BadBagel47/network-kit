@@ -88,3 +88,40 @@ test('a code length outside 4 to 12 fails early', () => {
     assert.throws(() => createRoomServer({ codeLength }), /codeLength/, String(codeLength));
   }
 });
+
+test('F-032: a closed game refuses joining with a reason, without waking a room', async () => {
+  // Node has no WebSocketPair and refuses status 101; stand-ins for this test only.
+  const sent = [];
+  const RealResponse = globalThis.Response;
+  globalThis.WebSocketPair = class {
+    constructor() {
+      const side = { accept() {}, send: (t) => sent.push(t), close: (code, reason) => sent.push({ code, reason }) };
+      this[0] = side;
+      this[1] = side;
+    }
+  };
+  globalThis.Response = class extends RealResponse {
+    constructor(body, init) {
+      if (init?.status === 101) {
+        super(null, { status: 200 });
+        this.upgraded = true;
+      } else {
+        super(body, init);
+      }
+    }
+  };
+  try {
+    const actions = [];
+    const server = createRoomServer({
+      gate: async ({ action }) => (actions.push(action), { open: false, reason: 'closed-tonight' }),
+    });
+    const res = await server.fetch(new Request('https://rooms.example/rooms/ABCD/ws', { headers: { upgrade: 'websocket' } }), env);
+    assert.equal(res.upgraded, true);
+    assert.deepEqual(actions, ['join']);
+    assert.deepEqual(JSON.parse(sent[0]), { t: 'denied', code: 4008, reason: 'closed-tonight' });
+    assert.deepEqual(sent[1], { code: 4008, reason: 'closed-tonight' });
+  } finally {
+    globalThis.Response = RealResponse;
+    delete globalThis.WebSocketPair;
+  }
+});

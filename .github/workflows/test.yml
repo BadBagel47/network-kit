@@ -23,6 +23,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The version is the same everywhere, CHANGELOG.md has its section, and a
+      # change to src/ since the last release comes with a new version (F-032).
+      - run: node scripts/version-check.mjs
+      # The workflows and the games' update template are valid GitHub Actions files (F-032).
+      - name: Check the workflow files
+        run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:latest -color -shellcheck= .github/workflows/*.yml templates/update-network-kit.yml
+      # What a game's update workflow does: take a copy and run the shipped smoke test with the game's options (F-032).
+      - name: A game's copy passes the shipped smoke test
+        run: |
+          node scripts/vendor.mjs "$RUNNER_TEMP/game/vendor/network-kit"
+          node "$RUNNER_TEMP/game/vendor/network-kit/smoke.mjs" --options "$PWD/examples/demo/options.js"
       - run: npm test
       - run: npm run test:compat
       - run: npm run test:integration

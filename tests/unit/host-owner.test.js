@@ -638,3 +638,50 @@ test('F-030: a large state for newcomers is kept in parts', async () => {
   const a = await connect(world, core2, { name: 'A' });
   assert.equal(a.last('welcome-state').d.cells.length, 100_000);
 });
+
+// ------------------------------------------------- F-031 lifting a ban
+
+test('F-031: the owner sees who was banned and can lift a ban; a new link lets them back in', async () => {
+  const { world, core, owner } = await setup(CREW);
+  const a = await connect(world, core, { name: 'Annoying', pk: 'annoying-player-key-xxxx' });
+  await cmd(core, owner, 'kick', { id: a.id, ban: true });
+  assert.deepEqual(owner.room.bans.map((b) => [b.id, b.name]), [[a.id, 'Annoying']]);
+  const b = await connect(world, core, { name: 'B', key: core.state.keys.player.k });
+  assert.equal(b.room.bans, undefined, 'only the owner sees the list');
+  await cmd(core, b, 'unban', { id: a.id });
+  assert.equal(b.last('err').code, 'owner-only');
+  const refused = await connect(world, core, { name: 'Annoying', pk: a.pk, key: core.state.keys.player.k });
+  assert.equal(refused.closedWith.code, CLOSE.BANNED);
+  await cmd(core, owner, 'unban', { id: a.id });
+  assert.deepEqual(owner.room.bans, []);
+  const back = await connect(world, core, { name: 'Annoying', pk: a.pk, key: core.state.keys.player.k });
+  assert.ok(back.id, 'back in with a new link');
+  await cmd(core, owner, 'unban', { id: 'nobody' });
+  assert.equal(owner.last('err').code, 'no-such-participant');
+});
+
+// ------------------------------------------------- F-032 forgotten rooms
+
+test('F-032: a room whose pages have all been hidden for idleCloseMs closes', async () => {
+  const { world, core, owner } = await setup({ ...CREW, idleCloseMs: 10 * 60_000 });
+  const a = await connect(world, core, { name: 'A' });
+  await cmd(core, owner, 'visibility', { hidden: true });
+  await world.advance(20 * 60_000);
+  assert.equal(core.state.closed, null, 'A still looks at the page');
+  await cmd(core, a, 'visibility', { hidden: true });
+  await world.advance(9 * 60_000);
+  await cmd(core, a, 'visibility', { hidden: false }); // back for a moment
+  await cmd(core, a, 'visibility', { hidden: true });
+  await world.advance(9 * 60_000);
+  assert.equal(core.state.closed, null, 'the wait starts again when someone looks');
+  await world.advance(2 * 60_000);
+  assert.equal(core.state.closed?.reason, 'idle');
+  assert.equal(owner.closedWith?.code, CLOSE.ROOM_CLOSED);
+});
+
+test('F-032: idleCloseMs null turns the idle close off', async () => {
+  const { world, core, owner } = await setup({ ...CREW, idleCloseMs: null });
+  await cmd(core, owner, 'visibility', { hidden: true });
+  await world.advance(3 * 60 * 60_000);
+  assert.equal(core.state.closed, null);
+});

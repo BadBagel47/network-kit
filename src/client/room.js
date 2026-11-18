@@ -314,6 +314,7 @@ export class NetworkRoom {
         ws.send(JSON.stringify({
           t: 'hello', v: PROTOCOL, pk: this.playerKey, sid: this.sid,
           name: this.name, role: this.role, key: this.key, owner: this.ownerKey,
+          hidden: this.doc?.hidden === true,
         }));
       } catch {
         // onclose follows
@@ -447,6 +448,8 @@ export class NetworkRoom {
     const online = () => this.recover(true);
     const offline = () => this.setStatus('offline');
     const visible = () => {
+      // The room closes a room whose pages have all been hidden for long (F-032).
+      if (this.ready) this.command('visibility', { hidden: doc.hidden === true });
       if (doc.hidden) {
         this.hiddenAt = Date.now();
         return;
@@ -868,6 +871,8 @@ export class NetworkRoom {
   admitWaiting() { return this.command('admit'); }
   assignPlace(id, place) { return this.command('assign', { id, place }); }
   hostReady() { return this.command('host-ready'); }
+  /** Owner: lift a ban (`room.bans` lists who was banned) (F-031). They need a new invitation link. */
+  unban(id) { return this.command('unban', { id }); }
   /** Host: who should take over first if this browser is lost, e.g. the player whose turn it is (F-040). */
   setSuccessors(ids) { return this.command('successors', { ids }); }
 

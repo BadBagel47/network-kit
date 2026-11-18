@@ -10,6 +10,9 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+- New (F-031): the owner's `room.bans` lists who was banned (name, time) and `unban(id)` lifts a ban. For Buzzy.
+- New (F-032): room option `idleCloseMs` (60 min): a room whose connected pages have all been in the background that long closes with reason `idle`. Clients report when their page is hidden.
+- CI (F-032): the version check (`scripts/version-check.mjs`, warns when `src/` changed without a new version), a lint of the workflows and the games' update template, and a game's vendored copy running the shipped smoke test.
 - New (F-029): `createRoom(env, { settings })` on the room server makes a room from the game's own server code (an invitation two people open); the first participant who may lead becomes owner and host. For Bricks.
 - New (F-030): `setWelcomeState(data, { role })` (host) and `room.setWelcomeState` (rules): a state the room keeps and sends to everyone who joins or comes back, shared or per role; event `welcome-state`. For Bricks and Buzzy.
 - New (F-039): role option `sendsTo: 'all'` lets a participant in a host-run room send like the host (everyone, a list, a role or a place), also while the host is away. Default unchanged (`'host'`). Asked by Vättigt.
