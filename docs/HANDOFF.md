@@ -106,6 +106,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 | Features, bugs, design, proposed runs | `docs/BACKLOG.md` |
 | How games use network-kit (API, options, budget, privacy) | `docs/INTEGRATION.md` |
 | Admin page (usage per game, sign-in, secrets) | `docs/ADMIN.md`, code in `admin/` |
+| Reviews (v0.1.0, v0.2.0 check, lessons from an external review of Buzzy) | `docs/reviews/` |
 | Changes per version | `CHANGELOG.md` |
 | Reviews (v0.1.0 with proof scripts, the check of v0.2.0) | `docs/reviews/` |
 | Update workflow for games | `templates/update-network-kit.yml` |
