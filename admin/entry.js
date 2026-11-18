@@ -15,9 +15,9 @@ export class GameApi extends WorkerEntrypoint {
     return this.env.STORE.get(this.env.STORE.idFromName('main'));
   }
 
-  /** { open, reason, until, stopped, notices } for the game (its Worker's name). */
-  async status(game, mode = null) {
-    const q = new URLSearchParams({ game: String(game), ...(mode ? { mode: String(mode) } : {}) });
+  /** { open, reason, until, stopped, notices } for the game (its Worker's name); the game tells its network-kit version (F-074). */
+  async status(game, mode = null, version = null) {
+    const q = new URLSearchParams({ game: String(game), ...(mode ? { mode: String(mode) } : {}), ...(version ? { version: String(version) } : {}) });
     const res = await this.store().fetch(`https://store/status?${q}`);
     return res.json();
   }

@@ -6,8 +6,9 @@
 //                     and status (signed in only)
 //   GET/PUT /api/settings  on/off/until, private only, stop, shares, plan, cap,
 //                     automatic closing (signed in only) (F-003, F-004, F-008)
-//   GET/POST/DELETE /api/passes, /api/messages  admin links (F-058) and
+//   GET/POST/DELETE /api/passes, /api/messages  game links (F-058, F-068) and
 //                     messages to players (F-066) (signed in only)
+//   GET  /api/log     the owner's log, 90 days (F-074) (signed in only)
 //
 // Games ask whether they are open through the GameApi entrypoint (entry.js),
 // over a service binding.
@@ -98,7 +99,7 @@ async function readSettings(env) {
 async function usageWithControl(env, deps) {
   const data = await usage(env, deps);
   if (data.error) return data;
-  const { settings, connected = {} } = await readSettings(env);
+  const { settings, connected = {}, versions = {} } = await readSettings(env);
   const budget = budgetState(settings, data);
   const now = deps.now();
   // What each game and each of its modes says now, and when a running timer ends (F-067).
@@ -114,7 +115,7 @@ async function usageWithControl(env, deps) {
       modes: Object.fromEntries(Object.keys(settings.games[n]?.modes ?? {}).map((m) => [m, one(n, m)])),
     }]),
   );
-  return { ...data, control: { settings, budget, status, connected } };
+  return { ...data, control: { settings, budget, status, connected, versions } };
 }
 
 /** The request handler; `deps` lets tests replace the clock and the network. */
@@ -142,14 +143,15 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
     if (!s) return json({ days: 7, quality: {} });
     return json(await (await s.fetch('https://store/quality')).json());
   }
-  const listApi = ['/api/passes', '/api/messages'].find((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const listApi = ['/api/passes', '/api/messages', '/api/log'].find((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (listApi) {
     // The owner's personal links per game (F-058) and messages to players (F-066).
     if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);
     if (request.method !== 'GET' && !sameOrigin(request)) return new Response('Forbidden', { status: 403 });
     const s = store(env);
     if (!s) return json({ error: 'no-store' }, 500);
-    const rest = pathname.slice('/api'.length);
+    if (listApi === '/api/log' && request.method !== 'GET') return json({ error: 'method' }, 405);
+    const rest = pathname.slice('/api'.length) + url.search;
     const res = await s.fetch(`https://store${rest}`, {
       method: request.method,
       body: request.method === 'POST' ? (await request.text()).slice(0, 2048) : undefined,

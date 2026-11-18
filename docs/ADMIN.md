@@ -4,9 +4,13 @@ The admin page shows how much of Cloudflare's free plan the games use, per game 
 
 ## What it shows
 
-- **Today on the whole account:** each free daily limit with today's use (UTC day; the limits are per account and reset at 00:00 UTC).
-- **Per game:** one row per Worker with today's, yesterday's or this month's figures and a bar against the daily free limit (for a month, the average day).
-- **Last 30 days:** one line per game for a chosen figure, with a table view.
+The page is in Swedish, styled as a control room (dark, status lamps, large controls), made for the phone (F-071, from 0.12). Every change is saved at once. Five tabs:
+
+- **Spel:** a card per connected game: a status lamp (green open, yellow no new players or partly open, red emergency stop), rooms and players now and the busiest five minutes today (F-072, from Cloudflare's figures, a few minutes behind; players are connections, so a viewer or a second tab counts too), the network-kit version the game runs and when it was last deployed, and today's errors (F-074). Per game and per mode: *På*, *Inga nya* and *Timer*; a running timer shows the time left in its button, which drains, and under it *Öppet till …* and *Sedan: …* (tap to switch between no new players and an emergency stop). The emergency stop is under a striped cover: lift it, then press *NÖDSTOPP*; *Häv stoppet* lifts it. Games that are not connected are hidden behind a checkbox (F-070).
+- **Länkar och meddelanden:** game links (active ones; revoked and expired ones folded away for 14 days, with when each was last used) and messages to players, with a preview of the box players see.
+- **Förbrukning:** each daily limit as a compact bar with today's use; tap it for a ring, the last seven days and whether today's pace lasts the day. Below: each game against its share today, connection quality, and folded away the figures per game and period (today, yesterday, this month), the last 30 days as a chart or table, and what the figures mean.
+- **Inställningar:** plan, monthly cap, Cloudflare limiting, what a new timer starts with (30 min to 4 h, then no new players or an emergency stop), shares per game, and the games and their modes (add a game or a mode, remove a mode).
+- **Logg:** the owner's changes, game links (made, revoked, expired) and messages, newest first, for all games or one; kept 90 days (F-074).
 
 Figures (limits checked 2026-11-17 in Cloudflare's documentation, D-011; `admin/limits.js`):
 
@@ -21,7 +25,7 @@ Figures (limits checked 2026-11-17 in Cloudflare's documentation, D-011; `admin/
 
 Rooms are tied to their game through the Durable Object namespace (Cloudflare does not always fill in the Worker name for room requests); Worker requests that Cloudflare reports without a name get their own row, *Not named by Cloudflare*. Stored data is only reported for the whole account.
 
-Cloudflare does not document every field of these datasets, so the page asks the API which fields exist (introspection) and builds its queries from them. A dataset that is missing or refused leaves a note under *About the figures*; the rest still shows. After each deploy, `scripts/admin-check.mjs` runs the real queries and writes what it found in the workflow's summary.
+Cloudflare does not document every field of these datasets, so the page asks the API which fields exist (introspection) and builds its queries from them. A dataset that is missing or refused leaves a note under *Om siffrorna*; the rest still shows. Errors per game come from `sum.errors` of the two request datasets; deploy times from the Workers scripts list (`modified_on`); rooms and players from `durableObjectsPeriodicGroups` `max.activeWebsocketConnections` per room and five minutes. Games tell their network-kit version when they ask for their status (from 0.12). After each deploy, `scripts/admin-check.mjs` runs the real queries and writes what it found in the workflow's summary.
 
 ## Sign-in
 
@@ -42,25 +46,23 @@ Cloudflare does not document every field of these datasets, so the page asks the
 
 ## Games: on, no new players, timer, stop (F-003, F-004, F-008, F-026, F-067)
 
-The *Games* section has one row per game (each game is a Worker; its name is the Worker's name, as in the usage figures), and one row per mode under it:
+Per game (each game is a Worker; its name is the Worker's name, as in the usage figures) and per mode:
 
-- **Mode:** *On*, *No new players* or *Timer: on until*. No new players refuses new rooms, newcomers and new rounds (also rematches); running games finish, and participants who were already in a room can come back. A timer makes the game or mode work as On until the chosen time, and then as what was chosen with it: *No new players* (the default) or *Emergency stop* (for that game or mode only). Players are warned ten minutes before and told when it has ended. (Off until a time and Private only were removed in 0.11; an old Off until still in the future became No new players.)
-- **Emergency stop:** a button. *Stop now* turns everyone away and closes running rooms within about 30 seconds; no game link gets past it. *Lift the stop* opens again.
-- **Share %:** the game's share of each daily free limit. Empty means an equal share of what the other games leave.
-- **Now:** what the game or mode says at this moment, and when a running timer ends.
-- **Not connected (F-070):** Workers that have never asked the admin page (for example the admin page itself, or another project's Worker on the account) are hidden; their settings would do nothing. *Show games that are not connected* shows them, marked. A game counts as connected once it asks for its status, checks a game link or sends a measurement.
+- **Mode:** *På* (on), *Inga nya* (no new players) or *Timer*. No new players refuses new rooms, newcomers and new rounds (also rematches); running games finish, and participants who were already in a room can come back. A timer makes the game or mode work as On until its end, and then as what was chosen with it: no new players (the default) or an emergency stop for that game or mode only. A new timer starts with the length and follow-up set under *Inställningar* (1 hour and no new players unless changed). Players are warned ten minutes before and told when it has ended. (Off until a time and Private only were removed in 0.11; an old Off until still in the future became No new players.)
+- **Emergency stop:** under a cover. It turns everyone away and closes running rooms within about 30 seconds; no game link gets past it. *Häv stoppet* opens again.
+- **Share %:** under *Inställningar*: the game's share of each daily free limit. Empty means an equal share of what the other games leave.
 
-Under *Account*:
+Under *Inställningar* also:
 
-- **Plan:** Free or Paid. On the Paid plan the page shows what this month would cost (5 USD a month plus what goes past the included amounts; prices checked 2026-11-18; Workers CPU time is not counted).
-- **Monthly cap:** on the Paid plan, the cost at which games close.
-- **Cloudflare limiting:** off until the owner turns it on. When on, the admin Worker reads the usage every 5 minutes and closes a game that has passed its share (Free plan) for new players for the rest of the UTC day, or every game when the cap is reached (Paid plan); players are warned at 90 %. Warnings at 80 % are shown on the page either way.
+- **Plan:** free or paid. On the paid plan the page shows what this month would cost (5 USD a month plus what goes past the included amounts; prices checked 2026-11-18; Workers CPU time is not counted).
+- **Monthly cap:** on the paid plan, the cost at which games close.
+- **Cloudflare limiting:** off until the owner turns it on. When on, the admin Worker reads the usage every 5 minutes and closes a game that has passed its share (free plan) for new players for the rest of the UTC day, or every game when the cap is reached (paid plan); players are warned at 90 %.
 
 Players see why in plain words (`not taking new players`, `used up today's free quota … opens again at …`, `stopped by its owner`), in the game's own language if the game translates the kit's reasons.
 
-**Modes (F-057):** a game can have modes with their own mode and timer under the game's row (for example Bricks' 1 Player and 2 Players). Add a game or a mode under the table. A mode can only close more than the game: when the game takes no new players, its modes do not either. Rooms ask for their own mode (`admin: { …, mode }`); a page asks for any mode with `NetworkRoom.status(server, { mode })`, without waking a room.
+**Modes (F-057):** a game can have modes with their own mode and timer under the game's row (for example Bricks' 1 Player and 2 Players). Add a game or a mode under *Inställningar*. A mode can only close more than the game: when the game takes no new players, its modes do not either. Rooms ask for their own mode (`admin: { …, mode }`); a page asks for any mode with `NetworkRoom.status(server, { mode })`, without waking a room.
 
-**Game links (F-058, F-068):** a link per game that lets whoever opens it create, join and start games, alone or with others, while the game or a mode takes no new players or is closed by Cloudflare limiting; an emergency stop still stops it. It can be used by anyone it is given to. Friends invited from a room made with a game link (the room's own invitation link, made in the game) get in too, as long as the room lives and the game link is valid; a room code alone is not enough. Make one under *Game links* (game, the game's page, who it is for, valid for 1 hour to 90 days, 7 days unless chosen); the link is shown once with *Copy*, and can be revoked, which also stops its rooms' invitations (within a minute). The game's Worker checks it with the admin page (kept a minute).
+**Game links (F-058, F-068):** a link per game that lets whoever opens it create, join and start games, alone or with others, while the game or a mode takes no new players or is closed by Cloudflare limiting; an emergency stop still stops it. It can be used by anyone it is given to. Friends invited from a room made with a game link (the room's own invitation link, made in the game) get in too, as long as the room lives and the game link is valid; a room code alone is not enough. Make one under *Länkar och meddelanden* (game, how long it is valid, 1 hour to 90 days, 7 days unless chosen, who it is for, the game's page); the link is shown once with *Kopiera*, and can be revoked, which also stops its rooms' invitations (within a minute). Revoked and expired links stay listed, folded away, for 14 days, and are written to the log; the page shows when each link was last used. The game's Worker checks it with the admin page (kept a minute).
 
 **Notices to players (F-065, F-066):** games that run `watchNotices` show the admin page's notices on every page, in a box with a strong background and a warning sound, until the player presses OK (once per browser, within about a minute):
 

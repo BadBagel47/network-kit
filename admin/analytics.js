@@ -20,7 +20,7 @@ export const UNNAMED = 'Not named by Cloudflare';
  * Figures kept beside the metrics (B-069): all room requests as Cloudflare's
  * statistics count them, and the incoming WebSocket messages among them.
  */
-export const EXTRA_KEYS = ['doRequestsAll', 'doMessages'];
+export const EXTRA_KEYS = ['doRequestsAll', 'doMessages', 'errors'];
 
 /** Cloudflare counts this many incoming WebSocket messages as one room request. */
 export const MESSAGES_PER_REQUEST = 20;
@@ -33,7 +33,7 @@ const DATASETS = {
   workers: {
     name: 'workersInvocationsAdaptive',
     owners: ['scriptName'],
-    fields: { sum: ['requests'] },
+    fields: { sum: ['requests', 'errors'] },
   },
   invocations: {
     name: 'durableObjectsInvocationsAdaptiveGroups',
@@ -43,7 +43,7 @@ const DATASETS = {
     // The kind of call (http, alarm, hibernation, ...): incoming WebSocket
     // messages to hibernating rooms are "hibernation" calls (B-069).
     split: 'type',
-    fields: { sum: ['requests'] },
+    fields: { sum: ['requests', 'errors'] },
   },
   periodic: {
     name: 'durableObjectsPeriodicGroups',
@@ -268,8 +268,62 @@ export class CloudflareAnalytics {
         }
       }
     }
-    return buildUsage({ now, dates, shapes, results, namespaceMap, notes });
+    const usage = buildUsage({ now, dates, shapes, results, namespaceMap, notes });
+    // When each Worker was last deployed (F-074).
+    try {
+      usage.deployed = Object.fromEntries((await this.api(`/accounts/${accountTag}/workers/scripts`) ?? []).map((w) => [w.id, w.modified_on ?? null]));
+    } catch (e) {
+      usage.deployed = {};
+      usage.notes.push(`Deploy times: ${e.message}`);
+    }
+    // Rooms and players now and today's peak (F-072).
+    try {
+      if (!namespaceMap) namespaceMap = await this.namespaces(accountTag);
+      const day = utcDate(now);
+      const q = `query ($a: String!, $d: Date!) { viewer { accounts(filter: { accountTag: $a }) {
+        durableObjectsPeriodicGroups(limit: 10000, filter: { date_geq: $d, date_leq: $d }) { max { activeWebsocketConnections } dimensions { namespaceId objectId datetimeFiveMinutes } } } } }`;
+      const body = await this.graphql(q, { a: accountTag, d: day });
+      usage.activity = activityFrom(body.data?.viewer?.accounts?.[0]?.durableObjectsPeriodicGroups ?? [], namespaceMap, now);
+    } catch (e) {
+      usage.activity = {};
+      usage.notes.push(`Rooms and players: ${e.message}`);
+    }
+    return usage;
   }
+}
+
+/**
+ * Rooms and players per game from the rooms' open connections (F-072): now is
+ * the newest five minutes within the last 15 (Cloudflare's figures lag), the
+ * peak is the busiest five minutes today. Players are connections, so a
+ * viewer or a second tab counts too.
+ */
+export function activityFrom(rows, namespaceMap, now) {
+  const buckets = new Map(); // game → time → { rooms, players }
+  for (const r of rows) {
+    const c = r.max?.activeWebsocketConnections ?? 0;
+    if (!c) continue;
+    const game = namespaceMap?.get(r.dimensions?.namespaceId) ?? `namespace ${String(r.dimensions?.namespaceId).slice(0, 8)}`;
+    const at = Date.parse(r.dimensions?.datetimeFiveMinutes);
+    if (!Number.isFinite(at)) continue;
+    if (!buckets.has(game)) buckets.set(game, new Map());
+    const b = buckets.get(game);
+    const cur = b.get(at) ?? { rooms: 0, players: 0 };
+    cur.rooms += 1;
+    cur.players += c;
+    b.set(at, cur);
+  }
+  const out = {};
+  for (const [game, b] of buckets) {
+    let peak = 0;
+    let latest = null;
+    for (const [at, v] of b) {
+      peak = Math.max(peak, v.players);
+      if (now - at <= 15 * 60_000 && (!latest || at > latest.at)) latest = { at, ...v };
+    }
+    out[game] = { rooms: latest?.rooms ?? 0, players: latest?.players ?? 0, peak, at: latest ? new Date(latest.at).toISOString() : null };
+  }
+  return out;
 }
 
 /**
@@ -309,13 +363,14 @@ export function buildUsage({ now, dates, shapes, results, namespaceMap = null, n
 
   if (results.workers) {
     available.add('workerRequests');
-    add(shapes.workers, results.workers, (r) => ({ workerRequests: r.sum?.requests ?? 0 }));
+    add(shapes.workers, results.workers, (r) => ({ workerRequests: r.sum?.requests ?? 0, errors: r.sum?.errors ?? 0 }));
   }
   if (results.invocations) {
     available.add('doRequests');
     const split = shapes.invocations.split;
     add(shapes.invocations, results.invocations, (r) => ({
       doRequestsAll: r.sum?.requests ?? 0,
+      errors: r.sum?.errors ?? 0, // failed calls to rooms (F-074)
       // Calls that delivered an incoming WebSocket message to a hibernating room.
       ...(split && r.dimensions?.[split] === 'hibernation' ? { doMessages: r.sum?.requests ?? 0 } : {}),
     }));

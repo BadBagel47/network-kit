@@ -10,6 +10,16 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.12.0 (2026-11-18)
+
+Affects: the admin page; games need no change. Games on 0.12 tell the admin page which network-kit version they run.
+
+- New (F-071): the admin page is rebuilt for the phone, in Swedish, styled as a control room: a card per game with a status lamp, *På* / *Inga nya* / *Timer* per game and mode, the timer's time left in its button, the emergency stop under a cover; tabs for games, links and messages, usage, settings and the log; every change is saved at once. Usage is a compact list of bars that open to a ring and the last seven days.
+- New (F-072): rooms and players now and today's peak per game, from Cloudflare's figures.
+- New (F-074): the network-kit version each game runs and when it was last deployed, errors per game today, a log of the owner's changes, game links and messages (kept 90 days), and when each game link was last used. Revoked and expired game links stay listed, folded away, for 14 days.
+- New: a setting for what a new timer starts with (length, and what follows).
+- The server tells the admin page its version when it asks for the game's status (`GameApi.status(game, mode, version)`).
+
 ## 0.11.2 (2026-11-18)
 
 Affects: the admin page only; games need no change.

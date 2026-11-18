@@ -1,122 +1,221 @@
 <!doctype html>
-<html lang="en">
+<html lang="sv">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex">
-  <title>network-kit usage</title>
+  <meta name="theme-color" content="#0a0e13">
+  <title>network-kit</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="viz-root">
+  <main>
     <header class="top">
-      <h1>network-kit usage</h1>
+      <div>
+        <h1>network-kit</h1>
+        <p id="summary" class="muted"></p>
+      </div>
       <form id="logout" method="post" action="/logout" hidden>
-        <button type="submit">Sign out</button>
+        <button type="submit" class="ghost">Logga ut</button>
       </form>
     </header>
 
-    <section id="signin" hidden>
-      <form method="post" action="/login" class="signin">
+    <section id="signin" class="panel signin" hidden>
+      <form method="post" action="/login">
         <input type="text" name="username" autocomplete="username" value="admin" hidden>
-        <label for="password">Password</label>
+        <label for="password">Lösenord</label>
         <input id="password" name="password" type="password" autocomplete="current-password" required>
-        <button type="submit">Sign in</button>
+        <button type="submit" class="primary">Logga in</button>
         <p id="signin-error" class="error" role="alert"></p>
       </form>
     </section>
 
     <p id="message" class="message" role="status"></p>
 
-    <section id="dashboard" hidden>
-      <h2>Today on the whole account</h2>
-      <p class="muted" id="today-note"></p>
-      <ul id="meters" class="meters"></ul>
+    <div id="dashboard" hidden>
+      <nav class="tabs" aria-label="Delar av adminsidan">
+        <button type="button" data-tab="spel" aria-current="page">Spel</button>
+        <button type="button" data-tab="lankar">Länkar och meddelanden</button>
+        <button type="button" data-tab="forbrukning">Förbrukning</button>
+        <button type="button" data-tab="installningar">Inställningar</button>
+        <button type="button" data-tab="logg">Logg</button>
+      </nav>
+      <p id="save-state" class="save-state" role="status"></p>
 
-      <h2>Games</h2>
-      <p class="muted" id="control-note"></p>
-      <ul id="warnings" class="warnings"></ul>
-      <label class="check muted"><input id="show-unconnected" type="checkbox"> Show games that are not connected<span id="unconnected-count"></span>: they have never asked this page, so their settings do nothing yet</label>
-      <form id="controls" class="controls">
-        <div class="table-wrap"><table id="control-table"></table></div>
-        <div class="add-row">
-          <label>Add a game <input name="newGame" placeholder="worker name, e.g. bricks" autocomplete="off"></label>
-          <label>with a mode <input name="newMode" placeholder="optional, e.g. solo" autocomplete="off"></label>
-        </div>
-        <fieldset class="account">
-          <legend>Account</legend>
-          <label>Plan
-            <select name="plan"><option value="free">Free</option><option value="paid">Paid</option></select>
+      <!-- Spel -->
+      <section id="tab-spel" class="tab" aria-label="Spel">
+        <div id="cards" class="cards"></div>
+        <p id="no-games" class="muted" hidden>Inga kopplade spel än. Ett spel syns här när det har frågat adminsidan.</p>
+        <label class="check muted"><input id="show-unconnected" type="checkbox"> Visa spel som inte är kopplade<span id="unconnected-count"></span></label>
+        <div id="unconnected" class="chips" hidden></div>
+      </section>
+
+      <!-- Länkar och meddelanden -->
+      <section id="tab-lankar" class="tab grid2" aria-label="Länkar och meddelanden" hidden>
+        <article class="panel">
+          <h2>Spellänkar</h2>
+          <p class="muted">Går förbi Inga nya spelare och Cloudflare limiting, inte nödstopp. Den som bjuds in från ett rum som skapats med länken kommer också in, så länge länken gäller.</p>
+          <form id="new-pass" class="form">
+            <div class="row2">
+              <label>Spel <select name="game" required></select></label>
+              <label>Gäller
+                <select name="hours"><option value="1">1 timme</option><option value="24">1 dag</option><option value="168" selected>7 dagar</option><option value="720">30 dagar</option><option value="2160">90 dagar</option></select>
+              </label>
+            </div>
+            <label>Till vem <input name="label" placeholder="t.ex. Pixel eller en kompis" autocomplete="off" maxlength="40"></label>
+            <label>Spelets adress <input name="page" type="url" placeholder="https://…" autocomplete="off"></label>
+            <button type="submit" class="primary">Skapa spellänk</button>
+          </form>
+          <div id="pass-link" class="pass-link" role="status"></div>
+          <div id="passes" class="list"></div>
+          <details id="old-passes" class="fold" hidden>
+            <summary>Inte längre aktiva <span id="old-count"></span></summary>
+            <div id="passes-old" class="list"></div>
+          </details>
+        </article>
+
+        <article class="panel">
+          <h2>Meddelande till spelarna</h2>
+          <p class="muted">Visas i en ruta med varningsljud på spelets sidor inom ungefär en minut, tills spelaren trycker OK.</p>
+          <form id="new-message" class="form">
+            <label>Text (engelska) <input name="text" required maxlength="300" autocomplete="off"></label>
+            <div class="row2">
+              <label>Till <select name="game"></select></label>
+              <label>Visas i
+                <select name="minutes"><option value="15">15 min</option><option value="60" selected>1 timme</option><option value="240">4 timmar</option><option value="1440">1 dag</option></select>
+              </label>
+            </div>
+            <div class="segment" role="group" aria-label="Sort">
+              <button type="button" data-level="info" aria-pressed="true">Meddelande</button>
+              <button type="button" data-level="warning" aria-pressed="false">Varning</button>
+            </div>
+            <p class="muted small">Så här ser spelarna det:</p>
+            <div id="notice-preview" class="notice-preview info">
+              <span class="icon" aria-hidden="true">i</span>
+              <div><strong id="preview-title">Message</strong><span id="preview-text">…</span></div>
+              <span class="ok">OK</span>
+            </div>
+            <button type="submit" class="primary">Skicka</button>
+          </form>
+          <p id="messages-note" class="muted" role="status"></p>
+          <div id="messages" class="list"></div>
+        </article>
+      </section>
+
+      <!-- Förbrukning -->
+      <section id="tab-forbrukning" class="tab stack" aria-label="Förbrukning" hidden>
+        <p id="today-note" class="muted"></p>
+        <div id="meters" class="panel meters"></div>
+        <article class="panel">
+          <h2>Per spel, mot sin andel i dag</h2>
+          <div id="shares" class="shares"></div>
+        </article>
+        <article class="panel">
+          <h2>Anslutningskvalitet</h2>
+          <p id="quality-note" class="muted"></p>
+          <div id="quality" class="quality"></div>
+        </article>
+        <details class="panel fold">
+          <summary>Per spel och period</summary>
+          <div class="segment" role="group" aria-label="Period">
+            <button type="button" data-period="today" aria-pressed="true">I dag</button>
+            <button type="button" data-period="yesterday" aria-pressed="false">I går</button>
+            <button type="button" data-period="month" aria-pressed="false">Den här månaden</button>
+          </div>
+          <p id="period-note" class="muted small"></p>
+          <div class="table-wrap"><table id="games"></table></div>
+        </details>
+        <details class="panel fold">
+          <summary>Senaste 30 dagarna</summary>
+          <div class="filters">
+            <label for="metric">Visa</label>
+            <select id="metric"></select>
+            <button type="button" id="as-table" class="ghost" aria-pressed="false">Tabell</button>
+          </div>
+          <div id="chart" class="chart"></div>
+          <div id="chart-table" class="table-wrap" hidden></div>
+        </details>
+        <details class="panel fold">
+          <summary>Om siffrorna</summary>
+          <ul id="definitions"></ul>
+          <ul id="notes" class="muted"></ul>
+        </details>
+      </section>
+
+      <!-- Inställningar -->
+      <section id="tab-installningar" class="tab grid2" aria-label="Inställningar" hidden>
+        <article class="panel">
+          <h2>Konto</h2>
+          <div class="field">
+            <span class="label">Plan</span>
+            <div class="segment" role="group" aria-label="Plan">
+              <button type="button" data-plan="free">Gratis</button>
+              <button type="button" data-plan="paid">Betald</button>
+            </div>
+          </div>
+          <label class="field">Månadstak i USD (betald plan)
+            <input id="cap" type="number" min="0" step="1" inputmode="decimal">
           </label>
-          <label>Monthly cap (USD, Paid plan)
-            <input name="capUsd" type="number" min="0" step="1" inputmode="decimal">
-          </label>
-          <label class="check"><input name="autoClose" type="checkbox"> Cloudflare limiting: close a game for new players for the rest of the day when it passes its share (on the Paid plan: when the cap is reached), with a warning to its players at 90 %</label>
-          <p class="muted" id="cost"></p>
-        </fieldset>
-        <button type="submit">Save</button>
-        <span id="saved" class="muted" role="status"></span>
-      </form>
+          <div class="switch-row">
+            <div>
+              <span class="label">Cloudflare limiting</span>
+              <span class="muted small">Stänger ett spel för nya spelare resten av dygnet när dess andel är slut. Spelarna varnas vid 90 %.</span>
+            </div>
+            <button type="button" id="limiting" class="switch" role="switch" aria-checked="false" aria-label="Cloudflare limiting"><span></span></button>
+          </div>
+          <p id="cost" class="muted small"></p>
+        </article>
+        <article class="panel">
+          <h2>Nya timers</h2>
+          <p class="muted">Gäller när du väljer Timer på ett spel.</p>
+          <div class="field">
+            <span class="label">Öppet i</span>
+            <div class="segment four" role="group" aria-label="Längd för nya timers">
+              <button type="button" data-minutes="30">30 min</button>
+              <button type="button" data-minutes="60">1 h</button>
+              <button type="button" data-minutes="120">2 h</button>
+              <button type="button" data-minutes="240">4 h</button>
+            </div>
+          </div>
+          <div class="field">
+            <span class="label">När tiden gått ut</span>
+            <div class="segment" role="group" aria-label="Vad som händer när en ny timer gått ut">
+              <button type="button" data-then="off">Inga nya spelare</button>
+              <button type="button" data-then="stop">Nödstopp</button>
+            </div>
+          </div>
+        </article>
+        <article class="panel">
+          <h2>Andelar av gratisgränsen</h2>
+          <p class="muted">Tomt fält: lika delar av det som blir över.</p>
+          <div id="share-inputs" class="list"></div>
+        </article>
+        <article class="panel">
+          <h2>Spel och lägen</h2>
+          <p class="muted">Ett spel är Workerns namn. Lägen är till exempel 1 player och 2 players.</p>
+          <div id="game-modes" class="list"></div>
+          <form id="add-game" class="form">
+            <div class="row2">
+              <label>Spel <input name="game" placeholder="t.ex. bricks" autocomplete="off" required></label>
+              <label>Läge <input name="mode" placeholder="valfritt, t.ex. solo" autocomplete="off"></label>
+            </div>
+            <button type="submit" class="ghost">Lägg till</button>
+          </form>
+        </article>
+      </section>
 
-      <h2>Per game</h2>
-      <div class="filters" role="group" aria-label="Period">
-        <button type="button" data-period="today" aria-pressed="true">Today</button>
-        <button type="button" data-period="yesterday" aria-pressed="false">Yesterday</button>
-        <button type="button" data-period="month" aria-pressed="false">This month</button>
-      </div>
-      <p class="muted" id="period-note"></p>
-      <div class="table-wrap"><table id="games"></table></div>
-
-      <h2>Game links</h2>
-      <p class="muted">A game link lets whoever opens it create, join and start games, alone or with others, while the game or a mode takes no new players or is closed by Cloudflare limiting (not after an emergency stop). Friends invited from a room made with the link get in too, as long as the link is valid. Open it once on each device; revoke it here.</p>
-      <form id="new-pass" class="add-row">
-        <label>Game <input name="game" required placeholder="e.g. bricks" autocomplete="off"></label>
-        <label>Game page <input name="page" type="url" placeholder="https://…" autocomplete="off"></label>
-        <label>For <input name="label" placeholder="e.g. Pixel, or a friend's name" autocomplete="off"></label>
-        <label>Valid for
-          <select name="hours"><option value="1">1 hour</option><option value="24">1 day</option><option value="168" selected>7 days</option><option value="720">30 days</option><option value="2160">90 days</option></select>
-        </label>
-        <button type="submit">Make a link</button>
-      </form>
-      <div id="pass-link" class="pass-link" role="status"></div>
-      <p class="muted" id="passes-note"></p>
-      <div class="table-wrap"><table id="passes"></table></div>
-
-      <h2>Messages to players</h2>
-      <p class="muted">Shown in a box with a warning sound on every page of the game, within about a minute, until the player presses OK. Warnings before Cloudflare limiting closes a game are sent by themselves.</p>
-      <form id="new-message" class="add-row">
-        <label>Game <input name="game" required placeholder="e.g. bricks, or * for all" autocomplete="off"></label>
-        <label class="wide">Message (English) <input name="text" required maxlength="300" autocomplete="off"></label>
-        <label>Shown for
-          <select name="minutes"><option value="15">15 min</option><option value="60" selected>1 hour</option><option value="240">4 hours</option><option value="1440">1 day</option></select>
-        </label>
-        <label>Kind
-          <select name="level"><option value="info">Message</option><option value="warning">Warning</option></select>
-        </label>
-        <button type="submit">Send</button>
-      </form>
-      <p class="muted" id="messages-note" role="status"></p>
-      <div class="table-wrap"><table id="messages"></table></div>
-
-      <h2>Connection quality</h2>
-      <p class="muted" id="quality-note"></p>
-      <div class="table-wrap"><table id="quality"></table></div>
-
-      <h2>Last 30 days</h2>
-      <div class="filters">
-        <label for="metric">Show</label>
-        <select id="metric"></select>
-        <button type="button" id="as-table" aria-pressed="false">Table</button>
-      </div>
-      <div id="chart" class="chart"></div>
-      <div id="chart-table" class="table-wrap" hidden></div>
-
-      <details class="about">
-        <summary>About the figures</summary>
-        <ul id="definitions"></ul>
-        <ul id="notes" class="notes"></ul>
-      </details>
-    </section>
+      <!-- Logg -->
+      <section id="tab-logg" class="tab" aria-label="Logg" hidden>
+        <article class="panel">
+          <div class="head-row">
+            <h2>Logg</h2>
+            <label class="inline">Visa <select id="log-game"><option value="">Alla spel</option></select></label>
+          </div>
+          <p class="muted small">Dina ändringar, spellänkar och meddelanden. Sparas i 90 dagar.</p>
+          <div id="log" class="log"></div>
+        </article>
+      </section>
+    </div>
   </main>
   <script type="module" src="app.js"></script>
 </body>

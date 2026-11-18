@@ -20,7 +20,7 @@ const usageWith = (perGame) => {
 
 test('settings are cleaned; closing automatically is off unless turned on', () => {
   const s = normalizeSettings({ account: { plan: 'weird', capUsd: '7' }, games: { vattigt: { mode: 'until', until: '2026-11-19T06:00:00Z', share: 150 }, 'Bad Name!': {} } });
-  assert.deepEqual(s.account, { plan: 'free', capUsd: 7, autoClose: false });
+  assert.deepEqual(s.account, { plan: 'free', capUsd: 7, autoClose: false, timerMinutes: 60, timerThen: 'off' });
   assert.deepEqual(Object.keys(s.games), ['vattigt']);
   assert.equal(s.games.vattigt.share, 100);
 });
@@ -410,4 +410,81 @@ test('F-070: a game that asks the admin page counts as connected; its last conta
   t += 60 * 60_000;
   await call('/status?game=bricks');
   assert.equal((await call('/settings')).connected.bricks, t);
+});
+
+// ------------------------------------------------- run F (F-071, F-072, F-074)
+
+test('F-074: changes are written to the log in Swedish, kept 90 days, and can be read per game', async () => {
+  let t = NOW;
+  const store = storeWith(() => t);
+  const call = async (path, method = 'GET', body) => (await store.fetch(new Request(`https://store${path}`, { method, body: body && JSON.stringify(body) }))).json();
+  await call('/settings', 'PUT', { games: { bricks: { mode: 'off' } } });
+  t += 1000;
+  await call('/settings', 'PUT', { account: { autoClose: true, timerMinutes: 30, timerThen: 'stop' }, games: { bricks: { mode: 'timer', timer: { until: '2026-11-18T20:00:00Z' }, stopped: true }, vattigt: {} } });
+  t += 1000;
+  await call('/messages', 'POST', { game: 'bricks', text: 'Hej', minutes: 60 });
+  const all = await call('/log');
+  assert.deepEqual(all.map((e) => e.text), [
+    'Meddelande till bricks: Hej',
+    'Nya timers: 30 min, sedan nödstopp',
+    'Cloudflare limiting på',
+    'vattigt lades till',
+    'bricks: Inga nya spelare → Timer till 18 nov. 21:00, sedan inga nya spelare',
+    'Nödstopp för bricks',
+    'bricks lades till',
+  ], 'newest first');
+  assert.deepEqual((await call('/log?game=vattigt')).map((e) => e.text), ['vattigt lades till']);
+  t += 91 * 86_400_000;
+  assert.deepEqual(await call('/log'), [], 'older than 90 days is deleted');
+});
+
+test('F-074, owner 2026-11-18: links no longer active stay listed 14 days; revoking and expiry are logged; last use is kept', async () => {
+  let t = NOW;
+  const store = storeWith(() => t);
+  const call = async (path, method = 'GET', body) => (await store.fetch(new Request(`https://store${path}`, { method, body: body && JSON.stringify(body) }))).json();
+  const a = await call('/passes', 'POST', { game: 'bricks', label: 'Pixel', hours: 1 });
+  const b = await call('/passes', 'POST', { game: 'bricks', label: 'Kompis' });
+  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: b.token })).valid, true);
+  assert.equal((await call('/passes')).find((p) => p.label === 'Kompis').lastUsed, NOW);
+  await call(`/passes/${b.pass.id}`, 'DELETE');
+  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: b.token })).valid, false, 'revoked');
+  t += 2 * 3_600_000; // the hour-long link has expired
+  assert.deepEqual(await call('/passes'), [], 'only active links by default');
+  const folded = await call('/passes?all=1');
+  assert.deepEqual(folded.map((p) => [p.label, p.state]).sort(), [['Kompis', 'revoked'], ['Pixel', 'expired']]);
+  const texts = (await call('/log')).map((e) => e.text);
+  assert.ok(texts.includes('Spellänk till Kompis återkallad (bricks)'));
+  assert.ok(texts.includes('Spellänk till Pixel gick ut (bricks)'));
+  assert.equal(texts.filter((x) => x.startsWith('Spellänk skapad')).length, 2);
+  await call('/passes?all=1');
+  assert.equal((await call('/log')).filter((e) => e.text.includes('gick ut')).length, 1, 'expiry is logged once');
+  t += 15 * 86_400_000;
+  assert.deepEqual(await call('/passes?all=1'), [], 'gone after 14 days');
+  assert.equal(a.pass.game, 'bricks');
+});
+
+test('F-074: a game tells its network-kit version when it asks for its status', async () => {
+  const store = storeWith();
+  const call = async (path) => (await store.fetch(new Request(`https://store${path}`))).json();
+  await call('/status?game=bricks&version=0.12.0');
+  await call('/status?game=vattigt&version=not-a-version');
+  assert.deepEqual((await call('/settings')).versions, { bricks: '0.12.0' });
+});
+
+test('F-072: rooms and players now and the peak today, from open connections', async () => {
+  const { activityFrom } = await import('../../admin/analytics.js');
+  const now = Date.parse('2026-11-18T12:07:00Z');
+  const ns = new Map([['ns-b', 'bricks'], ['ns-v', 'vattigt']]);
+  const row = (n, o, at, c) => ({ max: { activeWebsocketConnections: c }, dimensions: { namespaceId: n, objectId: o, datetimeFiveMinutes: at } });
+  const rows = [
+    row('ns-b', 'r1', '2026-11-18T09:00:00Z', 4), row('ns-b', 'r2', '2026-11-18T09:00:00Z', 4), // peak: 8
+    row('ns-b', 'r1', '2026-11-18T12:00:00Z', 3), row('ns-b', 'r2', '2026-11-18T12:00:00Z', 2),
+    row('ns-b', 'r3', '2026-11-18T11:55:00Z', 1),
+    row('ns-v', 'r9', '2026-11-18T08:00:00Z', 2), // nobody now
+    row('ns-v', 'r8', '2026-11-18T12:00:00Z', 0),
+  ];
+  assert.deepEqual(activityFrom(rows, ns, now), {
+    bricks: { rooms: 2, players: 5, peak: 8, at: '2026-11-18T12:00:00.000Z' },
+    vattigt: { rooms: 0, players: 0, peak: 2, at: null },
+  });
 });

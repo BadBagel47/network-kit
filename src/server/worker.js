@@ -170,7 +170,7 @@ export function createRoomServer(gameOptions = {}) {
     if (cached && now - cached.at < 30_000) return cached.value;
     let value = null;
     try {
-      value = await found.api.status(found.link.game, m);
+      value = await found.api.status(found.link.game, m, VERSION); // the version is shown on the admin page (F-074)
     } catch {
       value = null;
     }

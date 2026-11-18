@@ -39,7 +39,8 @@ function cleanMode(v, now) {
   let mode = MODES.includes(v?.mode) ? v.mode : v?.mode === 'until' ? 'until' : 'on';
   if (mode === 'until') mode = v.until && Date.parse(v.until) > now ? 'off' : 'on';
   const until = cleanUntil(v?.timer?.until);
-  const timer = until ? { until, then: THEN.includes(v.timer.then) ? v.timer.then : 'off' } : null;
+  const from = cleanUntil(v?.timer?.from); // when it was set, for showing how much is left
+  const timer = until ? { until, then: THEN.includes(v.timer.then) ? v.timer.then : 'off', ...(from ? { from } : {}) } : null;
   if (mode === 'timer' && !timer) mode = 'off';
   return { mode, timer: mode === 'timer' ? timer : null };
 }
@@ -59,6 +60,9 @@ export function normalizeSettings(raw = {}, now = Date.now()) {
     capUsd: Number.isFinite(Number(a.capUsd)) && a.capUsd !== null && a.capUsd !== '' && Number(a.capUsd) >= 0 ? Number(a.capUsd) : null,
     // Closing games automatically when they pass their share is off until the owner turns it on.
     autoClose: a.autoClose === true,
+    // What a new timer starts with (F-071): how long it keeps a game open, and what follows.
+    timerMinutes: Math.min(1440, Math.max(5, Math.round(Number(a.timerMinutes) || 60))),
+    timerThen: a.timerThen === 'stop' ? 'stop' : 'off',
   };
   const games = {};
   for (const [name, g] of Object.entries(raw.games ?? {})) {
@@ -261,4 +265,47 @@ export function gameNotices(settings, budget, game, now = Date.now(), messages =
     }
   }
   return list;
+}
+
+// ---- the owner's log (F-074): what changed, in plain Swedish
+
+const ZONE = 'Europe/Stockholm';
+export const when = (iso) => new Date(iso).toLocaleString('sv-SE', { timeZone: ZONE, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const modeText = (e) => {
+  if (!e || e.mode === 'on') return 'På';
+  if (e.mode === 'off') return 'Inga nya spelare';
+  return `Timer till ${when(e.timer?.until)}, sedan ${e.timer?.then === 'stop' ? 'nödstopp' : 'inga nya spelare'}`;
+};
+const sameMode = (a, b) => (a?.mode ?? 'on') === (b?.mode ?? 'on') && (a?.timer?.until ?? null) === (b?.timer?.until ?? null) && (a?.timer?.then ?? null) === (b?.timer?.then ?? null);
+
+/** What changed between two settings, one line per change: [{ game, text }]. */
+export function describeChanges(before, after) {
+  const out = [];
+  const games = [...new Set([...Object.keys(before.games), ...Object.keys(after.games)])].sort();
+  for (const name of games) {
+    const a = before.games[name];
+    const b = after.games[name];
+    if (!a && b) { out.push({ game: name, text: `${name} lades till` }); continue; }
+    if (a && !b) { out.push({ game: name, text: `${name} togs bort` }); continue; }
+    if (!a.stopped && b.stopped) out.push({ game: name, text: `Nödstopp för ${name}` });
+    if (a.stopped && !b.stopped) out.push({ game: name, text: `Nödstoppet för ${name} hävdes` });
+    if (!sameMode(a, b)) out.push({ game: name, text: `${name}: ${modeText(a)} → ${modeText(b)}` });
+    if (a.share !== b.share) out.push({ game: name, text: `${name}: andel ${a.share ?? 'lika'} → ${b.share ?? 'lika'}${b.share === null ? '' : ' %'}` });
+    for (const m of [...new Set([...Object.keys(a.modes ?? {}), ...Object.keys(b.modes ?? {})])].sort()) {
+      const x = a.modes?.[m];
+      const y = b.modes?.[m];
+      if (!x && y) out.push({ game: name, text: `${name}: läget ${m} lades till` });
+      else if (x && !y) out.push({ game: name, text: `${name}: läget ${m} togs bort` });
+      else if (!sameMode(x, y)) out.push({ game: name, text: `${name} ${m}: ${modeText(x)} → ${modeText(y)}` });
+    }
+  }
+  const A = before.account;
+  const B = after.account;
+  if (A.autoClose !== B.autoClose) out.push({ game: null, text: `Cloudflare limiting ${B.autoClose ? 'på' : 'av'}` });
+  if (A.plan !== B.plan) out.push({ game: null, text: `Plan: ${B.plan === 'paid' ? 'betald' : 'gratis'}` });
+  if (A.capUsd !== B.capUsd) out.push({ game: null, text: `Månadstak: ${B.capUsd === null ? 'inget' : `${B.capUsd} USD`}` });
+  if (A.timerMinutes !== B.timerMinutes || A.timerThen !== B.timerThen) {
+    out.push({ game: null, text: `Nya timers: ${B.timerMinutes} min, sedan ${B.timerThen === 'stop' ? 'nödstopp' : 'inga nya spelare'}` });
+  }
+  return out;
 }
