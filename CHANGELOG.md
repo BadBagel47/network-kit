@@ -10,6 +10,17 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.8.0 (2026-11-18)
+
+Affects: games that do not set `codeLength` (the owner's decision 2026-11-18).
+
+- Changed: room codes have 6 characters by default (about a billion codes, against a million with 4), so guessing a code to an open room is pointless. A game that wants another length sets `codeLength` (4 to 12).
+
+### Upgrade guide from 0.7
+
+- Nothing to change, unless the game wants to keep 4 characters: then add `codeLength: 4` to the room options. Rooms made before the update with codes of the old length cannot be reached after it (rooms last at most a day after the last player leaves).
+- Code fields in the game page should fit 6 characters (or ask `GET /rooms` for `codeLength`).
+
 ## 0.7.0 (2026-11-18)
 
 Affects: every game may take it in; nothing has to change in a game. A game that wants the admin page's on/off, budget and measuring adds a service binding and the `admin` option (`docs/ADMIN.md`).

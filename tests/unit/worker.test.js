@@ -67,7 +67,7 @@ test('room codes have the length the game chose, 4 to 12 characters', async () =
   }
   const server = createRoomServer({});
   const res = await server.fetch(new Request('https://rooms.example/rooms', { method: 'POST', body: '{}' }), { ROOMS: fakeRooms() });
-  assert.equal((await res.json()).code.length, 4, 'four by default');
+  assert.equal((await res.json()).code.length, 6, 'six by default (owner, 2026-11-18)');
 });
 
 test('a code of another length is refused without waking a room', async () => {
@@ -115,7 +115,7 @@ test('F-032: a closed game refuses joining with a reason, without waking a room'
     const server = createRoomServer({
       gate: async ({ action }) => (actions.push(action), { open: false, reason: 'closed-tonight' }),
     });
-    const res = await server.fetch(new Request('https://rooms.example/rooms/ABCD/ws', { headers: { upgrade: 'websocket' } }), env);
+    const res = await server.fetch(new Request('https://rooms.example/rooms/ABCDEF/ws', { headers: { upgrade: 'websocket' } }), env);
     assert.equal(res.upgraded, true);
     assert.deepEqual(actions, ['join']);
     assert.deepEqual(JSON.parse(sent[0]), { t: 'denied', code: 4008, reason: 'closed-tonight' });
@@ -136,17 +136,17 @@ test('F-053: creating rooms and trying codes is limited per visitor, before any 
   };
   const server = createRoomServer({ limits: { createsPerMinute: 2, attemptsPerMinute: 3 } });
   const from = (ip) => ({ headers: { 'cf-connecting-ip': ip } });
-  for (let i = 0; i < 3; i++) await server.fetch(new Request('https://rooms.example/rooms/ABCD', from('1.1.1.1')), env2);
+  for (let i = 0; i < 3; i++) await server.fetch(new Request('https://rooms.example/rooms/ABCDEF', from('1.1.1.1')), env2);
   assert.equal(woken, 3);
-  const blocked = await server.fetch(new Request('https://rooms.example/rooms/ABCE', from('1.1.1.1')), env2);
+  const blocked = await server.fetch(new Request('https://rooms.example/rooms/ABCDEG', from('1.1.1.1')), env2);
   assert.equal(blocked.status, 429);
   assert.equal(woken, 3, 'the fourth try woke no room');
-  const other = await server.fetch(new Request('https://rooms.example/rooms/ABCE', from('2.2.2.2')), env2);
+  const other = await server.fetch(new Request('https://rooms.example/rooms/ABCDEG', from('2.2.2.2')), env2);
   assert.equal(other.status, 404, 'another visitor is not affected');
   const create = (ip) => server.fetch(new Request('https://rooms.example/rooms', { method: 'POST', body: '{}', ...from(ip) }), env2);
   await create('3.3.3.3');
   await create('3.3.3.3');
   assert.equal((await create('3.3.3.3')).status, 429);
   const off = createRoomServer({ limits: () => null });
-  for (let i = 0; i < 5; i++) assert.equal((await off.fetch(new Request('https://rooms.example/rooms/ABCD', from('4.4.4.4')), env2)).status, 404);
+  for (let i = 0; i < 5; i++) assert.equal((await off.fetch(new Request('https://rooms.example/rooms/ABCDEF', from('4.4.4.4')), env2)).status, 404);
 });
