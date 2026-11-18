@@ -13,7 +13,7 @@ Figures (limits checked 2026-11-17 in Cloudflare's documentation, D-011; `admin/
 | Figure | Free plan | Source in Cloudflare's analytics |
 | --- | --- | --- |
 | Worker requests | 100,000 a day | `workersInvocationsAdaptive` `sum.requests` |
-| Room requests | 100,000 a day | `durableObjectsInvocationsAdaptiveGroups` `sum.requests`, with the incoming WebSocket messages among them (`durableObjectsPeriodicGroups` `sum.inboundWebsocketMsgCount`) counted 1 in 20, as Cloudflare counts them against the limit (B-069, from 0.11.1; before that every message counted fully) |
+| Room requests | 100,000 a day | `durableObjectsInvocationsAdaptiveGroups` `sum.requests`, with the incoming WebSocket messages among them (calls of the type `hibernation`; `durableObjectsPeriodicGroups` `sum.inboundWebsocketMsgCount` is 0 for hibernating rooms, checked 2026-11-18) counted 1 in 20, as Cloudflare counts them against the limit (B-069, from 0.11.1; before that every message counted fully) |
 | Room time | 13,000 GB-s a day | `durableObjectsPeriodicGroups` `sum.activeTime` (µs × 128 MB), or `sum.duration` |
 | Rows read | 5 million a day | `durableObjectsPeriodicGroups` `sum.rowsRead` |
 | Rows written | 100,000 a day | `durableObjectsPeriodicGroups` `sum.rowsWritten` |

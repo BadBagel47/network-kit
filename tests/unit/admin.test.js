@@ -33,7 +33,7 @@ const TYPES = {
   WIAFilter: { inputFields: [{ name: 'date_geq' }, { name: 'date_leq' }, { name: 'scriptName' }] },
   DOI: { fields: [field('sum', obj('DOISum')), field('dimensions', obj('DOIDims'))] },
   DOISum: { fields: [field('requests'), field('responseBodySize')] },
-  DOIDims: { fields: [field('date'), field('scriptName'), field('namespaceId'), field('datetimeHour')] },
+  DOIDims: { fields: [field('date'), field('scriptName'), field('namespaceId'), field('datetimeHour'), field('type')] },
   DOIFilter: { inputFields: [{ name: 'date_geq' }, { name: 'date_leq' }] },
   DOP: { fields: [field('sum', obj('DOPSum')), field('dimensions', obj('DOPDims'))] },
   DOPSum: { fields: [field('activeTime'), field('cpuTime'), field('rowsRead'), field('rowsWritten'), field('inboundWebsocketMsgCount')] },
@@ -53,12 +53,13 @@ const ROWS = {
     { sum: { requests: 80 }, dimensions: { date: '2026-11-17', scriptName: '__unknown__' } },
   ],
   durableObjectsInvocationsAdaptiveGroups: [
-    { sum: { requests: 4000 }, dimensions: { date: '2026-11-17', namespaceId: 'ns-vattigt' } },
+    { sum: { requests: 200 }, dimensions: { date: '2026-11-17', namespaceId: 'ns-vattigt', type: 'http' } },
+    { sum: { requests: 3800 }, dimensions: { date: '2026-11-17', namespaceId: 'ns-vattigt', type: 'hibernation' } },
     { sum: { requests: 10 }, dimensions: { date: '2026-11-17', namespaceId: 'ns-gone' } },
   ],
   durableObjectsPeriodicGroups: [
     // 1 hour of one active room = 3,600 s × 0.125 GB = 450 GB-s.
-    { sum: { activeTime: 3_600_000_000, rowsRead: 900, rowsWritten: 120, inboundWebsocketMsgCount: 3800 }, dimensions: { date: '2026-11-17', namespaceId: 'ns-vattigt' } },
+    { sum: { activeTime: 3_600_000_000, rowsRead: 900, rowsWritten: 120, inboundWebsocketMsgCount: 0 }, dimensions: { date: '2026-11-17', namespaceId: 'ns-vattigt' } },
   ],
   durableObjectsStorageGroups: [
     { max: { storedBytes: 5000 }, dimensions: { datetimeHour: '2026-11-17T10:00:00Z', namespaceId: 'ns-vattigt' } },
@@ -107,7 +108,8 @@ test('usage is gathered per game from all four datasets', async () => {
   const vattigt = usage.games.find((g) => g.name === 'vattigt');
   assert.equal(vattigt.daily.workerRequests['2026-11-17'], 1200);
   assert.equal(vattigt.daily.workerRequests['2026-11-16'], 300);
-  // B-069: 3,800 of the 4,000 room requests were incoming messages, which count 1 in 20.
+  // B-069: 3,800 of the 4,000 room requests were incoming messages to a hibernating room
+  // (calls of the kind "hibernation"; Cloudflare reports their message count as 0), which count 1 in 20.
   assert.equal(vattigt.daily.doRequestsAll['2026-11-17'], 4000);
   assert.equal(vattigt.daily.doMessages['2026-11-17'], 3800);
   assert.equal(vattigt.daily.doRequests['2026-11-17'], 200 + 190);
@@ -121,7 +123,7 @@ test('usage is gathered per game from all four datasets', async () => {
   assert.ok(fetch.calls.every((c) => c.auth === 'Bearer t'));
   // A dataset that only filters by datetime is asked with datetimes.
   const roomQuery = fetch.calls.find((c) => c.body?.includes('durableObjectsInvocationsAdaptiveGroups(')).body;
-  assert.match(roomQuery, /dimensions \{ date namespaceId \}/, 'rooms are tied to games through their namespace');
+  assert.match(roomQuery, /dimensions \{ date namespaceId type \}/, 'rooms are tied to games through their namespace, split by kind of call');
   const storageQuery = fetch.calls.find((c) => c.body?.includes('durableObjectsStorageGroups(')).body;
   assert.match(storageQuery, /datetime_geq/);
 });

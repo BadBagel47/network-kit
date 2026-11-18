@@ -40,6 +40,9 @@ const DATASETS = {
     // Rooms are best tied to their game through the namespace: the script
     // name is not always filled in for room requests.
     owners: ['namespaceId', 'scriptName'],
+    // The kind of call (http, alarm, hibernation, ...): incoming WebSocket
+    // messages to hibernating rooms are "hibernation" calls (B-069).
+    split: 'type',
     fields: { sum: ['requests'] },
   },
   periodic: {
@@ -167,6 +170,7 @@ export class CloudflareAnalytics {
         day: DAY_DIMENSIONS.find((d) => dimNames.includes(d)) ?? null,
         owner: ds.owners.find((d) => dimNames.includes(d)) ?? null,
         dateFilter: filterFields.includes('date_geq') ? 'date' : filterFields.includes('datetime_geq') ? 'datetime' : null,
+        split: ds.split && dimNames.includes(ds.split) ? ds.split : null,
         values: {},
       };
       for (const [block, wanted] of Object.entries(ds.fields)) {
@@ -200,7 +204,7 @@ export class CloudflareAnalytics {
       .filter(([, names]) => names.length)
       .map(([block, names]) => `${block} { ${names.join(' ')} }`)
       .join(' ');
-    const dims = [shape.day, shape.owner].filter(Boolean).join(' ');
+    const dims = [shape.day, shape.owner, shape.split].filter(Boolean).join(' ');
     const filter = shape.dateFilter === 'datetime'
       ? `{ datetime_geq: "${from}T00:00:00Z", datetime_leq: "${to}T23:59:59Z" }`
       : `{ date_geq: "${from}", date_leq: "${to}" }`;
@@ -309,7 +313,12 @@ export function buildUsage({ now, dates, shapes, results, namespaceMap = null, n
   }
   if (results.invocations) {
     available.add('doRequests');
-    add(shapes.invocations, results.invocations, (r) => ({ doRequestsAll: r.sum?.requests ?? 0 }));
+    const split = shapes.invocations.split;
+    add(shapes.invocations, results.invocations, (r) => ({
+      doRequestsAll: r.sum?.requests ?? 0,
+      // Calls that delivered an incoming WebSocket message to a hibernating room.
+      ...(split && r.dimensions?.[split] === 'hibernation' ? { doMessages: r.sum?.requests ?? 0 } : {}),
+    }));
   }
   if (results.periodic) {
     const p = shapes.periodic;
@@ -323,13 +332,16 @@ export function buildUsage({ now, dates, shapes, results, namespaceMap = null, n
         : r.sum?.duration ?? 0,
       rowsRead: r.sum?.rowsRead ?? 0,
       rowsWritten: r.sum?.rowsWritten ?? 0,
-      doMessages: r.sum?.inboundWebsocketMsgCount ?? 0,
+      // Messages to rooms that do not hibernate (reported 0 for hibernating ones).
+      ...(shapes.invocations?.split ? {} : { doMessages: r.sum?.inboundWebsocketMsgCount ?? 0 }),
     }));
   }
   // Room requests as Cloudflare counts them against the free limit (B-069):
   // the statistics count every incoming WebSocket message as a request, but
   // 20 of them count as one; connections, alarms and other calls count fully.
-  const messagesKnown = has(shapes.periodic, 'sum', 'inboundWebsocketMsgCount');
+  // Messages are known from the kind of call ("hibernation"), else from the
+  // periodic message count.
+  const messagesKnown = Boolean(shapes.invocations?.split) || has(shapes.periodic, 'sum', 'inboundWebsocketMsgCount');
   if (results.invocations && !messagesKnown) notes.push('Room requests: incoming WebSocket messages are not reported, so each is counted as a whole request.');
   for (const g of games.values()) {
     for (const d of dates) {
