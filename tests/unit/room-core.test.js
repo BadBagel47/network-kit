@@ -224,9 +224,9 @@ test('roles are defined by the game: a referee needs its own link and cannot pla
   };
   const { world, core, created, owner } = await setup(options);
   assert.deepEqual(owner.room.roles, {
-    player: { seats: 4, plays: true, sends: true },
-    referee: { seats: 1, plays: false, sends: false },
-    viewer: { seats: 2, plays: false, sends: false },
+    player: { seats: 4, plays: true, sends: true, sendsTo: 'host' },
+    referee: { seats: 1, plays: false, sends: false, sendsTo: 'host' },
+    viewer: { seats: 2, plays: false, sends: false, sendsTo: 'host' },
   });
   const sneaky = await connect(world, core, { name: 'X', role: 'referee' });
   assert.equal(sneaky.closedWith.code, CLOSE.KEY, 'a role with its own link cannot be picked by name');

@@ -41,7 +41,7 @@ export const DEFAULT_ROLES = Object.freeze({
 
 export const DEFAULT_OPTIONS = Object.freeze({
   mode: 'host', // 'host': a participant's browser runs the game; 'server': rules run here
-  roles: null, // name → { seats, plays, canPause, canHost, sends, needsKey }; null = player + viewer
+  roles: null, // name → { seats, plays, canPause, canHost, sends, sendsTo, needsKey }; null = player + viewer
   ownerRole: 'player', // the role the room's creator joins in
   places: {}, // named spots a playing participant can take: { name: capacity } or [names]
   access: 'open', // default room access: 'open' (code is enough) or 'private' (key needed)
@@ -74,7 +74,7 @@ export const DEFAULT_OPTIONS = Object.freeze({
 });
 
 const OWNER_COMMANDS = new Set(['kick', 'renew', 'settings', 'close', 'owner']);
-const HOST_COMMANDS = new Set(['start', 'cancel', 'end', 'admit', 'assign', 'handover', 'data']);
+const HOST_COMMANDS = new Set(['start', 'cancel', 'end', 'admit', 'assign', 'handover', 'data', 'successors']);
 
 const own = (obj, key) => typeof key === 'string' && Object.hasOwn(obj, key);
 
@@ -90,6 +90,9 @@ function resolveRoles(roles) {
       canPause: Boolean(merged.canPause ?? plays),
       canHost: Boolean(merged.canHost ?? plays),
       sends: Boolean(merged.sends ?? plays),
+      // Host-run rooms: 'host' (messages go to the host) or 'all' (the same
+      // targets as the host: everyone, a list, a role or a place) (F-039).
+      sendsTo: merged.sendsTo === 'all' ? 'all' : 'host',
       needsKey: Boolean(merged.needsKey ?? !own(DEFAULT_ROLES, name)),
     };
   }
@@ -1004,9 +1007,15 @@ export class RoomCore {
   async takeOver(preferId = null) {
     const s = this.state;
     this.clearTimer('takeover');
+    // The host's preferred order first (F-040), then the owner, then whoever has been here longest.
+    const preferred = Array.isArray(s.successors) ? s.successors : [];
+    const rank = (p) => {
+      const i = preferred.indexOf(p.id);
+      return i === -1 ? Infinity : i;
+    };
     const candidates = Object.values(s.players)
       .filter((p) => p.id !== s.hostId && this.canHost(p))
-      .sort((a, b) => (b.id === s.ownerId) - (a.id === s.ownerId) || a.joinedAt - b.joinedAt);
+      .sort((a, b) => rank(a) - rank(b) || (b.id === s.ownerId) - (a.id === s.ownerId) || a.joinedAt - b.joinedAt);
     const next = (preferId && candidates.find((p) => p.id === preferId)) || (preferId ? null : candidates[0]);
     if (!next) return false;
     await this.saveSnapshot();
@@ -1143,7 +1152,9 @@ export class RoomCore {
         return { id: p.id, name: p.name, role: p.role, status: p.status, waiting: p.waiting, place: p.place };
       });
     const roles = {};
-    for (const [name, def] of Object.entries(o.roles)) roles[name] = { seats: def.seats, plays: def.plays, sends: def.sends };
+    for (const [name, def] of Object.entries(o.roles)) {
+      roles[name] = { seats: def.seats, plays: def.plays, sends: def.sends, sendsTo: def.sendsTo };
+    }
     const room = {
       code: s.code,
       mode: o.mode,
@@ -1172,6 +1183,7 @@ export class RoomCore {
     // Host-run games start from a shared seed; server-run rules keep theirs secret.
     if (o.mode === 'host') room.seed = s.seed;
     if (forId && forId === s.ownerId) room.keys = this.publicKeys();
+    if (o.mode === 'host') room.successors = Array.isArray(s.successors) ? [...s.successors] : [];
     return room;
   }
 
@@ -1230,7 +1242,7 @@ export class RoomCore {
       return;
     }
     const text = JSON.stringify({ t: 'msg', from: player.id, d: msg.d });
-    if (player.id === s.hostId) {
+    if (player.id === s.hostId || this.role(player).sendsTo === 'all') {
       for (const id of this.targets(msg.to, player.id)) this.sendTo(id, text);
     } else if (s.hostId) {
       this.sendTo(s.hostId, text);
@@ -1365,6 +1377,14 @@ export class RoomCore {
         s.data = msg.d ?? null;
         break;
       }
+      case 'successors': {
+        // Who should take over first if the host is lost, e.g. the player whose turn it is (F-040).
+        if (o.mode !== 'host') return fail('not-allowed');
+        const ids = Array.isArray(msg.ids) ? msg.ids.filter((id) => typeof id === 'string').slice(0, 16) : null;
+        if (!ids) return fail('bad-request');
+        s.successors = ids;
+        break;
+      }
       case 'end':
         s.phase = 'ended';
         s.startsAt = null;
@@ -1462,7 +1482,7 @@ export class RoomCore {
   fingerprint() {
     const s = this.state;
     return JSON.stringify([
-      s.settings, s.keys, s.phase, s.round, s.startsAt, s.paused, s.ownerId, s.hostId, s.hostPending, s.data,
+      s.settings, s.keys, s.phase, s.round, s.startsAt, s.paused, s.ownerId, s.hostId, s.hostPending, s.data, s.successors,
       s.bans.length, Object.values(s.players).map((p) => [p.id, p.place, p.waiting, p.status]),
       Object.values(s.known).map((k) => k.out === true),
     ]);

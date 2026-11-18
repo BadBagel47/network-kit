@@ -515,3 +515,62 @@ test('B-034: starting while the host is away starts the wait for a takeover', as
   assert.notEqual(c.room.hostId, b.id, 'now there is a game to continue');
   assert.ok(created.ownerKey);
 });
+
+test('F-039: a role with sendsTo "all" reaches everyone directly, also while the host is away', async () => {
+  const opts = { ...CREW, roles: { player: { seats: 4, sendsTo: 'all' }, viewer: { seats: 2 } } };
+  const { world, core, owner } = await setup(opts);
+  const a = await connect(world, core, { name: 'A' });
+  const b = await connect(world, core, { name: 'B' });
+  const tv = await connect(world, core, { name: 'TV', role: 'viewer' });
+  assert.equal(owner.room.roles.player.sendsTo, 'all');
+  await send(core, a, { t: 'msg', d: { aim: 45 } });
+  for (const ws of [owner, b, tv]) assert.deepEqual(ws.last('msg'), { t: 'msg', from: a.id, d: { aim: 45 } });
+  await send(core, a, { t: 'msg', d: 'just B', to: [b.id] });
+  assert.equal(b.last('msg').d, 'just B');
+  assert.notEqual(tv.last('msg').d, 'just B');
+  await drop(core, owner);
+  await send(core, a, { t: 'msg', d: 'host away' });
+  assert.equal(b.last('msg').d, 'host away');
+  // A viewer (no sendsTo) still cannot send at all.
+  await send(core, tv, { t: 'msg', d: 'nope' });
+  assert.notEqual(b.last('msg').d, 'nope');
+});
+
+test('F-039: by default a participant still reaches only the host', async () => {
+  const { world, core, owner } = await setup();
+  const a = await connect(world, core, { name: 'A' });
+  const b = await connect(world, core, { name: 'B' });
+  await send(core, a, { t: 'msg', d: 'to host' });
+  assert.equal(owner.last('msg').d, 'to host');
+  assert.equal(b.last('msg'), undefined);
+});
+
+test('F-040: the host names who takes over first', async () => {
+  const { world, core, owner } = await setup({ ...CREW, roles: { player: { seats: 4 }, viewer: { seats: 2 } } });
+  const a = await connect(world, core, { name: 'A' });
+  const b = await connect(world, core, { name: 'B' });
+  const c = await connect(world, core, { name: 'C' });
+  await cmd(core, owner, 'start');
+  await cmd(core, a, 'successors', { ids: [c.id] });
+  assert.equal(a.last('err').code, 'host-only');
+  await cmd(core, owner, 'successors', { ids: [c.id, b.id] });
+  assert.deepEqual(owner.room.successors, [c.id, b.id]);
+  // The owner is the host and drops: C (whose turn it is) takes over, not A who came first.
+  await world.advance(3_500);
+  await drop(core, owner);
+  await world.advance(CREW.takeoverMs + 100);
+  assert.equal(core.state.hostId, c.id);
+});
+
+test('F-040: a preferred successor that does not answer is passed over for the next', async () => {
+  const { world, core, owner } = await setup(CREW);
+  const a = await connect(world, core, { name: 'A' });
+  const b = await connect(world, core, { name: 'B' });
+  await cmd(core, owner, 'start');
+  await cmd(core, owner, 'successors', { ids: [b.id, a.id] });
+  await world.advance(3_500);
+  b.alive = false; // B's phone sleeps: it will not answer the room's "are you there?"
+  await drop(core, owner);
+  await world.advance(CREW.takeoverMs + 3_000 + 3_200); // takeover wait, then B's 3 s to answer
+  assert.equal(core.state.hostId, a.id);
+});

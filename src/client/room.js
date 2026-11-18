@@ -842,6 +842,8 @@ export class NetworkRoom {
   admitWaiting() { return this.command('admit'); }
   assignPlace(id, place) { return this.command('assign', { id, place }); }
   hostReady() { return this.command('host-ready'); }
+  /** Host: who should take over first if this browser is lost, e.g. the player whose turn it is (F-040). */
+  setSuccessors(ids) { return this.command('successors', { ids }); }
 
   /** Hand the game to another participant. Sends `snapshot` first if given. */
   handover(id, snapshot) {

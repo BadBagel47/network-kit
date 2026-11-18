@@ -10,6 +10,8 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+- New (F-039): role option `sendsTo: 'all'` lets a participant in a host-run room send like the host (everyone, a list, a role or a place), also while the host is away. Default unchanged (`'host'`). Asked by Vättigt.
+- New (F-040): `setSuccessors([ids])` lets the host name who takes over first (e.g. the player whose turn it is); one who does not answer is passed over. Asked by Vättigt.
 - New (F-051): room option `heartbeatMs`. Clients send their free heartbeat that often, and a participant silent for 2.5 heartbeats is treated as dropped, so a phone that loses its network is noticed in about 5 s (2 s heartbeat) instead of a minute. `CLOSE_UNRESPONSIVE` is exported by the client. The demo's crew game uses 2 s.
 - Demo: a new host continues from the newest positions it has (B-049) and the game steps by the clock (B-050); the guide says games should do both. The kit itself is unchanged.
 - Demo: ships without inertia and a response-time meter, to judge how fast the game answers (F-045). The kit itself is unchanged.
