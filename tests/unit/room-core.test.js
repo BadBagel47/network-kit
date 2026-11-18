@@ -28,7 +28,7 @@ test('relay: others reach the host; the host reaches everyone, chosen ids, a rol
   await cmd(core, b, 'take', { place: 'gunner' });
 
   await send(core, a, { t: 'msg', d: { fire: true } });
-  assert.deepEqual(owner.last('msg'), { t: 'msg', from: a.id, d: { fire: true } });
+  assert.deepEqual(owner.last('msg'), { t: 'msg', from: a.id, d: { fire: true }, at: world.time }, 'with the time it reached the room (F-063)');
   assert.equal(b.messages('msg').length, 0, 'others do not see each other\'s messages');
 
   await send(core, owner, { t: 'msg', d: 'all' });

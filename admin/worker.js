@@ -9,6 +9,7 @@
 //   GET/POST/DELETE /api/passes, /api/messages  game links (F-058, F-068) and
 //                     messages to players (F-066) (signed in only)
 //   GET  /api/log     the owner's log, 90 days (F-074) (signed in only)
+//   GET/POST/DELETE /api/lobbies  lobbies with host and guest links (F-059) (signed in only)
 //
 // Games ask whether they are open through the GameApi entrypoint (entry.js),
 // over a service binding.
@@ -143,7 +144,7 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
     if (!s) return json({ days: 7, quality: {} });
     return json(await (await s.fetch('https://store/quality')).json());
   }
-  const listApi = ['/api/passes', '/api/messages', '/api/log'].find((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const listApi = ['/api/passes', '/api/messages', '/api/log', '/api/lobbies'].find((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (listApi) {
     // The owner's personal links per game (F-058) and messages to players (F-066).
     if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);

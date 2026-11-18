@@ -75,6 +75,7 @@ async function load() {
   render();
   loadQuality().catch(() => {});
   loadPasses().catch(() => {});
+  loadLobbies().catch(() => {});
   loadMessages().catch(() => {});
   if (tab === 'logg') loadLog().catch(() => {});
 }
@@ -613,6 +614,7 @@ function fillGameSelects() {
     if ([...select.options].some((o) => o.value === keep)) select.value = keep;
   };
   fill($('new-pass').game, []);
+  fill($('new-lobby').game, []);
   fill($('new-message').game, [['*', 'Alla spel']]);
   fill($('log-game'), [['', 'Alla spel']]);
 }
@@ -670,6 +672,76 @@ $('new-pass').addEventListener('submit', async (e) => {
   out.replaceChildren(el('p', { class: 'muted small' }, `Öppna eller skicka länken. Den visas bara nu och gäller till ${dayTime(pass.expires)}.`), el('code', {}, link), copy);
   form.label.value = '';
   loadPasses();
+});
+
+/* Lobbies (F-059): a host link and a guest link, kept so they can be copied again. */
+
+const PAGE_KEY = 'nk-admin:page:';
+const lobbyLink = (l, token) => `${l.page ?? ''}#nk-lobby=${token}`;
+async function copy(button, text) {
+  await navigator.clipboard?.writeText(text);
+  const was = button.textContent;
+  button.textContent = 'Kopierad';
+  setTimeout(() => { button.textContent = was; }, 1500);
+}
+
+function lobbyItem(l, old) {
+  const item = el('div', { class: `item wrap${old ? ' old' : ''}` });
+  const info = el('div');
+  info.append(el('span', { class: 'title' }, `${l.label || 'Lobby'} · ${l.game}`));
+  const room = l.code ? `rum ${l.code}` : 'rummet görs när någon öppnar en länk';
+  const state = l.state === 'revoked' ? `Återkallad ${dayTime(l.revoked)}` : l.state === 'expired' ? `Gick ut ${dayTime(l.expires)}` : `Gäller till ${dayTime(l.expires)}`;
+  info.append(el('span', { class: 'sub' }, `${state} · ${room}`));
+  item.append(info);
+  if (!old) {
+    const actions = el('div', { class: 'actions' });
+    const host = el('button', { type: 'button' }, 'Kopiera värdlänk');
+    host.addEventListener('click', () => copy(host, lobbyLink(l, l.hostToken)));
+    const guest = el('button', { type: 'button' }, 'Kopiera gästlänk');
+    guest.addEventListener('click', () => copy(guest, lobbyLink(l, l.guestToken)));
+    const revoke = el('button', { type: 'button' }, 'Återkalla');
+    revoke.addEventListener('click', async () => {
+      if (!confirm(`Återkalla lobbyn${l.label ? ` ${l.label}` : ''}? Länkarna slutar fungera och rummet stängs inom en minut.`)) return;
+      await fetch(`/api/lobbies/${encodeURIComponent(l.id)}`, { method: 'DELETE' });
+      loadLobbies();
+    });
+    actions.append(host, guest, revoke);
+    item.append(actions);
+    if (!l.page) item.append(el('span', { class: 'sub' }, 'Ingen adress till spelet angavs: länkarna är bara slutet av en adress.'));
+  }
+  return item;
+}
+
+async function loadLobbies() {
+  const res = await fetch('/api/lobbies?all=1');
+  if (!res.ok) return;
+  const list = await res.json();
+  const active = list.filter((l) => l.state === 'active');
+  const old = list.filter((l) => l.state !== 'active');
+  $('lobbies').replaceChildren(...(active.length ? active.map((l) => lobbyItem(l, false)) : [el('p', { class: 'muted small' }, 'Inga aktiva lobbyer.')]));
+  $('lobbies-old').replaceChildren(...old.map((l) => lobbyItem(l, true)));
+  $('old-lobby-count').textContent = `(${old.length}, visas i 14 dagar)`;
+  $('old-lobbies').hidden = !old.length;
+}
+
+$('new-lobby').game.addEventListener('change', (e) => {
+  const page = localStorage.getItem(PAGE_KEY + e.currentTarget.value);
+  if (page && !$('new-lobby').page.value) $('new-lobby').page.value = page;
+});
+$('new-lobby').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const body = { game: form.game.value, label: form.label.value.trim(), hours: Number(form.hours.value), page: form.page.value.trim() };
+  const res = await fetch('/api/lobbies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const answer = await res.json().catch(() => ({}));
+    $('lobby-note').textContent = answer.error === 'too-many' ? 'Skapades inte: 30 lobbyer är redan aktiva.' : `Skapades inte (${answer.error ?? res.status}).`;
+    return;
+  }
+  if (body.page) localStorage.setItem(PAGE_KEY + body.game, body.page);
+  $('lobby-note').textContent = 'Lobbyn är skapad. Kopiera värdlänken till värden och gästlänken till gästerna.';
+  form.label.value = '';
+  loadLobbies();
 });
 
 // Message to players: kind, preview, list.

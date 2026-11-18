@@ -28,7 +28,9 @@ test('crew game: create, info, join and relay between the host and the others', 
 
   const got = next(host, 'message');
   a.send({ input: 'left' });
-  assert.deepEqual(await got, { from: a.me, data: { input: 'left' } });
+  const { at, ...message } = await got;
+  assert.deepEqual(message, { from: a.me, data: { input: 'left' } });
+  assert.ok(Math.abs(at - Date.now()) < 10_000, 'with the time it reached the room (F-063)');
 
   const toAll = Promise.all([next(a, 'message'), next(b, 'message'), next(tv, 'message')]);
   host.send({ tick: 1 });

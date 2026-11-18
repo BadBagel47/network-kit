@@ -2,7 +2,7 @@
 // everyone's ship; the others send their keys only when they change; the
 // host sends positions often and gives the room a full snapshot now and then.
 import {
-  NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession, VERSION, watchNotices,
+  NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession, VERSION, watchNotices, readLobbyLink, forgetLobbyLink,
 } from './network-kit/client/index.js';
 import * as diag from './diag.js';
 
@@ -41,6 +41,7 @@ async function enter(promise) {
     room = await promise;
     sessionStorage.setItem('demo:room', room.code);
     forgetShareKey();
+    forgetLobbyLink(); // the lobby link is a key too (F-059)
     showGame();
   } catch (err) {
     $('start-error').textContent = err.message;
@@ -51,8 +52,13 @@ async function enter(promise) {
 }
 
 const joinOptions = (extra = {}) => ({ ...OPTIONS, code: $('code').value, name: nameValue(), key: link?.key, ...extra });
+// A lobby link from the admin page (F-059): Join enters the lobby's room.
+const lobby = readLobbyLink(location.hash);
+if (lobby) $('code').placeholder = 'Lobby from the admin page';
 $('create').onclick = () => enter(NetworkRoom.create(SERVER, { ...OPTIONS, name: nameValue() }));
-$('join').onclick = () => enter(NetworkRoom.join(SERVER, joinOptions()));
+$('join').onclick = () => enter(lobby && !$('code').value
+  ? NetworkRoom.joinLobby(SERVER, { ...OPTIONS, name: nameValue(), token: lobby })
+  : NetworkRoom.join(SERVER, joinOptions()));
 $('watch').onclick = () => enter(NetworkRoom.join(SERVER, joinOptions({ role: 'viewer' })));
 
 // Coming back after a reload keeps the same seat (same tab, same identity).
@@ -63,7 +69,7 @@ if (copied) sessionStorage.removeItem('demo:room');
 const saved = sessionStorage.getItem('demo:room');
 if (saved && (!link || link.code === saved)) {
   enter(NetworkRoom.join(SERVER, { ...OPTIONS, code: saved, name: nameValue() }));
-} else if (link) {
+} else if (link || lobby) {
   // Arrived by an invitation: the name is the next thing to fill in.
   $('name').focus();
   $('name').select();

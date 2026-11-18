@@ -35,6 +35,8 @@ const SERVER_OPTIONS = {
   // name) and, for a game with modes, the rooms' mode (F-057). May be a
   // function (env) => { … } | null. null: not connected.
   admin: null,
+  // The role a lobby's guest link joins in (F-059); null: 'player', else the first role.
+  lobbyRole: null,
   fallback: null, // async (request, env, ctx) => Response for other paths
 };
 
@@ -109,12 +111,12 @@ export function createRoomServer(gameOptions = {}) {
     return null;
   }
 
-  async function makeRoom(env, { settings = {}, open = false } = {}) {
+  async function makeRoom(env, { settings = {}, open = false, pass = null, lobbyEnds = null } = {}) {
     for (let attempt = 0; attempt < 6; attempt++) {
       const code = newRoomCode(opts.codeLength);
       const res = await stub(env, code).fetch('https://room/create', {
         method: 'POST',
-        body: JSON.stringify({ code, settings, open }),
+        body: JSON.stringify({ code, settings, open, pass, lobbyEnds }),
       });
       if (res.status === 409) continue;
       return { status: res.status, body: await res.json() };
@@ -249,6 +251,42 @@ export function createRoomServer(gameOptions = {}) {
       return json({ open: status.open, reason: status.reason ?? null, until: status.until ?? null, notices }, 200, cors);
     }
 
+    // A lobby made on the admin page (F-059): the page sends the link's token
+    // and gets the room's code with the owner key (host link) or an
+    // invitation key (guest link). The room is made when the first one comes.
+    if (parts.length === 1 && parts[0] === 'lobby' && request.method === 'POST') {
+      if (overLimit(request, env, 'attempt')) return json({ error: 'too-many-requests' }, 429, { ...cors, 'retry-after': '60' });
+      const found = adminLink(env);
+      if (!found?.api.lobby) return json({ error: 'no-lobbies' }, 404, cors);
+      let token = '';
+      try {
+        token = String((await request.json())?.token ?? '').slice(0, 120);
+      } catch {
+        token = '';
+      }
+      const status = await adminWord(env);
+      if (status?.stopped) return json({ error: 'stopped' }, 503, cors);
+      let lobby = null;
+      try {
+        lobby = await found.api.lobby(found.link.game, token);
+      } catch {
+        lobby = null;
+      }
+      if (!lobby || lobby.error) return json({ error: lobby?.error ?? 'lobby-ended' }, 410, cors);
+      let room = lobby.room;
+      if (!room) {
+        const made = await makeRoom(env, { settings: { access: 'private' }, pass: token, lobbyEnds: lobby.expires });
+        if (made.status !== 200) return json({ error: made.body.error ?? 'no-room' }, 503, cors);
+        const keys = made.body.keys ?? {};
+        const guestRole = opts.lobbyRole && keys[opts.lobbyRole] ? opts.lobbyRole : keys.player ? 'player' : Object.keys(keys)[0];
+        // The first room stored wins; one made at the same moment by someone else is left to be cleaned up.
+        room = await found.api.lobbyRoom(found.link.game, lobby.id, { code: made.body.code, ownerKey: made.body.ownerKey, key: keys[guestRole]?.k ?? null });
+      }
+      return json(lobby.role === 'host'
+        ? { role: 'host', code: room.code, ownerKey: room.ownerKey, ends: lobby.expires }
+        : { role: 'guest', code: room.code, key: room.key, ends: lobby.expires }, 200, cors);
+    }
+
     // Anonymous measurement from the game's pages (F-052), handed to the admin page.
     if (parts.length === 1 && parts[0] === 'measure' && request.method === 'POST') {
       if (overLimit(request, env, 'attempt')) return new Response(null, { status: 429, headers: cors });
@@ -376,7 +414,7 @@ export function createRoomServer(gameOptions = {}) {
       const url = new URL(request.url);
       if (url.pathname === '/create') {
         const body = await request.json();
-        const result = await this.core.create(body.settings, body.code, { open: body.open === true });
+        const result = await this.core.create(body.settings, body.code, { open: body.open === true, pass: body.pass ?? null, lobbyEnds: body.lobbyEnds ?? null });
         return json(result, result.error ? 409 : 200);
       }
       if (url.pathname === '/info') {

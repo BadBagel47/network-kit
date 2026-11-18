@@ -75,6 +75,28 @@
         </article>
 
         <article class="panel">
+          <h2>Lobbyer</h2>
+          <p class="muted">Ett rum som görs i förväg. Värdlänken gör den som öppnar den till värd. Gästlänken släpper in gäster, som väntar tills värden kommer. Fungerar när spelet tar Inga nya spelare, tills lobbyn går ut eller återkallas.</p>
+          <form id="new-lobby" class="form">
+            <div class="row2">
+              <label>Spel <select name="game" required></select></label>
+              <label>Gäller
+                <select name="hours"><option value="1">1 timme</option><option value="4">4 timmar</option><option value="24" selected>1 dag</option><option value="168">7 dagar</option></select>
+              </label>
+            </div>
+            <label>Namn <input name="label" placeholder="t.ex. Fredagsmatch" autocomplete="off" maxlength="40"></label>
+            <label>Spelets adress <input name="page" type="url" placeholder="https://…" autocomplete="off"></label>
+            <button type="submit" class="primary">Skapa lobby</button>
+          </form>
+          <p id="lobby-note" class="muted small" role="status"></p>
+          <div id="lobbies" class="list"></div>
+          <details id="old-lobbies" class="fold" hidden>
+            <summary>Inte längre aktiva <span id="old-lobby-count"></span></summary>
+            <div id="lobbies-old" class="list"></div>
+          </details>
+        </article>
+
+        <article class="panel">
           <h2>Meddelande till spelarna</h2>
           <p class="muted">Visas i en ruta med varningsljud på spelets sidor inom ungefär en minut, tills spelaren trycker OK.</p>
           <form id="new-message" class="form">

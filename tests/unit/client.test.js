@@ -25,8 +25,10 @@ test('create, join, relay; the owner is told to run the game with isHost already
   a.send({ fire: true });
   owner.send({ tick: 1 });
   await world.settle();
-  assert.deepEqual(owner.events('message'), [{ from: a.me, data: { fire: true } }]);
-  assert.deepEqual(a.events('message'), [{ from: owner.me, data: { tick: 1 } }]);
+  // F-063: each message carries the time it reached the room, in server time.
+  assert.deepEqual(owner.events('message').map(({ at, ...m }) => m), [{ from: a.me, data: { fire: true } }]);
+  assert.deepEqual(a.events('message').map(({ at, ...m }) => m), [{ from: owner.me, data: { tick: 1 } }]);
+  assert.ok(Number.isFinite(owner.events('message')[0].at));
 });
 
 test('B-016: a short offline/online blip with the connection intact ends "online" and loses nothing', async () => {

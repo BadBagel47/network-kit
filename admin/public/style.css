@@ -199,3 +199,5 @@ details li { margin: 4px 0; }
 .log .entry { display: flex; gap: 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--divider); }
 .log .entry .when { flex: none; width: 104px; font-size: 13px; color: var(--muted); font-family: var(--mono); }
 .log .entry .text { font-size: 14px; overflow-wrap: anywhere; }
+.item.wrap { flex-wrap: wrap; }
+.item .actions { display: flex; flex-wrap: wrap; gap: 6px; flex-direction: row; }

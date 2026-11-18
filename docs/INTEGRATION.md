@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.12** (0.12.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.13** (0.13.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -110,6 +110,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `hostCheckMs` | 3 s | How long a host has to answer when others report it silent. |
 | `idleCloseMs` | 60 min | Close the room when every connected page has been in the background this long (forgotten tabs); `null` never. Clients tell the room when their page is hidden (from 0.6, F-032). |
 | `heartbeatMs` | off | Clients send a free heartbeat this often (the platform answers it without waking the room); anyone, host or player, who has sent nothing for 2.5 heartbeats is treated as dropped, so a phone that loses its network is noticed in seconds instead of a minute or more. 2 s gives about 5 s. The room looks while messages arrive and when a timer fires, so in a quiet lobby it can take longer (from 0.6, F-051). |
+| `rttProbeMs` | off | Server-run rules: measure each participant's response time this often (the room asks the page when the participant's own messages arrive, so a quiet participant is not asked); the rules see it as `participant.rttMs` (from 0.13, F-076). 10 s is plenty. |
 | `closeAfterHostAwayMs` | off | Without takeover: close the room after waiting this long for its host. |
 | `passOwnerAfterMs` | off | Ownership passes on (to the host, else whoever has been in the room longest) when the owner has been away this long. |
 | `ownerLeave` | `'close'` | The owner leaving on purpose `'close'`s the room or `'pass'`es ownership on. |
@@ -130,6 +131,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `jurisdiction` | `null` | `'eu'` keeps rooms in the EU; may be a function `(env) => 'eu' \| null`. |
 | `limits` | 10 creations, 60 tries a minute | Per visitor address, checked before a room is woken: `{ createsPerMinute, attemptsPerMinute }` (attempts are look-ups and joins at a room code). Over the limit a visitor gets 429 or close code `RATE` for the rest of the minute. Counted per Worker instance, which is enough to make guessing codes or creating rooms in bulk pointless; `null` turns it off; may be a function of `env` (from 0.7, F-053). |
 | `admin` | – | Connects the game to the admin page (from 0.7, F-003, F-004): `{ binding, game, mode }` (`mode`, from 0.9: the rooms' mode for a game with several, F-057), a service binding to the admin Worker's `GameApi` entrypoint and the game's name; may be a function of `env`. New rooms, newcomers and new rounds are refused while the game is off or over its budget; participants already in a room come back; an emergency stop closes running rooms. See `docs/ADMIN.md`. |
+| `lobbyRole` | `'player'` | The role a lobby's guest link joins in (lobbies made on the admin page, from 0.13, F-059). |
 | `gate` | – | **Experimental**, replaced by `admin` for on/off (F-003): `async ({ request, env, action }) => true \| { open: false, reason }`, checked before a room is created or a connection is opened. |
 | `fallback` | – | `async (request, env, ctx) => Response` for other paths. |
 
@@ -244,7 +246,7 @@ Identities and owner keys are stored per game server, so games on the same site 
 | `status` | `'connecting'`, `'online'`, `'reconnecting'`, `'offline'`, `'closed'` |
 | `welcome` | the room, each time the connection is (re)established |
 | `room` | the room changed: `phase`, `round`, `seed` (host-run), `startsAt`, `paused`, `ownerId`, `hostId`, `settings`, `roles`, `places`, `placeSizes`, `data`, `players` (and `keys` for the owner) |
-| `message` | `{ from, data }` (host-run: from participants to the host, from the host to the others; server-run: `from` is `null`) |
+| `message` | `{ from, data, at }` (host-run: from participants to the host, from the host to the others; server-run: `from` is `null`). `at` is when the message reached the room, in server time (compare with `serverNow()`), from 0.13 (F-063): for example to see that a player's game runs slower than real time, or for buzz order and turn timers |
 | `host` | `{ snapshot }` this browser runs the game now: continue from `snapshot`, or start fresh when it is `null`. Also sent to the creator at the start and to a host whose page reloaded. `room.isHost` is already true. |
 | `welcome-state` | `{ data }` the room's state for newcomers (F-030), right after the welcome, also after a reconnect; also in `room.welcomeState` |
 | `role` | `{ isHost, isOwner }` when either changes for this client |
@@ -256,6 +258,7 @@ Identities and owner keys are stored per game server, so games on the same site 
 ### Methods and properties
 
 - `NetworkRoom.status(server, { basePath, mode })` (static, from 0.9, F-057): is the game, or one of its modes, open now? `{ open, reason, until, text, notices }`, asked without waking a room; for a mode played alone in the browser. Open when the admin page cannot be reached.
+- **Lobbies (from 0.13, F-059):** the admin page makes a lobby for a game: a room made ahead with a host link and a guest link (`…#nk-lobby=…`). `NetworkRoom.joinLobby(SERVER, { name, …options })` reads the link from the address bar (or `token`), asks the game's Worker (`POST <basePath>/lobby`) and joins the lobby's room: the host link as its owner (and host), the guest link with an invitation key (role `lobbyRole`), waiting for the host. It works while the game takes no new players, not after an emergency stop; the room closes when the lobby ends or is revoked. `room.lobby` is `{ role, ends }`. `readLobbyLink(hash)` tells whether a page was opened from one, `forgetLobbyLink()` takes it out of the address bar (`joinLobby` does when it read it there). Rejects with a `RoomError` whose `reason` is `lobby-ended` or `stopped`.
 - **Notices (from 0.10, F-066):** `watchNotices(SERVER, { basePath, mode })` asks the game's status at once, every minute while the page is visible and when it becomes visible again, and shows each new notice from the admin page (Cloudflare limiting soon or reached, a message from the owner, later a timer running out) in a box at the top of the screen with a strong background and a warning sound, until the player presses OK. Each notice is shown once per browser. Start it on every page of the game, also outside rooms (a game played alone in the browser too). Returns `{ stop, check, board }`. The box is made with a constructed style sheet, so it works under a strict Content-Security-Policy; colours can be changed with the CSS variables `--nk-notice-warning-bg`, `--nk-notice-warning-ink`, `--nk-notice-info-bg`, `--nk-notice-info-ink` and `--nk-notice-edge`. `new NoticeBoard().show({ id, level, title, text, until })` shows a game's own notice the same way; `playWarningSound({ level })` plays only the sound (browsers allow sound only after the player has touched the page; until then it waits for the first touch or key). The texts are English (`NOTICE_TEXT`); `{until}` becomes the local time. `NetworkRoom.status()` also returns `notices`. Costs one Worker request a minute per visible page.
 - **Game link (admin pass, from 0.9, F-058; from 0.11 for anyone, F-068):** a link from the admin page (`…#nk-admin=…`) lets the browser that opens it create, join and start games while the game takes no new players or is closed by Cloudflare limiting (not after an emergency stop). A room whose owner has a valid game link lets in those who have one of the room's invitation keys too, while the link is valid. The client takes the link from the address bar into storage by itself and sends it with `create`, `join` and `status`; `forgetAdminPass()` removes it from the browser.
 - `send(data, { to, reliable })`. `to`: `'all'` (default: everyone else who is admitted), `[ids]`, `{ role }` or `{ place }`. The sender never gets its own message. Messages are numbered and resent after a reconnect, and the room counts each once. `reliable: false` is for data the next message replaces anyway (positions). Returns `false` when nothing was sent: nobody is there to get it (a host alone in the room, or the host is away), this participant may not send (a role that does not send, or still waiting), or it is too large.
@@ -301,10 +304,12 @@ export const rules = {
   onJoin(room, participant) {},      // admitted, any role (also late joiners)
   onBack(room, participant) {},      // reconnected: send them what they need to see
   onDrop(room, participant) {}, onGone(room, participant) {},
-  onMessage(room, participant, data) {},   // only from roles that send
+  onMessage(room, participant, data, { at }) {},   // only from roles that send; `at`: when it reached the room (from 0.13, F-063)
   onTimer(room, name) {},            // after room.setTimer(name, ms)
 };
 ```
+
+A `participant` has `id`, `name`, `role`, `place`, `status`, `waiting` and `rttMs`: the median of the last few measured response times to the room (from 0.13, F-076), or `null` until the room option `rttProbeMs` has measured one. The page answers the room's probes by itself; a page could answer late on purpose, so use it with a cap, for example to subtract half of it from a buzz, at most 100 ms.
 
 `room` offers `code`, `phase`, `round`, `seed`, `ownerId`, `players`, `env` (the Worker's bindings), `now()`, `game` (the game's state), `data` (the shared room data), `send(to, data)`, `end()`, `admit()`, `setTimer(name, ms)`, `clearTimer(name)`.
 

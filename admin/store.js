@@ -14,6 +14,7 @@ const PASS_KEEP_MS = 14 * 86_400_000; // links no longer active stay listed (fol
 const PASS_USED_EVERY_MS = 60 * 60_000; // when a link was last used is stored at most hourly
 const LOG_KEEP_MS = 90 * 86_400_000; // the owner's log is kept 90 days (owner 2026-11-18)
 const LOG_MAX = 2_000;
+const LOBBY_PREFIX = 'lb_'; // lobby tokens (F-059); the room server knows the same prefix
 const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const hashText = async (text) => b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
 const MESSAGE_MAX = 20; // the owner's messages to players (F-066) kept at once
@@ -138,6 +139,71 @@ export class AdminStore {
       .slice(0, LOG_MAX);
   }
 
+  // ---- lobbies (F-059): a room made ahead, with a host link and a guest link
+
+  async lobbies() {
+    const now = this.now();
+    const all = [...(await this.storage.list({ prefix: 'lobby:' })).values()];
+    const out = [];
+    const gone = [];
+    for (const l of all) {
+      const endedAt = l.revoked ?? (l.expires <= now ? l.expires : null);
+      if (endedAt !== null && now - endedAt > PASS_KEEP_MS) {
+        gone.push(`lobby:${l.id}`);
+        continue;
+      }
+      if (!l.revoked && l.expires <= now && !l.expiryLogged) {
+        l.expiryLogged = true;
+        await this.storage.put(`lobby:${l.id}`, l);
+        await this.log(l.game, `Lobbyn ${l.label || l.id} gick ut (${l.game})`, 'lobby');
+      }
+      out.push({ ...l, state: l.revoked ? 'revoked' : l.expires <= now ? 'expired' : 'active' });
+    }
+    if (gone.length) await this.storage.delete(gone);
+    return out.sort((a, b) => b.created - a.created);
+  }
+
+  async createLobby({ game, label, hours, page }) {
+    const now = this.now();
+    const id = b64url(crypto.getRandomValues(new Uint8Array(6)));
+    const secret = () => b64url(crypto.getRandomValues(new Uint8Array(24)));
+    const h = Math.min(PASS_MAX_HOURS, Math.max(1, Math.round(Number(hours) || 24)));
+    let url = null;
+    try {
+      const u = new URL(String(page ?? ''));
+      if (u.protocol === 'https:' || u.hostname === 'localhost') url = `${u.origin}${u.pathname}${u.search}`;
+    } catch {
+      url = null;
+    }
+    // Kept as they are, so the owner can copy the links again from the list.
+    const lobby = {
+      id, game, label: String(label ?? '').slice(0, 40), page: url, created: now, expires: now + h * 3_600_000,
+      hostToken: `${LOBBY_PREFIX}${id}.${secret()}`, guestToken: `${LOBBY_PREFIX}${id}.${secret()}`, room: null,
+    };
+    await this.storage.put(`lobby:${id}`, lobby);
+    await this.log(game, `Lobby skapad${lobby.label ? `: ${lobby.label}` : ''} för ${game}, gäller till ${when(new Date(lobby.expires).toISOString())}`, 'lobby');
+    return lobby;
+  }
+
+  async revokeLobby(id) {
+    const lobby = await this.storage.get(`lobby:${id}`);
+    if (!lobby || lobby.revoked) return;
+    lobby.revoked = this.now();
+    await this.storage.put(`lobby:${id}`, lobby);
+    await this.log(lobby.game, `Lobbyn ${lobby.label || lobby.id} återkallad (${lobby.game}); rummet stängs inom en minut`, 'lobby');
+  }
+
+  /** Which lobby and which link a token is, if the lobby is still open. */
+  async lobbyFor(game, token) {
+    const t = String(token ?? '');
+    if (!t.startsWith(LOBBY_PREFIX)) return null;
+    const id = t.slice(LOBBY_PREFIX.length).split('.')[0];
+    const lobby = await this.storage.get(`lobby:${id}`);
+    if (!lobby || lobby.game !== game || lobby.revoked || lobby.expires <= this.now()) return null;
+    const role = t === lobby.hostToken ? 'host' : t === lobby.guestToken ? 'guest' : null;
+    return role ? { lobby, role } : null;
+  }
+
   // ---- game links (F-058, F-068)
 
   /**
@@ -186,6 +252,8 @@ export class AdminStore {
   }
 
   async checkPass(game, token) {
+    // A lobby's token is valid while its lobby is open (F-059); the room checks it.
+    if (String(token ?? '').startsWith(LOBBY_PREFIX)) return Boolean(await this.lobbyFor(game, token));
     const [id, secret] = String(token ?? '').split('.');
     if (!id || !secret) return false;
     const pass = await this.storage.get(`pass:${id}`);
@@ -275,6 +343,41 @@ export class AdminStore {
         (byGame[game] ??= []).push(...list);
       }
       return json({ days: KEEP_DAYS, quality: quality(byGame) });
+    }
+    if (url.pathname === '/lobbies' && request.method === 'GET') {
+      const all = url.searchParams.get('all') === '1';
+      return json((await this.lobbies()).filter((l) => all || l.state === 'active').map(({ expiryLogged, room, ...l }) => ({ ...l, code: room?.code ?? null })));
+    }
+    if (url.pathname === '/lobbies' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      if (typeof body?.game !== 'string' || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(body.game)) return json({ error: 'bad-game' }, 400);
+      if ((await this.lobbies()).filter((l) => l.state === 'active').length >= 30) return json({ error: 'too-many' }, 400);
+      const { room, expiryLogged, ...lobby } = await this.createLobby(body);
+      return json(lobby);
+    }
+    if (url.pathname.startsWith('/lobbies/') && request.method === 'DELETE') {
+      await this.revokeLobby(url.pathname.slice('/lobbies/'.length));
+      return json({ ok: true });
+    }
+    if (url.pathname === '/lobby-check' && request.method === 'POST') {
+      // The game's Worker asks which lobby a link belongs to (GameApi.lobby).
+      const { game, token } = await request.json().catch(() => ({}));
+      await this.seen(game);
+      const found = await this.lobbyFor(String(game), token);
+      if (!found) return json({ error: 'lobby-ended' });
+      return json({ id: found.lobby.id, role: found.role, expires: found.lobby.expires, room: found.lobby.room });
+    }
+    if (url.pathname === '/lobby-room' && request.method === 'POST') {
+      // The game's Worker made the lobby's room; the first one stored wins.
+      const { game, id, room } = await request.json().catch(() => ({}));
+      const lobby = await this.storage.get(`lobby:${id}`);
+      if (!lobby || lobby.game !== game) return json({ error: 'not-found' }, 404);
+      if (!lobby.room && room?.code) {
+        lobby.room = { code: String(room.code).slice(0, 16), ownerKey: String(room.ownerKey ?? ''), key: room.key ? String(room.key) : null };
+        await this.storage.put(`lobby:${id}`, lobby);
+        await this.log(game, `Lobbyn ${lobby.label || lobby.id} fick rummet ${lobby.room.code}`, 'lobby');
+      }
+      return json(lobby.room);
     }
     if (url.pathname === '/log' && request.method === 'GET') {
       return json(await this.logs(url.searchParams.get('game') || null));

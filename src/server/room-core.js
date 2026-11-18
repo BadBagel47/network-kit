@@ -33,6 +33,7 @@ import {
 import { newPlayerId, newSecret, randomSeed, sha256, sameSecret } from './random.js';
 
 const STATE_VERSION = 2;
+const LOBBY_PREFIX = 'lb_'; // lobby tokens from the admin page (F-059)
 const KNOWN_MAX = 100;
 const USAGE_SAVE_EVERY = 500;
 const USAGE_SAVE_SOON = 50; // unsaved messages that are worth a write before the room sleeps
@@ -74,6 +75,7 @@ export const DEFAULT_OPTIONS = Object.freeze({
   maxActiveMinutesPerDay: 12 * 60, // per room and UTC day: minutes in which messages arrived
   maxPendingSockets: 8, // connections that have not said hello yet
   nameMaxLength: 24,
+  rttProbeMs: null, // measure each participant's response time this often, for the rules (F-076); null: never
   rules: null, // server mode: the game's rules (see docs/INTEGRATION.md)
 });
 
@@ -415,6 +417,10 @@ export class RoomCore {
         if (this.identifiedSockets().length === 0) await this.deleteRoom();
         break;
       }
+      case 'lobby-end': {
+        await this.closeRoom('lobby-ended');
+        break;
+      }
       case 'rules': {
         await this.callRules('onTimer', timer.key);
         break;
@@ -445,7 +451,7 @@ export class RoomCore {
    * without a participating creator: the first participant who may lead
    * becomes owner (and host) (F-029).
    */
-  async create(settings = {}, code, { open = false } = {}) {
+  async create(settings = {}, code, { open = false, pass = null, lobbyEnds = null } = {}) {
     if (this.state && !this.state.closed) return { error: 'exists' };
     const o = this.options;
     const access = settings?.access === 'private' || settings?.access === 'open' ? settings.access : o.access;
@@ -480,9 +486,16 @@ export class RoomCore {
       data: null, // small shared data set by the host, the owner or the rules; everyone sees it
       game: null,
     };
+    // A lobby made on the admin page (F-059): its link opens the room while the
+    // game takes no new players, and the room closes when the lobby ends.
+    if (typeof pass === 'string' && pass && Number.isFinite(lobbyEnds) && lobbyEnds > now) {
+      this.state.pass = pass.slice(0, 100);
+      this.state.lobbyEnds = lobbyEnds;
+    }
     await this.dropSnapshot();
     await this.dropWelcomeStates();
     this.setTimer('cleanup', o.cleanupMs);
+    if (this.state.lobbyEnds) this.setTimer('lobby-end', this.state.lobbyEnds - now);
     if (o.mode === 'server') this.state.game = (await this.callRules('init')) ?? null;
     this.touch();
     await this.flush();
@@ -629,8 +642,10 @@ export class RoomCore {
     return Object.values(this.state.keys).some((k) => sameSecret(key, k.k) && (k.exp === null || k.exp > now));
   }
 
-  async isAdminPass(token) {
+  /** A game link (F-058); a lobby's token (F-059) only counts where `lobby` is true. */
+  async isAdminPass(token, { lobby = false } = {}) {
     if (!this.host.checkAdminPass || typeof token !== 'string' || !token) return false;
+    if (!lobby && token.startsWith(LOBBY_PREFIX)) return false;
     try {
       return (await this.host.checkAdminPass(token)) === true;
     } catch {
@@ -646,6 +661,16 @@ export class RoomCore {
     this.lastStopCheck = now;
     const status = await this.admission();
     if (status?.stopped) await this.closeRoom('stopped', CLOSE.GAME_CLOSED);
+    else await this.checkLobby();
+  }
+
+  /** A lobby room closes when its lobby was revoked on the admin page (F-059). */
+  async checkLobby() {
+    const s = this.state;
+    if (!s || s.closed || !s.lobbyEnds || !this.host.checkAdminPass) return true;
+    if (await this.isAdminPass(s.pass, { lobby: true })) return true;
+    await this.closeRoom('lobby-ended');
+    return false;
   }
 
   /** A new WebSocket was accepted; it must send "hello" first. */
@@ -820,6 +845,13 @@ export class RoomCore {
     // Any sign of life from a host that was asked to answer is an answer.
     if (this.hostCheck && player.id === this.hostCheck.id) this.cancelHostCheck();
 
+    // Response time for the rules (F-076): the page's answer to a probe, and now and then a new probe.
+    if (msg.t === 'probe') {
+      this.probed(player.id, msg.n);
+      return;
+    }
+    this.probe(ws, player.id);
+
     const isSnap = msg.t === 'snap' && this.options.mode === 'host' && player.id === this.state.hostId;
     const isWelcomeState = msg.t === 'welcome-state' && this.options.mode === 'host' && player.id === this.state.hostId;
     if (msg.t === 'msg' && size > this.options.maxMessageBytes) {
@@ -902,6 +934,7 @@ export class RoomCore {
     let returning = false;
     let reloaded = false;
 
+    if (isNew && s.lobbyEnds && !(await this.checkLobby())) return this.reject(ws, CLOSE.ROOM_CLOSED, 'lobby-ended');
     if (isNew) {
       // Which role? The owner key first, then a valid invitation key, then a
       // seat held before, then (open rooms only) what the client asks for.
@@ -913,7 +946,7 @@ export class RoomCore {
       // (F-058); so does an invitation to a room that was made with a valid game link (F-068).
       const closed = word && !word.open;
       const admin = closed && !word.stopped && (await this.isAdminPass(msg.adminPass));
-      const invited = closed && !admin && !word.stopped && s.pass && this.validKey(msg.key, now) && (await this.isAdminPass(s.pass));
+      const invited = closed && !admin && !word.stopped && s.pass && this.validKey(msg.key, now) && (await this.isAdminPass(s.pass, { lobby: true }));
       if (closed && !admin && !invited) return this.reject(ws, CLOSE.GAME_CLOSED, word.reason ?? 'off', { until: word.until ?? null });
       let role = null;
       let admitted = false;
@@ -999,7 +1032,7 @@ export class RoomCore {
       const pass = msg.adminPass.slice(0, 100);
       (this.adminPasses ??= new WeakMap()).set(ws, pass);
       // The owner's room made with a game link: its invitations get past "no new players" (F-068).
-      if (player.id === s.ownerId && s.pass !== pass && (await this.isAdminPass(pass))) s.pass = pass;
+      if (player.id === s.ownerId && !s.lobbyEnds && s.pass !== pass && (await this.isAdminPass(pass))) s.pass = pass;
     }
     this.remember(player);
     this.host.setAttachment(ws, { id: player.id, n: player.lastN, sid: player.sid, at: now });
@@ -1413,11 +1446,12 @@ export class RoomCore {
 
   async relay(player, msg) {
     const s = this.state;
+    const at = this.host.now(); // when it arrived at the room (F-063)
     if (this.options.mode === 'server') {
-      await this.callRules('onMessage', this.rulesPlayer(player), msg.d);
+      await this.callRules('onMessage', this.rulesPlayer(player), msg.d, { at });
       return;
     }
-    const text = JSON.stringify({ t: 'msg', from: player.id, d: msg.d });
+    const text = JSON.stringify({ t: 'msg', from: player.id, d: msg.d, at });
     if (player.id === s.hostId || this.role(player).sendsTo === 'all') {
       for (const id of this.targets(msg.to, player.id)) this.sendTo(id, text);
     } else if (s.hostId) {
@@ -1534,7 +1568,7 @@ export class RoomCore {
         const word = await this.admission();
         // A round started with a game link, or in a room made with one, is allowed while the game
         // takes no new players (F-058, F-068); never after a stop.
-        const passed = async () => (await this.isAdminPass(this.adminPasses?.get(ws))) || (s.pass && (await this.isAdminPass(s.pass)));
+        const passed = async () => (await this.isAdminPass(this.adminPasses?.get(ws))) || (s.pass && (await this.isAdminPass(s.pass, { lobby: true })));
         if (word && !word.open && !(!word.stopped && (await passed()))) {
           this.sendJson(ws, { t: 'err', code: 'game-closed', reason: word.reason, until: word.until ?? null, c, n: msg.n });
           return;
@@ -1704,7 +1738,44 @@ export class RoomCore {
   // ----------------------------------------------------- server-mode rules
 
   rulesPlayer(p) {
-    return { id: p.id, name: p.name, role: p.role, place: p.place, status: p.status, waiting: p.waiting };
+    return { id: p.id, name: p.name, role: p.role, place: p.place, status: p.status, waiting: p.waiting, rttMs: this.rttOf(p.id) };
+  }
+
+  // ---- response time per participant (F-076), for the rules
+
+  /** The median of the last few measured response times, or null. */
+  rttOf(id) {
+    const list = this.rtts?.get(id);
+    if (!list?.length) return null;
+    const sorted = [...list].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+
+  /** Ask this participant's page to answer at once, now and then (only when the game wants it). */
+  probe(ws, id) {
+    const every = this.options.rttProbeMs;
+    if (!every || !id) return;
+    this.probes ??= new Map();
+    const last = this.probes.get(id);
+    const now = this.host.now();
+    if (last && now - last.at < every) return;
+    const n = ((last?.n ?? 0) + 1) % 1_000_000;
+    this.probes.set(id, { at: now, n, sent: now });
+    this.sendJson(ws, { t: 'probe', n });
+  }
+
+  /** The page's answer: the time since the probe is the response time. */
+  probed(id, n) {
+    const p = this.probes?.get(id);
+    if (!p || p.n !== n || p.sent === null) return;
+    const ms = this.host.now() - p.sent;
+    p.sent = null;
+    if (ms < 0 || ms > 10_000) return;
+    this.rtts ??= new Map();
+    const list = this.rtts.get(id) ?? [];
+    list.push(ms);
+    if (list.length > 5) list.shift();
+    this.rtts.set(id, list);
   }
 
   rulesRoom() {

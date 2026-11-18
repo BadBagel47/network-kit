@@ -64,6 +64,7 @@ try {
     }
     if (u.pathname === '/api/passes') return route.fulfill({ json: [{ id: 'a', game: 'bricks', label: 'Pixel', created: now, expires: now + 86_400_000, state: 'active' }] });
     if (u.pathname === '/api/log') return route.fulfill({ json: [{ at: now, game: 'bricks', text: 'bricks lades till' }] });
+    if (u.pathname === '/api/lobbies') return route.fulfill({ json: [{ id: 'l1', game: 'bricks', label: 'Fredagsmatch', page: 'https://bricks.example/', created: now, expires: now + 86_400_000, hostToken: 'lb_l1.h', guestToken: 'lb_l1.g', code: 'ABCDEF', state: 'active' }] });
     if (u.pathname === '/api/quality') return route.fulfill({ json: { days: 7, quality: {} } });
     if (u.pathname.startsWith('/api/')) return route.fulfill({ json: [] });
     const file = u.pathname === '/' ? 'index.html' : u.pathname.slice(1);
@@ -89,6 +90,10 @@ try {
   await page.locator('#cards article').first().getByRole('button', { name: 'NÖDSTOPP' }).click();
   await page.waitForFunction(() => document.querySelector('#cards').textContent.includes('Nödstopp aktivt'));
   assert.equal(saved.at(-1).games.bricks.stopped, true);
+  await page.click('[data-tab=lankar]');
+  assert.match(await page.textContent('#lobbies'), /Fredagsmatch · bricks.*rum ABCDEF/s, 'a lobby with its room');
+  assert.equal(await page.locator('#lobbies button', { hasText: 'Kopiera gästlänk' }).count(), 1);
+  await page.screenshot({ path: `${shots}/admin-lankar.png`, fullPage: true });
   for (const tab of ['lankar', 'forbrukning', 'installningar', 'logg']) {
     await page.click(`[data-tab=${tab}]`);
     assert.equal(await page.locator(`#tab-${tab}`).isVisible(), true);

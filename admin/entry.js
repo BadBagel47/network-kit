@@ -28,6 +28,18 @@ export class GameApi extends WorkerEntrypoint {
     return (await res.json()).valid === true;
   }
 
+  /** Which lobby a host or guest link belongs to (F-059): { id, role, expires, room } or { error }. */
+  async lobby(game, token) {
+    const res = await this.store().fetch('https://store/lobby-check', { method: 'POST', body: JSON.stringify({ game: String(game), token: String(token ?? '') }) });
+    return res.json();
+  }
+
+  /** The room the game made for a lobby; the first one stored wins (F-059). */
+  async lobbyRoom(game, id, room) {
+    const res = await this.store().fetch('https://store/lobby-room', { method: 'POST', body: JSON.stringify({ game: String(game), id: String(id), room }) });
+    return res.json();
+  }
+
   /** An anonymous connection-quality summary from one of the game's pages (F-052). */
   async measure(game, summary) {
     await this.store().fetch('https://store/measure', { method: 'POST', body: JSON.stringify({ game: String(game), summary }) });

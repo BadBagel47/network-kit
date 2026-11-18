@@ -10,6 +10,14 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.13.0 (2026-11-18)
+
+Affects: games that want lobbies, fair buzz order or slow-game checks; nothing has to change. A game that compares whole `message` events (for example in tests) sees the new `at` field.
+
+- New (F-059): lobbies made on the admin page: a room made ahead for a game with a host link and a guest link. `NetworkRoom.joinLobby(server, options)` joins from the link (host as owner, guests with an invitation key, waiting for the host), also while the game takes no new players; the room closes when the lobby ends or is revoked. `readLobbyLink`, `forgetLobbyLink`, the server option `lobbyRole` and `POST <basePath>/lobby`. The admin page lists lobbies with their room code, copies the links again, revokes them, and logs it all.
+- New (F-063): every relayed message carries `at`, the time it reached the room (`message` event, and the rules' `onMessage(room, participant, data, { at })`).
+- New (F-076): server-run rules see each participant's measured response time, `participant.rttMs`, with the room option `rttProbeMs` (the page answers the room's probes by itself).
+
 ## 0.12.0 (2026-11-18)
 
 Affects: the admin page; games need no change. Games on 0.12 tell the admin page which network-kit version they run.

@@ -524,7 +524,7 @@ test('F-039: a role with sendsTo "all" reaches everyone directly, also while the
   const tv = await connect(world, core, { name: 'TV', role: 'viewer' });
   assert.equal(owner.room.roles.player.sendsTo, 'all');
   await send(core, a, { t: 'msg', d: { aim: 45 } });
-  for (const ws of [owner, b, tv]) assert.deepEqual(ws.last('msg'), { t: 'msg', from: a.id, d: { aim: 45 } });
+  for (const ws of [owner, b, tv]) assert.deepEqual((({ at, ...m }) => m)(ws.last('msg')), { t: 'msg', from: a.id, d: { aim: 45 } }); // F-063 adds `at`
   await send(core, a, { t: 'msg', d: 'just B', to: [b.id] });
   assert.equal(b.last('msg').d, 'just B');
   assert.notEqual(tv.last('msg').d, 'just B');

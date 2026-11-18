@@ -11,6 +11,7 @@
 // that cannot reach the server slows down and finally gives up, so a
 // forgotten tab does not keep knocking for ever.
 
+import { readLobbyLink, forgetLobbyLink } from './lobby.js';
 import {
   PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, gameClosedText, normalizeCode, isValidCode, PART_CHARS, splitIntoParts, PartJoiner,
 } from '../shared/protocol.js';
@@ -238,6 +239,41 @@ export class NetworkRoom {
     if (!isValidCode(normalizeCode(options?.code))) throw new RoomError(CLOSE.NOT_FOUND, 'not-found');
     const room = new NetworkRoom({ ...options, server });
     await room.connect();
+    return room;
+  }
+
+  /**
+   * Join a lobby made on the admin page (F-059) from its host or guest link:
+   * `token` defaults to the one in the address bar (`#nk-lobby=…`), which is
+   * then taken out of it. The host link joins as the room's owner; the guest
+   * link joins with an invitation key and waits for the host. Rejects with a
+   * RoomError whose reason is 'lobby-ended' or 'stopped' when it cannot.
+   */
+  static async joinLobby(server, options = {}) {
+    const token = options.token ?? readLobbyLink(options.window?.location?.hash);
+    if (!token) throw new RoomError(CLOSE.NOT_FOUND, 'no-lobby', 'This is not a lobby link.');
+    let res;
+    try {
+      res = await fetch(`${apiBase(server, options.basePath ?? '/rooms')}/lobby`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+    } catch {
+      throw new RoomError(0, 'network', 'Could not reach the server. Check your connection and try again.');
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.code) {
+      const reason = body.error ?? 'lobby-ended';
+      const text = reason === 'stopped' ? 'The game is stopped right now.' : reason === 'too-many-requests' ? 'Too many tries. Wait a minute and try again.' : 'This lobby has ended.';
+      throw new RoomError(CLOSE.GAME_CLOSED, reason, text);
+    }
+    if (!options.token) forgetLobbyLink(options.window);
+    const { token: _t, ...rest } = options;
+    const room = await NetworkRoom.join(server, body.role === 'host'
+      ? { ...rest, code: body.code, ownerKey: body.ownerKey }
+      : { ...rest, code: body.code, key: body.key });
+    room.lobby = { role: body.role, ends: body.ends ?? null };
     return room;
   }
 
@@ -610,7 +646,12 @@ export class NetworkRoom {
           this.lastHostData = Date.now();
           this.measure?.hostMessage();
         }
-        this.emit('message', { from: msg.from, data: msg.d });
+        // `at`: when the message reached the room, in server time (F-063).
+        this.emit('message', { from: msg.from, data: msg.d, at: Number.isFinite(msg.at) ? msg.at : null });
+        break;
+      case 'probe':
+        // The room measures the response time for the game's rules (F-076): answer at once.
+        this.rawSend({ t: 'probe', n: msg.n });
         break;
       case 'host':
         // This client runs the game now: continue from the snapshot (null: start fresh).
