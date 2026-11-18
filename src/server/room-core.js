@@ -238,6 +238,79 @@ export class RoomCore {
     this.storedParts = parts;
   }
 
+  // State for newcomers (F-030): set by the host (or the rules), one shared and
+  // optionally one per role, kept by the room and sent to everyone who joins
+  // or comes back, right after the welcome. Stored in parts like the snapshot:
+  //   welcome:<role|*>   { at, parts }   welcome:<role|*>:0 … text parts
+  async getWelcomeState(role) {
+    this.welcomeStates ??= new Map();
+    if (!this.welcomeStates.has(role)) {
+      const record = (await this.host.storage.get(`welcome:${role}`)) ?? null;
+      let d;
+      if (record) {
+        const texts = [];
+        for (let i = 0; i < record.parts; i++) texts.push((await this.host.storage.get(`welcome:${role}:${i}`)) ?? '');
+        try {
+          d = JSON.parse(texts.join(''));
+        } catch {
+          d = undefined;
+        }
+      }
+      this.welcomeStates.set(role, { d, parts: record?.parts ?? 0, dirty: false });
+    }
+    return this.welcomeStates.get(role);
+  }
+
+  async setWelcomeState(role, d) {
+    const entry = await this.getWelcomeState(role);
+    entry.d = d === null ? undefined : d;
+    entry.dirty = true;
+    // Stored at most every snapshotSaveMs, like the snapshot, with a trailing save.
+    const wait = (this.welcomeSavedAt ?? 0) + this.options.snapshotSaveMs - this.host.now();
+    if (wait <= 0) await this.saveWelcomeStates();
+    else this.cancelWelcomeSave ??= this.host.defer(wait, () => this.saveWelcomeStates());
+  }
+
+  async saveWelcomeStates() {
+    this.cancelWelcomeSave?.();
+    this.cancelWelcomeSave = null;
+    if (!this.state || !this.welcomeStates) return;
+    this.welcomeSavedAt = this.host.now();
+    for (const [role, entry] of this.welcomeStates) {
+      if (!entry.dirty) continue;
+      entry.dirty = false;
+      if (entry.d === undefined) {
+        await this.host.storage.delete(`welcome:${role}`);
+        for (let i = 0; i < entry.parts; i++) await this.host.storage.delete(`welcome:${role}:${i}`);
+        entry.parts = 0;
+        continue;
+      }
+      const text = JSON.stringify(entry.d);
+      const parts = Math.max(1, Math.ceil(text.length / PART_CHARS));
+      for (let i = 0; i < parts; i++) await this.host.storage.put(`welcome:${role}:${i}`, text.slice(i * PART_CHARS, (i + 1) * PART_CHARS));
+      await this.host.storage.put(`welcome:${role}`, { at: this.host.now(), parts });
+      for (let i = parts; i < entry.parts; i++) await this.host.storage.delete(`welcome:${role}:${i}`);
+      entry.parts = parts;
+    }
+  }
+
+  /** Send a participant the state for newcomers that fits their role, if there is one. */
+  async sendWelcomeState(ws, p) {
+    const forRole = await this.getWelcomeState(p.role);
+    const entry = forRole.d !== undefined ? forRole : await this.getWelcomeState('*');
+    if (entry.d !== undefined) this.sendJson(ws, { t: 'welcome-state', d: entry.d });
+  }
+
+  async dropWelcomeStates() {
+    for (const role of [...Object.keys(this.options.roles), '*']) {
+      const entry = await this.getWelcomeState(role);
+      if (entry.d === undefined && entry.parts === 0) continue;
+      entry.d = undefined;
+      entry.dirty = true;
+    }
+    await this.saveWelcomeStates();
+  }
+
   async dropSnapshot() {
     this.cancelSave?.();
     this.cancelSave = null;
@@ -340,7 +413,12 @@ export class RoomCore {
 
   // ------------------------------------------------------------------ rooms
 
-  async create(settings = {}, code) {
+  /**
+   * Create the room. `open`: created by the game's server for an invitation,
+   * without a participating creator: the first participant who may lead
+   * becomes owner (and host) (F-029).
+   */
+  async create(settings = {}, code, { open = false } = {}) {
     if (this.state && !this.state.closed) return { error: 'exists' };
     const o = this.options;
     const access = settings?.access === 'private' || settings?.access === 'open' ? settings.access : o.access;
@@ -356,7 +434,7 @@ export class RoomCore {
       settings: { access, lateJoin },
       ownerKey: newSecret(),
       ownerId: null,
-      ownerOpen: false, // true: ownership is free for the next eligible participant
+      ownerOpen: Boolean(open), // true: ownership is free for the next eligible participant
       hostId: null,
       hostEver: false,
       hostPending: o.mode === 'host', // the host has not confirmed that it runs the game
@@ -375,10 +453,12 @@ export class RoomCore {
       game: null,
     };
     await this.dropSnapshot();
+    await this.dropWelcomeStates();
     this.setTimer('cleanup', o.cleanupMs);
     if (o.mode === 'server') this.state.game = (await this.callRules('init')) ?? null;
     this.touch();
     await this.flush();
+    if (open) return { code, keys: this.publicKeys() };
     return { code, ownerKey: this.state.ownerKey, keys: this.publicKeys() };
   }
 
@@ -436,6 +516,9 @@ export class RoomCore {
     this.cancelSave?.();
     this.cancelSave = null;
     this.state = null;
+    this.welcomeStates = null;
+    this.cancelWelcomeSave?.();
+    this.cancelWelcomeSave = null;
     this.snapshot = null;
     this.snapshotLoaded = true;
     this.snapshotDirty = false;
@@ -671,10 +754,11 @@ export class RoomCore {
     if (this.hostCheck && player.id === this.hostCheck.id) this.cancelHostCheck();
 
     const isSnap = msg.t === 'snap' && this.options.mode === 'host' && player.id === this.state.hostId;
+    const isWelcomeState = msg.t === 'welcome-state' && this.options.mode === 'host' && player.id === this.state.hostId;
     if (msg.t === 'msg' && size > this.options.maxMessageBytes) {
       this.penalize(ws, 5);
       this.sendJson(ws, { t: 'err', code: 'too-large', n: msg.n });
-    } else if ((msg.t === 'msg' && this.maySend(player)) || isSnap || msg.t === 'cmd') {
+    } else if ((msg.t === 'msg' && this.maySend(player)) || isSnap || isWelcomeState || msg.t === 'cmd') {
       if (!this.count()) {
         await this.closeRoom('room-budget', CLOSE.BUDGET);
         await this.flush();
@@ -682,6 +766,10 @@ export class RoomCore {
       }
       if (msg.t === 'msg') await this.relay(player, msg);
       else if (isSnap) await this.storeSnapshot(player, msg);
+      else if (isWelcomeState) {
+        const role = typeof msg.role === 'string' && own(this.options.roles, msg.role) ? msg.role : '*';
+        await this.setWelcomeState(role, msg.d ?? null);
+      }
       else await this.command(ws, player, msg);
     } else {
       // Not something this participant may send: it costs them, not the room.
@@ -886,6 +974,8 @@ export class RoomCore {
       lastN: player.lastN,
       room: this.view(player.id),
     });
+    await this.sendWelcomeState(ws, player);
+
     if (tookOver) {
       await this.takeOver(player.id);
     } else {
@@ -1529,6 +1619,8 @@ export class RoomCore {
       },
       end() { s.phase = 'ended'; s.startsAt = null; core.touch(); core.broadcastRoom(); },
       admit: async () => { await core.admitWaiting(); core.broadcastRoom(); },
+      /** State for newcomers (F-030): sent to everyone who joins or comes back; per role if `role` is given. */
+      setWelcomeState: (data, role = null) => core.setWelcomeState(role && own(core.options.roles, role) ? role : '*', data ?? null),
       setTimer: (name, ms) => core.setTimer('rules', ms, String(name)),
       clearTimer: (name) => core.clearTimer('rules', String(name)),
     };

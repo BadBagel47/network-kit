@@ -10,6 +10,8 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+- New (F-029): `createRoom(env, { settings })` on the room server makes a room from the game's own server code (an invitation two people open); the first participant who may lead becomes owner and host. For Bricks.
+- New (F-030): `setWelcomeState(data, { role })` (host) and `room.setWelcomeState` (rules): a state the room keeps and sends to everyone who joins or comes back, shared or per role; event `welcome-state`. For Bricks and Buzzy.
 - New (F-039): role option `sendsTo: 'all'` lets a participant in a host-run room send like the host (everyone, a list, a role or a place), also while the host is away. Default unchanged (`'host'`). Asked by Vättigt.
 - New (F-040): `setSuccessors([ids])` lets the host name who takes over first (e.g. the player whose turn it is); one who does not answer is passed over. Asked by Vättigt.
 - New (F-051): room option `heartbeatMs`. Clients send their free heartbeat that often, and a participant silent for 2.5 heartbeats is treated as dropped, so a phone that loses its network is noticed in about 5 s (2 s heartbeat) instead of a minute. `CLOSE_UNRESPONSIVE` is exported by the client. The demo's crew game uses 2 s.

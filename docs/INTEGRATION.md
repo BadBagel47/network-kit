@@ -76,6 +76,8 @@ export default { fetch: rooms.fetch };
 }
 ```
 
+**Rooms made by the game's server (from 0.6, F-029):** `rooms.createRoom(env, { settings })` creates a room from the game's own Worker code, for example for an invitation two people open. Nobody in it created it: the first participant who enters in a role that may lead becomes owner and host. It returns `{ code, keys }` (no owner key); put the code and a role's key in the invitation. The demo's `POST /invite` shows it.
+
 Deploy with `npx wrangler deploy` from a GitHub Actions workflow using a `CLOUDFLARE_API_TOKEN` secret (see network-kit's `.github/workflows/deploy-demo.yml`). Local runs: `npx wrangler dev --var ROOM_JURISDICTION:` (local workerd has no jurisdictions).
 
 **The game's own pages from the same Worker:** a game can serve its pages (HTML, scripts, images, its copy of the client) from the same Worker as its rooms, so the game loads nothing from another site and needs no CORS settings. Add the folder to the wrangler config:
@@ -239,6 +241,7 @@ Identities and owner keys are stored per game server, so games on the same site 
 | `room` | the room changed: `phase`, `round`, `seed` (host-run), `startsAt`, `paused`, `ownerId`, `hostId`, `settings`, `roles`, `places`, `placeSizes`, `data`, `players` (and `keys` for the owner) |
 | `message` | `{ from, data }` (host-run: from participants to the host, from the host to the others; server-run: `from` is `null`) |
 | `host` | `{ snapshot }` this browser runs the game now: continue from `snapshot`, or start fresh when it is `null`. Also sent to the creator at the start and to a host whose page reloaded. `room.isHost` is already true. |
+| `welcome-state` | `{ data }` the room's state for newcomers (F-030), right after the welcome, also after a reconnect; also in `room.welcomeState` |
 | `role` | `{ isHost, isOwner }` when either changes for this client |
 | `peer` | `{ event, id, name, player, why, returning }` with `event` = `join`, `waiting`, `drop`, `back`, `gone`, `host` or `owner`. `back` is sent on every reconnect, also a silent one. The room list already includes the participant when `join` or `back` arrives, and `name` is always given (from 0.5.1). `returning` is true for a `join` by someone who was here before and was away longer than the grace period. |
 | `error` | `{ code, command }` a refused command: `place-taken`, `owner-only`, `host-only`, `not-allowed`, `too-large`, … |
@@ -251,6 +254,7 @@ Identities and owner keys are stored per game server, so games on the same site 
 - `send(data, { latest: kind })`: for values that change faster than they can be sent, where only the newest counts (an aim, a position, a slider). The client keeps the newest value of each `kind` and sends it as soon as the pace allows, also after a reconnect; older values of the same kind are never sent.
 - **Pace:** the client stays under the room's `maxMessagesPerSecond` by itself. Sent faster than that, reliable messages are held back and delivered in order, and `reliable: false` ones are dropped. After a reconnect, queued game messages up to `maxQueueAgeMs` old and all queued commands are resent, at the same pace.
 - `sendSnapshot(data, { force })` (host): give the room the full state to keep.
+- `setWelcomeState(data, { role })` (host): the state everyone gets right after the welcome when they join or come back, kept by the room so it reaches them even while the host is asleep (from 0.6, F-030). One shared state, or one per role (a big screen can get another view than the players); `null` removes it. Only the newest counts; it is stored at most every `snapshotSaveMs`. Server-run rules use `room.setWelcomeState(data, role)`. Unlike the snapshot it is sent to participants, so it must hold only what they may see.
 - `takePlace(name)`, `leavePlace()`, `pause()`, `resume()`.
 - Host or owner: `start()`, `cancelStart()`, `end()`, `admitWaiting()`, `assignPlace(id, name | null)`, `setData(data)`, `handover(id, snapshot)`, `setSuccessors([ids])` (who takes over first if the host is lost, e.g. the player whose turn it is; tried before the owner and the longest-present, and passed over if they do not answer; shown as `room.successors`; from 0.6, F-040).
 - Owner: `kick(id, { ban })`, `renewKey(role, { ttlMs })`, `setSettings({ access, lateJoin })`, `giveOwnership(id)`, `close()`. A ban also renews every invitation key and makes the room private, because otherwise the same link would let the person back in from a new tab.

@@ -145,6 +145,7 @@ export class NetworkRoom {
     this.partSeq = 0;
     this.leaveTimer = null;
     this.pendingSnapshot = null;
+    this.welcomeState = null; // the room's state for newcomers, if the game uses it (F-030)
     this.status = 'idle';
     this.ws = null;
     this.socketWelcomed = false;
@@ -545,6 +546,8 @@ export class NetworkRoom {
         // The newest state first, so a queued handover or leave passes on the right one.
         if (this.pendingSnapshot && this.isHost) this.transmit(this.pendingSnapshot);
         this.pendingSnapshot = null;
+        if (this.isHost) for (const text of this.pendingWelcomeStates?.values() ?? []) this.transmit(text);
+        this.pendingWelcomeStates?.clear();
         for (const m of this.queue) this.transmit(m.text);
         this.flushLatest(); // the newest values, after everything that must arrive in order
         this.setStatus('online');
@@ -566,6 +569,10 @@ export class NetworkRoom {
         // This client runs the game now: continue from the snapshot (null: start fresh).
         this.emit('host', { snapshot: msg.snapshot });
         if (this.autoHostReady) this.hostReady();
+        break;
+      case 'welcome-state':
+        this.welcomeState = msg.d;
+        this.emit('welcome-state', { data: msg.d });
         break;
       case 'owner':
         this.ownerKey = msg.key;
@@ -820,6 +827,25 @@ export class NetworkRoom {
     this.lastSnapshotAt = now;
     if (this.ready) return this.transmit(text);
     this.pendingSnapshot = text; // delivered after the reconnect
+    return true;
+  }
+
+  /**
+   * Host: the state everyone who joins or comes back gets right after the
+   * welcome, kept by the room (so it reaches them even while the host is
+   * asleep). One shared state, or one per role with `{ role }`; `null`
+   * removes it (F-030). Only the newest counts.
+   */
+  setWelcomeState(data, { role = null } = {}) {
+    if (!this.isHost) return false;
+    const text = JSON.stringify({ t: 'welcome-state', role, d: data ?? null });
+    if (this.tooLarge(text, this.maxSnapshotBytes, 'welcome-state')) return false;
+    this.pendingWelcomeStates ??= new Map();
+    if (this.ready) {
+      this.pendingWelcomeStates.delete(role ?? '*');
+      return this.transmit(text);
+    }
+    this.pendingWelcomeStates.set(role ?? '*', text); // delivered after the reconnect
     return true;
   }
 

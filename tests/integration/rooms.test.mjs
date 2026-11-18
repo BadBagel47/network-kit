@@ -223,6 +223,18 @@ test('F-051: a connection that goes silent is dropped within seconds in real wor
   assert.ok(took < 9_000, `noticed in ${took} ms`);
 });
 
+test('F-029 and F-030: a room from an invitation, and the state for newcomers, in real workerd', async () => {
+  const invite = await (await fetch(`${BASE}/invite`, { method: 'POST' })).json();
+  assert.ok(invite.code && invite.key);
+  const first = await join(invite.code, 'First', { key: invite.key });
+  await until(() => first.isOwner && first.isHost);
+  first.setWelcomeState({ board: 'kept by the room' });
+  await sleep(200);
+  const second = await join(invite.code, 'Second', { key: invite.key });
+  assert.equal(second.isOwner, false);
+  await until(() => second.welcomeState?.board === 'kept by the room');
+});
+
 test('a connection that floods the room is closed, and the others are not disturbed', async () => {
   const host = await create('Host');
   const a = await join(host.code, 'A');

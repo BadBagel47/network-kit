@@ -2,7 +2,7 @@
 // lost host, takeover where the game allows it, silent hosts, handing over.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { connect, send, cmd, drop } from './fake-host.js';
+import { FakeWorld, connect, send, cmd, drop, sendInParts } from './fake-host.js';
 import { setup, CREW, QUIZ } from './setup.js';
 import { CLOSE, CLOSE_UNRESPONSIVE } from '../../src/shared/protocol.js';
 import { memoryRules } from '../../examples/demo/memory-rules.js';
@@ -573,4 +573,68 @@ test('F-040: a preferred successor that does not answer is passed over for the n
   await drop(core, owner);
   await world.advance(CREW.takeoverMs + 3_000 + 3_200); // takeover wait, then B's 3 s to answer
   assert.equal(core.state.hostId, a.id);
+});
+
+// --------------------------------------------- F-029 rooms from an invitation
+
+test('F-029: a room made by the game\'s server: the first who may lead becomes owner and host', async () => {
+  const world = new FakeWorld();
+  const core = await world.core(CREW);
+  const made = await core.create({}, 'INVT', { open: true });
+  assert.equal(made.ownerKey, undefined, 'no owner key: nobody created it from a page');
+  assert.ok(made.keys.player.k);
+  const a = await connect(world, core, { name: 'A', key: made.keys.player.k });
+  assert.equal(core.state.ownerId, a.id);
+  assert.equal(core.state.hostId, a.id);
+  assert.ok(a.last('owner')?.key, 'A gets the owner key, so a reload keeps the ownership');
+  const b = await connect(world, core, { name: 'B', key: made.keys.player.k });
+  assert.equal(core.state.ownerId, a.id, 'the second is an ordinary participant');
+  assert.equal(b.room.ownerId, a.id);
+});
+
+test('F-029: a viewer opening the invitation first does not become owner', async () => {
+  const world = new FakeWorld();
+  const core = await world.core(CREW);
+  const made = await core.create({}, 'INVT', { open: true });
+  const tv = await connect(world, core, { name: 'TV', role: 'viewer', key: made.keys.viewer.k });
+  assert.equal(core.state.ownerId, null);
+  const a = await connect(world, core, { name: 'A', key: made.keys.player.k });
+  assert.equal(core.state.ownerId, a.id);
+  assert.equal(tv.room.ownerId, a.id);
+});
+
+// ------------------------------------------------- F-030 state for newcomers
+
+test('F-030: the host sets a state for newcomers, shared or per role; the room keeps it', async () => {
+  const { world, core, owner } = await setup(CREW);
+  await send(core, owner, { t: 'welcome-state', d: { board: 'all players see this' } });
+  await send(core, owner, { t: 'welcome-state', role: 'viewer', d: { board: 'the big screen' } });
+  const a = await connect(world, core, { name: 'A' });
+  assert.deepEqual(a.last('welcome-state'), { t: 'welcome-state', d: { board: 'all players see this' } });
+  const order = a.messages().map((m) => m.t);
+  assert.ok(order.indexOf('welcome') < order.indexOf('welcome-state'), 'right after the welcome');
+  const tv = await connect(world, core, { name: 'TV', role: 'viewer' });
+  assert.deepEqual(tv.last('welcome-state').d, { board: 'the big screen' });
+  // Only the host may set it.
+  await send(core, a, { t: 'welcome-state', d: 'mine' });
+  // Kept while the room sleeps, and sent to someone who comes back.
+  await world.advance(6_000);
+  const core2 = await world.sleep();
+  await drop(core2, a);
+  const back = await connect(world, core2, { name: 'A', pk: a.pk });
+  assert.deepEqual(back.last('welcome-state').d, { board: 'all players see this' });
+  // null removes it.
+  await send(core2, owner, { t: 'welcome-state', d: null });
+  const b = await connect(world, core2, { name: 'B' });
+  assert.equal(b.last('welcome-state'), undefined);
+});
+
+test('F-030: a large state for newcomers is kept in parts', async () => {
+  const { world, core, owner } = await setup(CREW);
+  const big = { cells: 'x'.repeat(100_000) };
+  await sendInParts(core, owner, { t: 'welcome-state', d: big });
+  await world.advance(6_000);
+  const core2 = await world.sleep();
+  const a = await connect(world, core2, { name: 'A' });
+  assert.equal(a.last('welcome-state').d.cells.length, 100_000);
 });

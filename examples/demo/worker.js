@@ -24,6 +24,12 @@ export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
     if (pathname === '/diag') return diagRoute(request, env); // measurement reports (F-047)
+    // An invitation made by the game's server (F-029): a crew room nobody has
+    // created from a page yet; the first player to open it becomes owner and host.
+    if (pathname === '/invite' && request.method === 'POST') {
+      const { code, keys } = await crewRooms.createRoom(env);
+      return Response.json({ code, key: keys.player.k });
+    }
     for (const [prefix, server] of routes) {
       if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return server.fetch(request, env, ctx);
     }

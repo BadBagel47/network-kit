@@ -85,6 +85,30 @@ export function createRoomServer(gameOptions = {}) {
     return null;
   }
 
+  async function makeRoom(env, { settings = {}, open = false } = {}) {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const code = newRoomCode(opts.codeLength);
+      const res = await stub(env, code).fetch('https://room/create', {
+        method: 'POST',
+        body: JSON.stringify({ code, settings, open }),
+      });
+      if (res.status === 409) continue;
+      return { status: res.status, body: await res.json() };
+    }
+    return { status: 503, body: { error: 'no-free-code' } };
+  }
+
+  /**
+   * For the game's own server code: create a room nobody in it created, e.g.
+   * for an invitation two people open (F-029). The first participant who may
+   * lead becomes owner and host. Returns { code, keys } (no owner key).
+   */
+  async function createRoom(env, { settings = {} } = {}) {
+    const made = await makeRoom(env, { settings, open: true });
+    if (made.status !== 200) throw new Error(`network-kit: could not create a room (${made.body.error ?? made.status})`);
+    return made.body;
+  }
+
   async function gate(request, env, action) {
     if (!opts.gate) return { open: true };
     const result = await opts.gate({ request, env, action });
@@ -113,16 +137,8 @@ export function createRoomServer(gameOptions = {}) {
       } catch {
         body = {};
       }
-      for (let attempt = 0; attempt < 6; attempt++) {
-        const code = newRoomCode(opts.codeLength);
-        const res = await stub(env, code).fetch('https://room/create', {
-          method: 'POST',
-          body: JSON.stringify({ code, settings: body.settings ?? {} }),
-        });
-        if (res.status === 409) continue;
-        return json(await res.json(), res.status, cors);
-      }
-      return json({ error: 'no-free-code' }, 503, cors);
+      const made = await makeRoom(env, { settings: body.settings ?? {} });
+      return json(made.body, made.status, cors);
     }
 
     if (parts.length === 0 && request.method === 'GET') {
@@ -216,7 +232,7 @@ export function createRoomServer(gameOptions = {}) {
       const url = new URL(request.url);
       if (url.pathname === '/create') {
         const body = await request.json();
-        const result = await this.core.create(body.settings, body.code);
+        const result = await this.core.create(body.settings, body.code, { open: body.open === true });
         return json(result, result.error ? 409 : 200);
       }
       if (url.pathname === '/info') {
@@ -256,5 +272,5 @@ export function createRoomServer(gameOptions = {}) {
     }
   }
 
-  return { fetch, RoomObject, options: opts };
+  return { fetch, createRoom, RoomObject, options: opts };
 }

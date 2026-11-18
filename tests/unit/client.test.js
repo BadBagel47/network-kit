@@ -484,3 +484,17 @@ test('F-051: the client beats as often as the room asks', async () => {
   assert.equal(owner.heartbeatMs, 2_000);
   assert.equal(a.heartbeatMs, 2_000);
 });
+
+test('F-030: the host sets the state for newcomers; a joiner gets it with an event', async () => {
+  const { world, owner } = await start(CREW);
+  assert.equal(owner.setWelcomeState({ turn: 3 }), true);
+  await world.settle();
+  const a = client(world, { name: 'A' });
+  const seen = [];
+  a.on('welcome-state', ({ data }) => seen.push(data));
+  await a.connect();
+  await world.settle();
+  assert.deepEqual(seen, [{ turn: 3 }]);
+  assert.deepEqual(a.welcomeState, { turn: 3 });
+  assert.equal(a.setWelcomeState({ turn: 4 }), false, 'only the host');
+});
