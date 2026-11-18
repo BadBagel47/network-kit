@@ -11,8 +11,6 @@
 | ID | Type | Title | Priority | Status | Suggested model |
 | --- | --- | --- | --- | --- | --- |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
-| F-057 | Feature | Modes per game on the admin page (e.g. Bricks' 1 Player and 2 Players, each with its own On/Off/Until), and a room-less check a game page can call ("is this mode open now?") without waking a room | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A rek"). Asked by the Bricks session 2026-11-18 (Bricks F-007); needed when Bricks moves | Standard |
-| F-058 | Feature | Administrators may play while a game is off: a signed-in administrator can start and join games (all modes) while public play is closed | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A rek"). Asked by the Bricks session 2026-11-18 (Bricks F-007); needed when Bricks moves. Note: private invitation links while public play is off are already covered by "Private only" | Strong, high |
 
 ## Done
 
@@ -63,6 +61,8 @@
 | F-008 | Feature | Usage on the admin page, plan, estimated cost and spending cap | 2026-11-18, v0.7.0 (usage per game 2026-11-17; plan, the month's cost on the Paid plan, a monthly cap) |
 | F-026 | Feature | Operations: what players see when a game is closed or the quota is used up, a budget for the demo, logging | 2026-11-18, v0.7.0 (plain reasons with the opening time; the demo is a game on the admin page and logs a tenth of its requests) |
 | F-052 | Feature | Automatic anonymous measurement in games | 2026-11-18, v0.7.0 (client option `measure`; summaries cleaned by the game's Worker, kept 7 days by the admin page, shown per game; the demo measures; not yet used by a game) |
+| F-057 | Feature | Modes per game on the admin page, and a room-less check for pages | 2026-11-18, v0.9.0 (asked by the Bricks session; unit tests and a local run of the admin Worker; not yet used by a game) |
+| F-058 | Feature | Administrators may play while a game is off | 2026-11-18, v0.9.0 (admin links per game, 30 days, revocable; owner's answer to Q9; unit tests and a local run of the admin Worker; not yet used on the owner's devices) |
 | F-029 | Feature | Rooms created by a game's server without a participating creator, with the first eligible participant leading | 2026-11-18, v0.6.0 (`createRoom(env)`; the demo's `POST /invite`; unit, client and workerd tests; not yet used by a game) |
 | F-030 | Feature | A room-kept state for newcomers, optionally per role | 2026-11-18, v0.6.0 (`setWelcomeState`, rules `room.setWelcomeState`, event `welcome-state`; kept in parts; tests incl. workerd) |
 | F-031 | Feature | Lifting a ban and the ban list for the owner (the other small additions from the games pass wait until a game needs them, owner's answer to Q3) | 2026-11-18, v0.6.0 (`room.bans`, `unban(id)`; unit tests) |

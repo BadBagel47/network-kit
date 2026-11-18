@@ -16,9 +16,16 @@ export class GameApi extends WorkerEntrypoint {
   }
 
   /** { open, reason, until, privateOnly, stopped } for the game (its Worker's name). */
-  async status(game) {
-    const res = await this.store().fetch(`https://store/status?game=${encodeURIComponent(String(game))}`);
+  async status(game, mode = null) {
+    const q = new URLSearchParams({ game: String(game), ...(mode ? { mode: String(mode) } : {}) });
+    const res = await this.store().fetch(`https://store/status?${q}`);
     return res.json();
+  }
+
+  /** Is this the owner's admin pass for the game (F-058)? */
+  async checkPass(game, token) {
+    const res = await this.store().fetch('https://store/check-pass', { method: 'POST', body: JSON.stringify({ game: String(game), token: String(token ?? '') }) });
+    return (await res.json()).valid === true;
   }
 
   /** An anonymous connection-quality summary from one of the game's pages (F-052). */

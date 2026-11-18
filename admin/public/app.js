@@ -53,6 +53,7 @@ async function load() {
   $('dashboard').hidden = false;
   render();
   loadQuality().catch(() => {});
+  loadPasses().catch(() => {});
 }
 
 function showSignIn(body) {
@@ -332,6 +333,59 @@ async function loadQuality() {
   table.append(body);
 }
 
+/* ---------- admin passes (F-058) ---------- */
+
+async function loadPasses() {
+  const res = await fetch('/api/passes');
+  if (!res.ok) return;
+  const list = await res.json();
+  const table = $('passes');
+  table.replaceChildren();
+  if (!list.length) {
+    $('passes-note').textContent = 'No admin links yet.';
+    return;
+  }
+  $('passes-note').textContent = '';
+  const head = el('tr');
+  for (const h of ['Game', 'Device', 'Made', 'Valid until', '']) head.append(el('th', { scope: 'col' }, h));
+  table.append(el('thead'));
+  table.tHead.append(head);
+  const body = el('tbody');
+  for (const p of list) {
+    const tr = el('tr');
+    tr.append(el('th', { scope: 'row' }, p.game), el('td', {}, p.label || '–'), el('td', {}, new Date(p.created).toLocaleDateString()), el('td', {}, new Date(p.expires).toLocaleDateString()));
+    const revoke = el('button', { type: 'button' }, 'Revoke');
+    revoke.addEventListener('click', async () => {
+      await fetch(`/api/passes/${encodeURIComponent(p.id)}`, { method: 'DELETE' });
+      loadPasses();
+    });
+    tr.append(cell(revoke));
+    body.append(tr);
+  }
+  table.append(body);
+}
+
+$('new-pass').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const game = form.game.value.trim().toLowerCase();
+  const page = form.page.value.trim();
+  const res = await fetch('/api/passes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ game, label: form.label.value.trim() }) });
+  const out = $('pass-link');
+  if (!res.ok) {
+    out.textContent = `Not made (${res.status}).`;
+    return;
+  }
+  const { token } = await res.json();
+  const link = page ? `${page.split('#')[0]}#nk-admin=${token}` : `#nk-admin=${token}`;
+  out.replaceChildren(
+    el('p', {}, 'Open this link once on the device (it is shown only now; it works 30 days):'),
+    el('code', { class: 'pass' }, link),
+  );
+  form.label.value = '';
+  loadPasses();
+});
+
 /* ---------- controls (F-003, F-004, F-008) ---------- */
 
 const cell = (child) => {
@@ -385,6 +439,24 @@ function renderControls() {
     if (g.share !== null && g.share !== undefined) share.value = String(g.share);
     tr.append(cell(share));
     body.append(tr);
+    // Modes of the game (F-057): their own On / Off / Until, under the game.
+    for (const [m, mv] of Object.entries(g.modes ?? {})) {
+      const mr = el('tr', { 'data-mode-of': name, 'data-mode': m, class: 'mode-row' });
+      mr.append(el('th', { scope: 'row' }, `· ${m}`));
+      mr.append(el('td', { class: 'muted' }, 'mode'));
+      const msel = el('select', { name: 'mode', 'aria-label': `${name} ${m}: mode` });
+      for (const [v, t] of [['on', 'On'], ['off', 'Off'], ['until', 'Off until']]) {
+        const o = el('option', { value: v }, t);
+        if (mv.mode === v) o.selected = true;
+        msel.append(o);
+      }
+      mr.append(cell(msel));
+      mr.append(cell(el('input', { name: 'until', type: 'datetime-local', value: toLocalInput(mv.until), 'aria-label': `${name} ${m}: off until` })));
+      const remove = el('button', { type: 'button', 'aria-label': `Remove the mode ${m} of ${name}` }, 'Remove');
+      remove.addEventListener('click', () => mr.remove());
+      mr.append(cell(remove), el('td'), el('td'));
+      body.append(mr);
+    }
   }
   table.append(body);
   const form = $('controls');
@@ -402,6 +474,7 @@ $('controls').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.currentTarget;
   const games = {};
+  const old = data.control?.settings.games ?? {};
   for (const tr of form.querySelectorAll('tr[data-game]')) {
     const get = (n) => tr.querySelector(`[name=${n}]`);
     const untilValue = get('until').value;
@@ -411,8 +484,26 @@ $('controls').addEventListener('submit', async (e) => {
       privateOnly: get('privateOnly').checked,
       stopped: get('stopped').checked,
       share: get('share').value === '' ? null : Number(get('share').value),
+      url: old[tr.dataset.game]?.url ?? null,
+      modes: {},
     };
   }
+  for (const tr of form.querySelectorAll('tr[data-mode-of]')) {
+    const untilValue = tr.querySelector('[name=until]').value;
+    games[tr.dataset.modeOf].modes[tr.dataset.mode] = {
+      mode: tr.querySelector('[name=mode]').value,
+      until: untilValue ? new Date(untilValue).toISOString() : null,
+    };
+  }
+  // A new game or mode typed below the table (F-057).
+  const newGame = form.newGame.value.trim().toLowerCase();
+  const newMode = form.newMode.value.trim().toLowerCase();
+  if (newGame) {
+    games[newGame] ??= { mode: 'on', until: null, privateOnly: false, stopped: false, share: null, url: null, modes: {} };
+    if (newMode) games[newGame].modes[newMode] ??= { mode: 'on', until: null };
+  }
+  form.newGame.value = '';
+  form.newMode.value = '';
   const account = { plan: form.plan.value, capUsd: form.capUsd.value === '' ? null : Number(form.capUsd.value), autoClose: form.autoClose.checked };
   $('saved').textContent = 'Saving…';
   const res = await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ account, games }) });

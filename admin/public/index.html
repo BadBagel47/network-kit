@@ -38,6 +38,10 @@
       <ul id="warnings" class="warnings"></ul>
       <form id="controls" class="controls">
         <div class="table-wrap"><table id="control-table"></table></div>
+        <div class="add-row">
+          <label>Add a game <input name="newGame" placeholder="worker name, e.g. bricks" autocomplete="off"></label>
+          <label>with a mode <input name="newMode" placeholder="optional, e.g. solo" autocomplete="off"></label>
+        </div>
         <fieldset class="account">
           <legend>Account</legend>
           <label>Plan
@@ -61,6 +65,18 @@
       </div>
       <p class="muted" id="period-note"></p>
       <div class="table-wrap"><table id="games"></table></div>
+
+      <h2>Admin links</h2>
+      <p class="muted">A personal link per game lets your own browser create, join and start games while the game is Off (not after Stop). Open it once on each device; it works 30 days and can be revoked here.</p>
+      <form id="new-pass" class="add-row">
+        <label>Game <input name="game" required placeholder="e.g. bricks" autocomplete="off"></label>
+        <label>Game page <input name="page" type="url" placeholder="https://…" autocomplete="off"></label>
+        <label>Device <input name="label" placeholder="e.g. Pixel" autocomplete="off"></label>
+        <button type="submit">Make a link</button>
+      </form>
+      <div id="pass-link" class="pass-link" role="status"></div>
+      <p class="muted" id="passes-note"></p>
+      <div class="table-wrap"><table id="passes"></table></div>
 
       <h2>Connection quality</h2>
       <p class="muted" id="quality-note"></p>

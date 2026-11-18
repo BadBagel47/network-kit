@@ -10,6 +10,13 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.9.0 (2026-11-18)
+
+Affects: games connected to the admin page; nothing has to change. For Bricks' move (asked by the Bricks session).
+
+- New (F-057): modes per game on the admin page (their own On / Off / Until under the game; a mode only closes more than the game), the `admin` option's `mode` for the rooms, and `NetworkRoom.status(server, { mode })` / `GET <basePath>/status?mode=…`, answered without waking a room, for a mode played alone in the browser. The admin page can add a game or a mode.
+- New (F-058): admin links. The admin page makes a personal link per game for the owner's devices (30 days, revocable); with it the browser creates, joins and starts games while the game is off or over its budget, not after an emergency stop. The client takes the link from the address bar into storage (`adminPass`, `forgetAdminPass`).
+
 ## 0.8.0 (2026-11-18)
 
 Affects: games that do not set `codeLength` (the owner's decision 2026-11-18).

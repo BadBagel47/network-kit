@@ -130,6 +130,19 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
     if (!s) return json({ days: 7, quality: {} });
     return json(await (await s.fetch('https://store/quality')).json());
   }
+  if (pathname === '/api/passes' || pathname.startsWith('/api/passes/')) {
+    // The owner's personal links per game (F-058).
+    if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);
+    if (request.method !== 'GET' && !sameOrigin(request)) return new Response('Forbidden', { status: 403 });
+    const s = store(env);
+    if (!s) return json({ error: 'no-store' }, 500);
+    const rest = pathname.slice('/api/passes'.length);
+    const res = await s.fetch(`https://store/passes${rest}`, {
+      method: request.method,
+      body: request.method === 'POST' ? (await request.text()).slice(0, 1024) : undefined,
+    });
+    return new Response(res.body, { status: res.status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+  }
   if (pathname === '/api/settings') {
     if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);
     if (request.method === 'GET') return json(await readSettings(env));

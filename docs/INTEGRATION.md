@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.8** (0.8.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.9** (0.9.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -129,7 +129,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `allowedOrigins` | `'*'` | Pages allowed to use the API (the game's site). |
 | `jurisdiction` | `null` | `'eu'` keeps rooms in the EU; may be a function `(env) => 'eu' \| null`. |
 | `limits` | 10 creations, 60 tries a minute | Per visitor address, checked before a room is woken: `{ createsPerMinute, attemptsPerMinute }` (attempts are look-ups and joins at a room code). Over the limit a visitor gets 429 or close code `RATE` for the rest of the minute. Counted per Worker instance, which is enough to make guessing codes or creating rooms in bulk pointless; `null` turns it off; may be a function of `env` (from 0.7, F-053). |
-| `admin` | – | Connects the game to the admin page (from 0.7, F-003, F-004): `{ binding, game }`, a service binding to the admin Worker's `GameApi` entrypoint and the game's name; may be a function of `env`. New rooms, newcomers and new rounds are refused while the game is off or over its budget; participants already in a room come back; an emergency stop closes running rooms. See `docs/ADMIN.md`. |
+| `admin` | – | Connects the game to the admin page (from 0.7, F-003, F-004): `{ binding, game, mode }` (`mode`, from 0.9: the rooms' mode for a game with several, F-057), a service binding to the admin Worker's `GameApi` entrypoint and the game's name; may be a function of `env`. New rooms, newcomers and new rounds are refused while the game is off or over its budget; participants already in a room come back; an emergency stop closes running rooms. See `docs/ADMIN.md`. |
 | `gate` | – | **Experimental**, replaced by `admin` for on/off (F-003): `async ({ request, env, action }) => true \| { open: false, reason }`, checked before a room is created or a connection is opened. |
 | `fallback` | – | `async (request, env, ctx) => Response` for other paths. |
 
@@ -254,6 +254,8 @@ Identities and owner keys are stored per game server, so games on the same site 
 
 ### Methods and properties
 
+- `NetworkRoom.status(server, { basePath, mode })` (static, from 0.9, F-057): is the game, or one of its modes, open now? `{ open, reason, until, text }`, asked without waking a room; for a mode played alone in the browser. Open when the admin page cannot be reached.
+- **Admin pass (from 0.9, F-058):** a personal link from the admin page (`…#nk-admin=…`) lets the owner's browser create, join and start games while the game is Off, Off until or over its budget (not after Stop). The client takes it from the address bar into storage by itself and sends it with `create`, `join` and `status`; `forgetAdminPass()` removes it from the browser.
 - `send(data, { to, reliable })`. `to`: `'all'` (default: everyone else who is admitted), `[ids]`, `{ role }` or `{ place }`. The sender never gets its own message. Messages are numbered and resent after a reconnect, and the room counts each once. `reliable: false` is for data the next message replaces anyway (positions). Returns `false` when nothing was sent: nobody is there to get it (a host alone in the room, or the host is away), this participant may not send (a role that does not send, or still waiting), or it is too large.
 - `send(data, { latest: kind })`: for values that change faster than they can be sent, where only the newest counts (an aim, a position, a slider). The client keeps the newest value of each `kind` and sends it as soon as the pace allows, also after a reconnect; older values of the same kind are never sent.
 - **Pace:** the client stays under the room's `maxMessagesPerSecond` by itself. Sent faster than that, reliable messages are held back and delivered in order, and `reliable: false` ones are dropped. After a reconnect, queued game messages up to `maxQueueAgeMs` old and all queued commands are resent, at the same pace.

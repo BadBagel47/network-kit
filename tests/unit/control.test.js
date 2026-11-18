@@ -141,3 +141,90 @@ test('F-003: a closed game refuses new rooms at the Worker; an unreachable admin
   const open = await server2.fetch(new Request('https://x/rooms', { method: 'POST', body: '{}' }), env(new Error('down')));
   assert.equal(open.status, 200);
 });
+
+// ------------------------------------------------- F-057 modes, F-058 admin passes
+
+test('F-057: a mode can be closed on its own; it never opens what the game has closed', () => {
+  const s = normalizeSettings({ games: { bricks: { modes: { solo: { mode: 'off' }, duo: { mode: 'until', until: '2026-11-18T18:00:00Z' }, 'Bad!': {} } } } });
+  assert.deepEqual(Object.keys(s.games.bricks.modes), ['solo', 'duo']);
+  assert.equal(gameStatus(s, null, 'bricks', NOW, 'solo').reason, 'off');
+  assert.equal(gameStatus(s, null, 'bricks', NOW, 'duo').reason, 'until');
+  assert.equal(gameStatus(s, null, 'bricks', NOW).open, true, 'the game itself is open');
+  const off = normalizeSettings({ games: { bricks: { mode: 'off', modes: { solo: { mode: 'on' } } } } });
+  assert.equal(gameStatus(off, null, 'bricks', NOW, 'solo').open, false);
+});
+
+function storeWith(now = () => NOW) {
+  const data = new Map();
+  const storage = {
+    get: async (k) => data.get(k), put: async (k, v) => void data.set(k, v),
+    delete: async (keys) => { for (const k of [].concat(keys)) data.delete(k); },
+    list: async ({ prefix }) => new Map([...data].filter(([k]) => k.startsWith(prefix)).sort()),
+    setAlarm: async () => {}, deleteAlarm: async () => {},
+  };
+  return new AdminStore({ storage }, {}, { now });
+}
+
+test('F-058: an admin pass is for one game, lasts 30 days and can be revoked', async () => {
+  let t = NOW;
+  const store = storeWith(() => t);
+  const call = async (path, method = 'GET', body) => (await store.fetch(new Request(`https://store${path}`, { method, body: body && JSON.stringify(body) }))).json();
+  const { token, pass } = await call('/passes', 'POST', { game: 'bricks', label: 'Pixel' });
+  assert.match(token, /^[A-Za-z0-9_-]{8}\.[A-Za-z0-9_-]{43}$/);
+  assert.equal(pass.hash, undefined, 'the secret is not shown again');
+  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token })).valid, true);
+  assert.equal((await call('/check-pass', 'POST', { game: 'vattigt', token })).valid, false, 'one game only');
+  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: `${token}x` })).valid, false);
+  const list = await call('/passes');
+  assert.deepEqual(list.map((p) => [p.game, p.label]), [['bricks', 'Pixel']]);
+  assert.equal(list[0].hash, undefined);
+  await call(`/passes/${pass.id}`, 'DELETE');
+  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token })).valid, false, 'revoked');
+  const second = await call('/passes', 'POST', { game: 'bricks' });
+  t += 31 * 86_400_000;
+  assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: second.token })).valid, false, 'expired');
+});
+
+test('F-058: with an admin pass the owner creates, joins and starts while public play is off, not after a stop', async () => {
+  const { world, core, owner } = await setup(CREW);
+  world.word = { open: false, reason: 'off', until: null, privateOnly: false, stopped: false };
+  core.host = { ...world.host(), checkAdminPass: async (t) => t === 'good.pass-xxxxxxxxxxxxxxxxxxxxx' };
+  const stranger = await connect(world, core, { name: 'Stranger' });
+  assert.equal(stranger.closedWith.code, CLOSE.GAME_CLOSED);
+  const ws = new (await import('./fake-host.js')).FakeSocket('Admin');
+  world.socketList.push(ws);
+  core.opened(ws);
+  await core.message(ws, JSON.stringify({ t: 'hello', v: 3, pk: 'admin-player-key-xxxxxxx', sid: 's1', name: 'Admin', adminPass: 'good.pass-xxxxxxxxxxxxxxxxxxxxx' }));
+  assert.ok(ws.last('welcome'), 'the admin gets in');
+  await cmd(core, owner, 'start');
+  assert.equal(owner.last('err').code, 'game-closed', 'the owner of the room has no pass');
+  await cmd(core, owner, 'handover', { id: ws.last('welcome').you.id }); // the admin runs the game now
+  await core.message(ws, JSON.stringify({ t: 'cmd', n: 2, c: 'host-ready' }));
+  await core.message(ws, JSON.stringify({ t: 'cmd', n: 3, c: 'start' }));
+  assert.notEqual(core.state.phase, 'lobby', 'the admin starts the round');
+  world.word = { open: false, reason: 'stopped', stopped: true, privateOnly: false };
+  core.host = { ...world.host(), checkAdminPass: async () => true };
+  const again = await connect(world, core, { name: 'Late' });
+  assert.equal(again.closedWith.code, CLOSE.GAME_CLOSED, 'a stop stops everyone');
+});
+
+test('F-057, F-058: pages ask whether a mode is open without waking a room; a pass opens it', async () => {
+  const asked = [];
+  const env = {
+    ROOMS: { idFromName: () => { throw new Error('no room may be woken'); } },
+    ADMIN: {
+      status: async (game, mode) => (asked.push([game, mode]), mode === 'solo' ? { open: false, reason: 'off', until: null, stopped: false } : { open: true }),
+      checkPass: async (game, token) => token === 'ok.token-xxxxxxxxxxxxxxxxxxxxxxx',
+    },
+  };
+  const server = createRoomServer({ admin: { binding: 'ADMIN', game: 'bricks', mode: 'duo' } });
+  const solo = await (await server.fetch(new Request('https://x/rooms/status?mode=solo'), env)).json();
+  assert.deepEqual(solo, { open: false, reason: 'off', until: null });
+  const withPass = await (await server.fetch(new Request('https://x/rooms/status?mode=solo', { headers: { 'x-admin-pass': 'ok.token-xxxxxxxxxxxxxxxxxxxxxxx' } }), env)).json();
+  assert.deepEqual(withPass, { open: true, reason: 'admin', until: null });
+  assert.deepEqual(asked[0], ['bricks', 'solo']);
+  // Creating a room asks for the rooms' own mode.
+  env.ROOMS = { idFromName: (n) => n, get: () => ({ fetch: async () => Response.json({ code: 'ABCDEF', ownerKey: 'k', keys: {} }) }) };
+  await server.fetch(new Request('https://x/rooms', { method: 'POST', body: '{}' }), env);
+  assert.deepEqual(asked.at(-1), ['bricks', 'duo']);
+});

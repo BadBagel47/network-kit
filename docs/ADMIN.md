@@ -57,6 +57,10 @@ Under *Account*:
 
 Players see why in plain words (`Off`, `Off until …`, `used up today's free quota … opens again at …`, `stopped by its owner`), in the game's own language if the game translates the kit's reasons.
 
+**Modes (F-057):** a game can have modes with their own On / Off / Until under the game's row (for example Bricks' 1 Player and 2 Players). Add a game or a mode under the table. A mode can only close more than the game: when the game is Off, its modes are too. Rooms ask for their own mode (`admin: { …, mode }`); a page asks for any mode with `NetworkRoom.status(server, { mode })`, without waking a room.
+
+**Admin links (F-058):** a personal link per game for the owner's own devices. With it, that browser can create, join and start games while the game is Off, Off until or over its budget, also with *Private only* on; an emergency stop still stops it. Make one under *Admin links* (game, the game's page, the device's name); the link is shown once, works 30 days and can be revoked. The game's Worker checks it with the admin page (kept a minute).
+
 **Connection quality (F-052):** games that turn measuring on (client option `measure`) send anonymous summaries; the page shows per game the response time to the room (typical and slow), how evenly positions arrive at the others, frame time, reconnects, host changes and the kinds of devices. Kept 7 days, then deleted.
 
 **Connecting a game:** the game's Worker gets a service binding to the admin Worker's `GameApi` entrypoint, and the room server the option `admin`:

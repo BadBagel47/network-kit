@@ -14,6 +14,7 @@
 //                                       heartbeat the platform answered (ms or null)
 //   host.admission()                    optional: the admin page's word on this game,
 //                                       { open, reason, until, privateOnly, stopped } (F-003)
+//   host.checkAdminPass(token)          optional: is this the owner's admin pass? (F-058)
 //
 // Everything that must survive hibernation lives in `this.state` (stored
 // under the key "room") or in socket attachments. The latest full game state
@@ -622,6 +623,15 @@ export class RoomCore {
     }
   }
 
+  async isAdminPass(token) {
+    if (!this.host.checkAdminPass || typeof token !== 'string' || !token) return false;
+    try {
+      return (await this.host.checkAdminPass(token)) === true;
+    } catch {
+      return false;
+    }
+  }
+
   /** An emergency stop closes running rooms too; looked at now and then while the room is busy. */
   async checkStopped() {
     if (!this.host.admission || !this.state || this.state.closed) return;
@@ -893,7 +903,9 @@ export class RoomCore {
       // A newcomer asks the admin page; the owner and those who were already
       // in this room come back whatever it says, so admitted games finish (F-003).
       const word = !isOwner && !standing ? await this.admission() : null;
-      if (word && !word.open) return this.reject(ws, CLOSE.GAME_CLOSED, word.reason ?? 'off', { until: word.until ?? null });
+      // The owner's admin pass lets them in while public play is off, but not after a stop (F-058).
+      const admin = word && (!word.open || word.privateOnly) && !word.stopped && (await this.isAdminPass(msg.adminPass));
+      if (word && !word.open && !admin) return this.reject(ws, CLOSE.GAME_CLOSED, word.reason ?? 'off', { until: word.until ?? null });
       let role = null;
       let admitted = false;
       if (isOwner) {
@@ -907,7 +919,7 @@ export class RoomCore {
           else role = keyRole;
         }
         // "Private rooms only" on the admin page: only invitation keys let newcomers in.
-        const open = s.settings.access === 'open' && !word?.privateOnly;
+        const open = s.settings.access === 'open' && (!word?.privateOnly || admin);
         const wanted = own(o.roles, msg.role) ? msg.role : null;
         const asked = open && wanted && !o.roles[wanted].needsKey ? wanted : null;
         if (!role && standing) role = asked ?? standing.role; // was here before: no key needed
@@ -975,6 +987,7 @@ export class RoomCore {
     }
 
     player.hidden = msg.hidden === true; // the page is in the background (F-032)
+    if (typeof msg.adminPass === 'string') (this.adminPasses ??= new WeakMap()).set(ws, msg.adminPass.slice(0, 100));
     this.remember(player);
     this.host.setAttachment(ws, { id: player.id, n: player.lastN, sid: player.sid, at: now });
     this.clearTimer('cleanup');
@@ -1506,7 +1519,8 @@ export class RoomCore {
       case 'start': {
         // A new round (also a rematch) needs the game to be open (F-003).
         const word = await this.admission();
-        if (word && !word.open) {
+        // A round started by the owner's own browser with an admin pass is allowed while public play is off (F-058).
+        if (word && !word.open && !(!word.stopped && (await this.isAdminPass(this.adminPasses?.get(ws))))) {
           this.sendJson(ws, { t: 'err', code: 'game-closed', reason: word.reason, until: word.until ?? null, c, n: msg.n });
           return;
         }

@@ -6,6 +6,9 @@ import { CloudflareAnalytics } from './analytics.js';
 import { normalizeSettings, budgetState, gameStatus } from './control.js';
 
 const BUDGET_EVERY_MS = 5 * 60_000;
+const PASS_DAYS = 30; // admin passes (F-058) last 30 days and can be revoked
+const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const hashText = async (text) => b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
 const KEEP_DAYS = 7; // measurement summaries are kept a week (F-052)
 const PER_DAY_MAX = 3_000;
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -68,8 +71,35 @@ export class AdminStore {
     return budget;
   }
 
-  async status(game) {
-    return gameStatus(await this.settings(), await this.budget(), game, this.now());
+  async status(game, mode = null) {
+    return gameStatus(await this.settings(), await this.budget(), game, this.now(), mode);
+  }
+
+  // ---- admin passes (F-058): a personal link per game for the owner's devices
+
+  async passes() {
+    const now = this.now();
+    const all = [...(await this.storage.list({ prefix: 'pass:' })).values()];
+    const expired = all.filter((p) => p.expires <= now);
+    if (expired.length) await this.storage.delete(expired.map((p) => `pass:${p.id}`));
+    return all.filter((p) => p.expires > now);
+  }
+
+  async createPass(game, label) {
+    const id = b64url(crypto.getRandomValues(new Uint8Array(6)));
+    const secret = b64url(crypto.getRandomValues(new Uint8Array(32)));
+    const now = this.now();
+    const pass = { id, game, label: String(label ?? '').slice(0, 40), hash: await hashText(secret), created: now, expires: now + PASS_DAYS * 86_400_000 };
+    await this.storage.put(`pass:${id}`, pass);
+    return { token: `${id}.${secret}`, pass: { ...pass, hash: undefined } };
+  }
+
+  async checkPass(game, token) {
+    const [id, secret] = String(token ?? '').split('.');
+    if (!id || !secret) return false;
+    const pass = await this.storage.get(`pass:${id}`);
+    if (!pass || pass.game !== game || pass.expires <= this.now()) return false;
+    return (await hashText(secret)) === pass.hash;
   }
 
   async fetch(request) {
@@ -107,7 +137,24 @@ export class AdminStore {
       return json({ days: KEEP_DAYS, quality: quality(byGame) });
     }
     if (url.pathname === '/status') {
-      return json(await this.status(url.searchParams.get('game') ?? ''));
+      return json(await this.status(url.searchParams.get('game') ?? '', url.searchParams.get('mode') || null));
+    }
+    if (url.pathname === '/passes' && request.method === 'GET') {
+      return json((await this.passes()).map(({ hash, ...p }) => p));
+    }
+    if (url.pathname === '/passes' && request.method === 'POST') {
+      const { game, label } = await request.json();
+      if (typeof game !== 'string' || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(game)) return json({ error: 'bad-game' }, 400);
+      if ((await this.passes()).length >= 50) return json({ error: 'too-many' }, 400);
+      return json(await this.createPass(game, label));
+    }
+    if (url.pathname.startsWith('/passes/') && request.method === 'DELETE') {
+      await this.storage.delete(`pass:${url.pathname.slice('/passes/'.length)}`);
+      return json({ ok: true });
+    }
+    if (url.pathname === '/check-pass' && request.method === 'POST') {
+      const { game, token } = await request.json();
+      return json({ valid: await this.checkPass(String(game), token) });
     }
     return json({ error: 'not-found' }, 404);
   }
