@@ -477,3 +477,10 @@ test('F-037: the newest value waits through a reconnect, but not into another ro
   await until(() => owner.events('message').length === 2, 4000);
   assert.deepEqual(owner.events('message').map((m) => m.data), [{ aim: 4 }, { fire: true }]);
 });
+
+test('F-051: the client beats as often as the room asks', async () => {
+  const { world, owner } = await start({ ...CREW, heartbeatMs: 2_000 });
+  const a = await join(world, 'A');
+  assert.equal(owner.heartbeatMs, 2_000);
+  assert.equal(a.heartbeatMs, 2_000);
+});

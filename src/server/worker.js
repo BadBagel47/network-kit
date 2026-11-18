@@ -197,6 +197,10 @@ export function createRoomServer(gameOptions = {}) {
             // already closed
           }
         },
+        lastPingAt(ws) {
+          // When the platform last answered this socket's heartbeat for us (F-051).
+          return ctx.getWebSocketAutoResponseTimestamp?.(ws)?.getTime() ?? null;
+        },
       };
       this.core = new RoomCore(host, coreOptions);
       // Heartbeats are answered without waking the room (no cost).

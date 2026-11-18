@@ -96,6 +96,8 @@ export class FakeWorld {
       close: (ws, code, reason) => {
         ws.closedWith ??= { code, reason };
       },
+      // A living client's heartbeat keeps arriving; a frozen one's stopped (F-051).
+      lastPingAt: (ws) => (ws.alive ? world.time : ws.lastPing ?? null),
     };
   }
 

@@ -1,7 +1,7 @@
 // The example games against the demo Worker in local workerd, with real clients.
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { NetworkRoom, CLOSE, RoomError, PROTOCOL } from '../../src/client/index.js';
+import { NetworkRoom, CLOSE, CLOSE_UNRESPONSIVE, RoomError, PROTOCOL } from '../../src/client/index.js';
 import { BASE, create, join, next, until, sleep, cleanup, raw } from './helpers.mjs';
 
 afterEach(cleanup);
@@ -201,6 +201,26 @@ test('uninvited connections: junk before hello closes the connection', async () 
   assert.equal((await second.closed).code, CLOSE.BAD_REQUEST);
   await sleep(100);
   assert.equal(host.players.length, 1, 'no ghost seat');
+});
+
+test('F-051: a connection that goes silent is dropped within seconds in real workerd', { timeout: 30_000 }, async () => {
+  const host = await create('Host');
+  const { ws, opened, closed } = raw(host.code);
+  await opened;
+  ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL, pk: 'silent-player-key-xxxxx', sid: 'silent', name: 'Quiet' }));
+  await until(() => host.players.some((p) => p.name === 'Quiet'));
+  const started = Date.now();
+  // The host keeps the room busy; the silent connection sends no heartbeat.
+  const busy = setInterval(() => host.send({ t: 'tick' }), 200);
+  const drop = next(host, 'peer', (e) => e.event === 'drop' && e.name === 'Quiet', 15_000);
+  try {
+    assert.equal((await closed).code, CLOSE_UNRESPONSIVE);
+    await drop;
+  } finally {
+    clearInterval(busy);
+  }
+  const took = Date.now() - started;
+  assert.ok(took < 9_000, `noticed in ${took} ms`);
 });
 
 test('a connection that floods the room is closed, and the others are not disturbed', async () => {

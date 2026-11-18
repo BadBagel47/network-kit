@@ -527,6 +527,11 @@ export class NetworkRoom {
         if (Number.isFinite(limits.rate)) this.rate = limits.rate;
         if (Number.isFinite(limits.maxMessageBytes)) this.maxMessageBytes = Math.min(limits.maxMessageBytes, this.ownLimits.message);
         if (Number.isFinite(limits.maxSnapshotBytes)) this.maxSnapshotBytes = Math.min(limits.maxSnapshotBytes, this.ownLimits.snapshot);
+        // The room may ask for a faster heartbeat, so it notices a dead connection sooner (F-051).
+        if (Number.isFinite(limits.heartbeatMs) && limits.heartbeatMs > 0 && limits.heartbeatMs !== this.heartbeatMs) {
+          this.heartbeatMs = limits.heartbeatMs;
+          if (this.heartbeatTimer) this.startHeartbeat();
+        }
         this.tokens = this.rate;
         this.tokensAt = Date.now();
         this.lastHostData = Date.now();

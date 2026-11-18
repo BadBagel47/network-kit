@@ -106,6 +106,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `takeover` | `false` | Host-run rooms: may another participant continue a lost host's game? Only while a game is in progress (countdown or playing); in the lobby and between rounds the room waits, unless the host is gone past the grace period. Off: the room always waits for the host. |
 | `takeoverMs` | 5 s | With takeover: how long to wait for the host first. |
 | `hostCheckMs` | 3 s | How long a host has to answer when others report it silent. |
+| `heartbeatMs` | off | Clients send a free heartbeat this often (the platform answers it without waking the room); anyone, host or player, who has sent nothing for 2.5 heartbeats is treated as dropped, so a phone that loses its network is noticed in seconds instead of a minute or more. 2 s gives about 5 s. The room looks while messages arrive and when a timer fires, so in a quiet lobby it can take longer (from 0.6, F-051). |
 | `closeAfterHostAwayMs` | off | Without takeover: close the room after waiting this long for its host. |
 | `passOwnerAfterMs` | off | Ownership passes on (to the host, else whoever has been in the room longest) when the owner has been away this long. |
 | `ownerLeave` | `'close'` | The owner leaving on purpose `'close'`s the room or `'pass'`es ownership on. |
@@ -176,7 +177,7 @@ Every role has its own invitation key, so a viewer link can never play. In an op
   - With `takeover: true`: after `takeoverMs` another participant who may host continues from the latest snapshot (`'host-change'` until it confirms). The owner is preferred, then whoever has been in the room longest.
   - Phones close the connection of a tab in the background within seconds, so during a game a host who switches app for longer than `takeoverMs` hands the game over. Raise `takeoverMs` if that is too eager for the game.
   - An owner who comes back while no game is in progress gets the host role back, with the kept state; during a game, the game stays where it runs.
-  - A host that looks connected but has gone silent (a phone asleep) is found when others report it (`hostSilentMs` on the client): the room asks it to answer within `hostCheckMs`.
+  - A host that looks connected but has gone silent (a phone asleep) is found when others report it (`hostSilentMs` on the client): the room asks it to answer within `hostCheckMs`. With `heartbeatMs` the room finds any silent participant by itself (F-051).
 - **Snapshot**: the full game state the host gives the room to keep. It is private to the host seat: the room only sends it back to whoever runs the game (the host after a reload, or the next host). What newcomers may see is sent as normal messages.
 - **Places**: named spots (posts, sides, teams) with a capacity. A playing participant holds at most one; everyone sees who holds what.
 - **Phases**: `lobby` → `countdown` → `playing` → `ended`; `start()` again begins a new round (a rematch) with a new seed. `cancelStart()` calls a countdown off. Pausing during a countdown does not stop the countdown; the game then starts paused.

@@ -13,6 +13,7 @@ export const crew = {
   places: ['captain', 'gunner', 'engineer'],
   roles: { player: { seats: 3 }, viewer: { seats: 4 } },
   autoPauseMs: 15_000,
+  heartbeatMs: 2_000, // a silent connection is noticed in about 5 seconds (F-051)
   maxMessagesPerDay,
 };
 

@@ -10,6 +10,8 @@
 //   host.getAttachment(ws) / host.setAttachment(ws, value)
 //   host.send(ws, text) / host.close(ws, code, reason)
 //   host.env                            the Worker's environment (for rules)
+//   host.lastPingAt(ws)                 optional: when the socket last sent a
+//                                       heartbeat the platform answered (ms or null)
 //
 // Everything that must survive hibernation lives in `this.state` (stored
 // under the key "room") or in socket attachments. The latest full game state
@@ -51,6 +53,8 @@ export const DEFAULT_OPTIONS = Object.freeze({
   takeover: false, // host-run rooms: may another participant take over a lost host's game?
   takeoverMs: 5_000, // ... after waiting this long for the host
   hostCheckMs: 3_000, // how long a host has to answer when others report it silent
+  heartbeatMs: null, // clients send a free heartbeat this often; a participant silent for
+  // 2.5 heartbeats is treated as dropped (F-051). null: the client's default (20 s), no check
   closeAfterHostAwayMs: null, // without takeover: close the room after waiting this long
   passOwnerAfterMs: null, // ownership passes on when the owner has been away this long
   ownerLeave: 'close', // owner leaving on purpose: 'close' the room or 'pass' ownership on
@@ -152,6 +156,8 @@ export class RoomCore {
     this.cancelUsageSave = null;
     this.dirty = false;
     this.alarmAt = null;
+    this.heard = new WeakMap(); // socket → when a message last arrived (in memory)
+    this.lastScan = 0;
   }
 
   // ---------------------------------------------------------------- storage
@@ -278,6 +284,7 @@ export class RoomCore {
       // A closed room only waits to be forgotten.
       if (due.some((t) => t.kind === 'cleanup')) await this.deleteRoom();
     } else {
+      await this.findSilent();
       for (const timer of due) {
         if (!this.state || this.state.closed) break; // closed or deleted by an earlier timer
         await this.runTimer(timer);
@@ -507,6 +514,30 @@ export class RoomCore {
     }
   }
 
+  /**
+   * Participants whose connection died without closing (wifi gone, phone in a
+   * tunnel) are found by their heartbeat (F-051): a socket that has sent
+   * nothing, not even a heartbeat, for 2.5 heartbeats is closed as
+   * unresponsive and the participant counts as dropped. Checked at most once a
+   * second while messages arrive, and when a timer fires: it costs nothing extra.
+   */
+  async findSilent() {
+    const beat = this.options.heartbeatMs;
+    if (!beat || !this.state || this.state.closed) return;
+    const now = this.host.now();
+    if (now - this.lastScan < 1000) return;
+    this.lastScan = now;
+    const limit = beat * 2.5;
+    for (const ws of this.identifiedSockets()) {
+      const att = this.host.getAttachment(ws);
+      const heard = Math.max(att.at ?? 0, this.heard.get(ws) ?? 0, this.host.lastPingAt?.(ws) ?? 0);
+      if (now - heard <= limit) continue;
+      this.shut(ws, CLOSE_UNRESPONSIVE, 'unresponsive');
+      await this.closed(ws, true);
+      if (!this.state || this.state.closed) return;
+    }
+  }
+
   /** Per-connection rate limit; false when the connection sends too fast. */
   allow(ws) {
     const rate = this.options.maxMessagesPerSecond;
@@ -572,6 +603,9 @@ export class RoomCore {
     if (!this.state || this.state.closed) return;
     const att = this.host.getAttachment(ws);
     if (!att || att.closed) return;
+    this.heard.set(ws, this.host.now());
+    await this.findSilent();
+    if (!this.state || this.state.closed) return;
     const size = byteLength(raw);
     let msg = null;
     if (size <= this.options.maxSnapshotBytes) {
@@ -1127,6 +1161,7 @@ export class RoomCore {
         rate: o.maxMessagesPerSecond,
         maxMessageBytes: o.maxMessageBytes,
         maxSnapshotBytes: o.maxSnapshotBytes,
+        heartbeatMs: o.heartbeatMs,
       },
       roles,
       places,

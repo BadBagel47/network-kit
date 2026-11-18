@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FakeWorld, connect, open, send, cmd, drop } from './fake-host.js';
 import { setup, CREW } from './setup.js';
-import { CLOSE } from '../../src/shared/protocol.js';
+import { CLOSE, CLOSE_UNRESPONSIVE } from '../../src/shared/protocol.js';
 import { memoryRules } from '../../examples/demo/memory-rules.js';
 
 test('B-014: the newest snapshot survives the room going to sleep', async () => {
@@ -473,4 +473,50 @@ test('V-B15: an owner who missed the renewed owner key gets it on the next conne
   assert.notEqual(key, created.ownerKey);
   const withKey = await connect(world, core, { name: 'A', pk: a.pk, owner: key });
   assert.equal(withKey.messages('owner').length, 0, 'not repeated to someone who has it');
+});
+
+// ------------------------------------------------- F-051 silent connections
+
+test('F-051: a participant whose connection died silently is dropped after 2.5 heartbeats', async () => {
+  const { world, core, owner } = await setup({ ...CREW, heartbeatMs: 2_000 });
+  assert.equal(owner.room.settings.heartbeatMs, 2_000, 'the room tells clients how often to beat');
+  const a = await connect(world, core, { name: 'A' });
+  const b = await connect(world, core, { name: 'B' });
+  a.alive = false; // wifi gone: no heartbeat, but the socket is not closed
+  await world.advance(4_000);
+  await send(core, owner, { t: 'msg', d: 'tick' }); // any traffic lets the room look
+  assert.equal(a.closedWith, null, 'not yet: 4 s is under 2.5 heartbeats');
+  await world.advance(2_000);
+  await send(core, owner, { t: 'msg', d: 'tick' });
+  assert.equal(a.closedWith?.code, CLOSE_UNRESPONSIVE);
+  assert.equal(owner.room.players.find((p) => p.id === a.id).status, 'away');
+  assert.equal(owner.messages('ev').filter((e) => e.e === 'drop' && e.id === a.id).length, 1);
+  assert.equal(b.closedWith, null, 'a living participant stays');
+  // Back with the same identity: an ordinary return within the grace period.
+  const a2 = await connect(world, core, { name: 'A', pk: a.pk });
+  assert.equal(a2.id, a.id);
+  assert.equal(owner.last('ev').e, 'back');
+});
+
+test('F-051: a host that dies silently during a game is found without anyone reporting it', async () => {
+  const { world, core, owner } = await setup({ ...CREW, heartbeatMs: 2_000 });
+  const a = await connect(world, core, { name: 'A' });
+  await cmd(core, owner, 'start');
+  await world.advance(3_500);
+  owner.alive = false;
+  await world.advance(6_000);
+  await send(core, a, { t: 'msg', d: 'input' });
+  assert.equal(owner.closedWith?.code, CLOSE_UNRESPONSIVE);
+  await world.advance(CREW.takeoverMs + 100);
+  assert.equal(core.state.hostId, a.id, 'the other player took over');
+});
+
+test('F-051: without heartbeatMs nobody is dropped for being quiet', async () => {
+  const { world, core, owner } = await setup(CREW);
+  const a = await connect(world, core, { name: 'A' });
+  a.alive = false;
+  await world.advance(60_000);
+  await send(core, owner, { t: 'msg', d: 'tick' });
+  assert.equal(a.closedWith, null);
+  assert.equal(owner.room.settings.heartbeatMs, null);
 });
