@@ -40,6 +40,17 @@ try {
     }
     console.log(`${name}: ${JSON.stringify(blocks)}`);
   }
+  // Today's room requests by kind of call, and the WebSocket message counts, per namespace.
+  const a = await analytics.account();
+  const day = usage.today;
+  const q = `query ($a: String!, $d: Date!) { viewer { accounts(filter: { accountTag: $a }) {
+    byType: durableObjectsInvocationsAdaptiveGroups(limit: 100, filter: { date_geq: $d, date_leq: $d }) { sum { requests } dimensions { type namespaceId } }
+    ws: durableObjectsPeriodicGroups(limit: 100, filter: { date_geq: $d, date_leq: $d }) { sum { inboundWebsocketMsgCount outboundWebsocketMsgCount } max { activeWebsocketConnections } dimensions { namespaceId } } } } }`;
+  const out = await analytics.graphql(q, { a, d: day });
+  const acc = out.data?.viewer?.accounts?.[0] ?? {};
+  for (const r of acc.byType ?? []) console.log(`  by type: ${String(r.dimensions.namespaceId).slice(0, 8)} ${r.dimensions.type}: ${r.sum.requests}`);
+  for (const r of acc.ws ?? []) console.log(`  websocket: ${String(r.dimensions.namespaceId).slice(0, 8)} in=${r.sum.inboundWebsocketMsgCount} out=${r.sum.outboundWebsocketMsgCount} maxConnections=${r.max.activeWebsocketConnections}`);
+  if (out.partialErrors) console.log(`  errors: ${out.partialErrors.join('; ')}`);
 } catch (e) {
   console.log(`Could not describe the room datasets: ${e.message}`);
 }
