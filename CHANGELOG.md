@@ -10,6 +10,12 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.11.2 (2026-11-18)
+
+Affects: the admin page only; games need no change.
+
+- New (F-070): the *Games* table hides games that are not connected, that is Workers that have never asked the admin page (such as the admin page itself or another project's Worker), whose settings would do nothing. A checkbox, off by default, shows them marked *Not connected*; their settings are kept when saving. A game counts as connected once it asks for its status, checks a game link or sends a measurement (stored at most once an hour).
+
 ## 0.11.1 (2026-11-18)
 
 Affects: the admin page only; games need no change.

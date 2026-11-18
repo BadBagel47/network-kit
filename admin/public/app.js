@@ -511,8 +511,12 @@ function readMode(tr) {
 function renderControls() {
   const control = data.control;
   if (!control) return;
-  const { settings, budget, status } = control;
+  const { settings, budget, status, connected = {} } = control;
   const names = Object.keys(status).sort();
+  // Games that have never asked this page are hidden unless asked for (F-070);
+  // their rows stay in the form, so saving keeps their settings.
+  const showAll = $('show-unconnected').checked;
+  const isConnected = (name) => Boolean(connected[name]);
   const table = $('control-table');
   table.replaceChildren();
   const head = el('tr');
@@ -525,8 +529,12 @@ function renderControls() {
     const st = status[name];
     const tr = el('tr', { 'data-game': name });
     tr.append(el('th', { scope: 'row' }, name));
-    const [text, cls] = nowText(st);
+    const [text, cls] = isConnected(name) ? nowText(st) : ['Not connected', 'muted'];
     tr.append(el('td', { class: cls }, text));
+    if (!isConnected(name)) {
+      tr.classList.add('unconnected');
+      tr.hidden = !showAll;
+    }
     tr.append(...modeCells(g, name));
     // The emergency stop is a button: it acts at once (F-067).
     const stopped = el('input', { name: 'stopped', type: 'hidden', value: g.stopped ? '1' : '' });
@@ -545,7 +553,8 @@ function renderControls() {
     body.append(tr);
     // Modes of the game (F-057): their own mode and timer, under the game.
     for (const [m, mv] of Object.entries(g.modes ?? {})) {
-      const mr = el('tr', { 'data-mode-of': name, 'data-mode': m, class: 'mode-row' });
+      const mr = el('tr', { 'data-mode-of': name, 'data-mode': m, class: isConnected(name) ? 'mode-row' : 'mode-row unconnected' });
+      mr.hidden = !isConnected(name) && !showAll;
       mr.append(el('th', { scope: 'row' }, `· ${m}`));
       const [mt, mc] = nowText(st?.modes?.[m]);
       mr.append(el('td', { class: mc }, mt));
@@ -557,6 +566,8 @@ function renderControls() {
     }
   }
   table.append(body);
+  const hiddenCount = names.filter((n) => !isConnected(n)).length;
+  $('unconnected-count').textContent = hiddenCount ? ` (${hiddenCount})` : '';
   const form = $('controls');
   form.plan.value = settings.account.plan;
   form.capUsd.value = settings.account.capUsd ?? '';
@@ -616,6 +627,11 @@ function render() {
 }
 
 /* ---------- controls ---------- */
+
+$('show-unconnected').addEventListener('change', (e) => {
+  // Show or hide without drawing the table again, so unsaved changes stay.
+  for (const tr of document.querySelectorAll('#control-table tr.unconnected')) tr.hidden = !e.currentTarget.checked;
+});
 
 for (const b of document.querySelectorAll('[data-period]')) {
   b.addEventListener('click', () => {

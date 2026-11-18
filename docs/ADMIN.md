@@ -48,6 +48,7 @@ The *Games* section has one row per game (each game is a Worker; its name is the
 - **Emergency stop:** a button. *Stop now* turns everyone away and closes running rooms within about 30 seconds; no game link gets past it. *Lift the stop* opens again.
 - **Share %:** the game's share of each daily free limit. Empty means an equal share of what the other games leave.
 - **Now:** what the game or mode says at this moment, and when a running timer ends.
+- **Not connected (F-070):** Workers that have never asked the admin page (for example the admin page itself, or another project's Worker on the account) are hidden; their settings would do nothing. *Show games that are not connected* shows them, marked. A game counts as connected once it asks for its status, checks a game link or sends a measurement.
 
 Under *Account*:
 

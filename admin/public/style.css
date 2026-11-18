@@ -119,3 +119,5 @@ div.timer [hidden] { display: none; }
 button.stop { border-color: var(--critical); color: var(--critical); font-weight: 600; }
 button.lift { border-color: var(--critical); background: var(--critical); color: #fff; font-weight: 600; }
 .pass-link button { margin-top: 6px; }
+label.check { display: flex; gap: 8px; align-items: center; }
+tr.unconnected th, tr.unconnected td { opacity: 0.6; }

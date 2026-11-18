@@ -15,6 +15,7 @@ const hashText = async (text) => b64url(new Uint8Array(await crypto.subtle.diges
 const MESSAGE_MAX = 20; // the owner's messages to players (F-066) kept at once
 const MESSAGE_MIN_MS = 5 * 60_000;
 const MESSAGE_MAX_MS = 7 * 86_400_000;
+const SEEN_EVERY_MS = 60 * 60_000; // how often a game's last contact is stored (F-070)
 const KEEP_DAYS = 7; // measurement summaries are kept a week (F-052)
 const PER_DAY_MAX = 3_000;
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -137,10 +138,34 @@ export class AdminStore {
     return (await hashText(secret)) === pass.hash;
   }
 
+  /**
+   * A game asked the admin page (status, a game link or a measurement): it is
+   * connected (F-070). Written at most once an hour per game.
+   */
+  async seen(game) {
+    if (typeof game !== 'string' || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(game)) return;
+    const now = this.now();
+    this.seenAt ??= new Map();
+    if (now - (this.seenAt.get(game) ?? 0) < SEEN_EVERY_MS) return;
+    let stored = (await this.storage.get(`seen:${game}`)) ?? 0;
+    if (now - stored >= SEEN_EVERY_MS) {
+      stored = now;
+      await this.storage.put(`seen:${game}`, now);
+    }
+    this.seenAt.set(game, stored);
+  }
+
+  /** game → when it last asked the admin page. */
+  async connected() {
+    const out = {};
+    for (const [key, at] of await this.storage.list({ prefix: 'seen:' })) out[key.slice(5)] = at;
+    return out;
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === '/settings' && request.method === 'GET') {
-      return json({ settings: await this.settings(), budget: await this.budget() });
+      return json({ settings: await this.settings(), budget: await this.budget(), connected: await this.connected() });
     }
     if (url.pathname === '/settings' && request.method === 'PUT') {
       const settings = normalizeSettings(await request.json(), this.now());
@@ -154,6 +179,7 @@ export class AdminStore {
       // One anonymous summary from a game's page (already cleaned by the room server).
       const { game, summary } = await request.json();
       if (typeof game !== 'string' || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(game) || !summary) return json({ error: 'bad' }, 400);
+      await this.seen(game);
       const key = `m:${day(this.now())}:${game}`;
       const list = (await this.storage.get(key)) ?? [];
       if (list.length < PER_DAY_MAX) {
@@ -172,6 +198,7 @@ export class AdminStore {
       return json({ days: KEEP_DAYS, quality: quality(byGame) });
     }
     if (url.pathname === '/status') {
+      await this.seen(url.searchParams.get('game'));
       return json(await this.status(url.searchParams.get('game') ?? '', url.searchParams.get('mode') || null));
     }
     if (url.pathname === '/passes' && request.method === 'GET') {
@@ -204,6 +231,7 @@ export class AdminStore {
     }
     if (url.pathname === '/check-pass' && request.method === 'POST') {
       const { game, token } = await request.json();
+      await this.seen(game);
       return json({ valid: await this.checkPass(String(game), token) });
     }
     return json({ error: 'not-found' }, 404);

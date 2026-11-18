@@ -394,3 +394,20 @@ test('F-068: a room made without a game link lets no invited newcomer in while t
   assert.equal(friend.closedWith.code, CLOSE.GAME_CLOSED);
   assert.equal(core.state.pass, undefined);
 });
+
+test('F-070: a game that asks the admin page counts as connected; its last contact is stored at most hourly', async () => {
+  let t = NOW;
+  const store = storeWith(() => t);
+  const call = async (path, method = 'GET', body) => (await store.fetch(new Request(`https://store${path}`, { method, body: body && JSON.stringify(body) }))).json();
+  assert.deepEqual((await call('/settings')).connected, {});
+  await call('/status?game=bricks');
+  await call('/check-pass', 'POST', { game: 'vattigt', token: 'x.y' });
+  await call('/status?game=Bad!');
+  assert.deepEqual((await call('/settings')).connected, { bricks: NOW, vattigt: NOW });
+  t += 10 * 60_000;
+  await call('/status?game=bricks');
+  assert.equal((await call('/settings')).connected.bricks, NOW, 'not written again within the hour');
+  t += 60 * 60_000;
+  await call('/status?game=bricks');
+  assert.equal((await call('/settings')).connected.bricks, t);
+});

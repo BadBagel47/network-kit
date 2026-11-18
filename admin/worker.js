@@ -98,7 +98,7 @@ async function readSettings(env) {
 async function usageWithControl(env, deps) {
   const data = await usage(env, deps);
   if (data.error) return data;
-  const { settings } = await readSettings(env);
+  const { settings, connected = {} } = await readSettings(env);
   const budget = budgetState(settings, data);
   const now = deps.now();
   // What each game and each of its modes says now, and when a running timer ends (F-067).
@@ -114,7 +114,7 @@ async function usageWithControl(env, deps) {
       modes: Object.fromEntries(Object.keys(settings.games[n]?.modes ?? {}).map((m) => [m, one(n, m)])),
     }]),
   );
-  return { ...data, control: { settings, budget, status } };
+  return { ...data, control: { settings, budget, status, connected } };
 }
 
 /** The request handler; `deps` lets tests replace the clock and the network. */
