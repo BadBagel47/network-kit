@@ -179,12 +179,18 @@ function guardNamespace() {
     get: (id) => {
       if (!objects.has(id)) {
         const store = new Map();
-        const storage = { get: async (k) => store.get(k), put: async (k, v) => void store.set(k, v), delete: async (k) => void store.delete(k) };
+        const storage = {
+          get: async (k) => store.get(k), put: async (k, v) => void store.set(k, v), delete: async (k) => void store.delete(k),
+          setAlarm: async (at) => void (storage.alarmAt = at), deleteAlarm: async () => void (storage.alarmAt = null),
+          deleteAll: async () => store.clear(), store,
+        };
         objects.set(id, new AdminGuard({ storage }));
+        objects.get(id).storageForTest = storage;
       }
       const o = objects.get(id);
       return { fetch: (url, init) => o.fetch(new Request(url, init)) };
     },
+    objects,
   };
 }
 
@@ -241,4 +247,16 @@ test('without a password or token the page says what is missing', async () => {
   const res = await handle(new Request('https://admin.example/api/usage', { headers: { cookie: `${COOKIE}=${s}` } }), env);
   assert.equal((await res.json()).error, 'no-token');
   assert.equal(readCookie(new Request('https://x', { headers: { cookie: `a=1; ${COOKIE}=v.w` } })), 'v.w');
+});
+
+test('B-055: the record about an address is deleted a day after its last wrong password', async () => {
+  const guards = guardNamespace();
+  const env = { ...env0, GUARD: guards };
+  await handle(post('/login', { password: 'nope' }), env);
+  const guard = guards.objects.get('1.2.3.4');
+  const storage = guard.storageForTest;
+  assert.ok(storage.store.size > 0, 'the wrong password is remembered');
+  assert.ok(storage.alarmAt > Date.now() + 86_000_000, 'until a day later');
+  await guard.alarm();
+  assert.equal(storage.store.size, 0, 'then forgotten');
 });

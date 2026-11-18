@@ -111,6 +111,7 @@ export default {
 /** One per address: counts wrong passwords (see LoginGuard). */
 export class AdminGuard {
   constructor(state) {
+    this.storage = state.storage;
     this.guard = new LoginGuard(state.storage);
   }
 
@@ -118,9 +119,18 @@ export class AdminGuard {
     const action = new URL(request.url).pathname.slice(1);
     let result = 0;
     if (action === 'wait') result = await this.guard.waitMs();
-    else if (action === 'failed') result = await this.guard.failed();
-    else if (action === 'succeeded') await this.guard.succeeded();
-    else return new Response('Not found', { status: 404 });
+    else if (action === 'failed') {
+      result = await this.guard.failed();
+      // The record about this address is deleted a day after the last wrong password (B-055).
+      await this.storage.setAlarm(Date.now() + 86_400_000 + 60_000);
+    } else if (action === 'succeeded') {
+      await this.guard.succeeded();
+      await this.storage.deleteAlarm?.();
+    } else return new Response('Not found', { status: 404 });
     return new Response(String(result));
+  }
+
+  async alarm() {
+    await this.storage.deleteAll();
   }
 }
