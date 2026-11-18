@@ -13,9 +13,13 @@ const samples = {
   stopMs: [], // last key let go → the host's game shows the ship standing still
   posGapMs: [], // time between two position updates arriving (not on the host)
   frameMs: [], // time between two drawn frames
+  sendGapMs: [], // host only: time between two position sends from this browser
+  offlineMs: [], // connection lost → back online
+  pauseMs: [], // the game paused (host away, switching host, a player away) → running again
+  jumpPx: [], // a ship jumped further than it can move between two updates (not on the host)
   correctionPx: [], // how far the own ship's prediction was from the host's position (F-048)
 };
-const counts = { posUpdates: 0, messagesIn: 0, reconnects: 0, hidden: 0, keyPresses: 0, snaps: 0 };
+const counts = { posUpdates: 0, messagesIn: 0, reconnects: 0, hidden: 0, keyPresses: 0, snaps: 0, jumps: 0, errors: 0, hostChanges: 0, pauses: 0 };
 const events = [];
 
 const push = (list, v) => {
@@ -25,7 +29,7 @@ const push = (list, v) => {
 
 export function event(text) {
   events.push(`${((performance.now() - t0) / 1000).toFixed(1)}s ${text}`);
-  if (events.length > 80) events.shift();
+  if (events.length > 300) events.shift();
 }
 
 /** Statistics of a list of numbers. */
@@ -40,6 +44,18 @@ export function stats(list) {
 // ---- what the page reports in
 
 export const rtt = (ms) => push(samples.rttMs, ms);
+export const offline = (ms) => push(samples.offlineMs, ms);
+export const error = () => (counts.errors += 1);
+export const hostChange = () => (counts.hostChanges += 1);
+export function pause(ms, reason) {
+  counts.pauses += 1;
+  push(samples.pauseMs, ms);
+  event(`paused ${Math.round(ms)} ms (${reason})`);
+}
+export function jump(px) {
+  counts.jumps += 1;
+  push(samples.jumpPx, px);
+}
 export const messageIn = () => (counts.messagesIn += 1);
 export const reconnect = () => (counts.reconnects += 1);
 export const correction = (px, snapped) => {
@@ -59,13 +75,27 @@ export function posArrived(t) {
 let pendingStart = null;
 let pendingStop = null;
 let lastOwn = null;
+// Only the change from standing still to moving (and back) counts: a second
+// key pressed while the ship already moves is not a start.
+let held = false;
 export function keys(anyHeld, t) {
   counts.keyPresses += 1;
-  if (anyHeld && pendingStart === null && pendingStop === null) pendingStart = t;
+  if (anyHeld === held) return;
+  held = anyHeld;
+  if (anyHeld && pendingStop === null) pendingStart = t;
   if (!anyHeld) {
     pendingStart = null;
     pendingStop = t;
   }
+}
+
+// On the host: how evenly this browser sends the positions. If these gaps are
+// even but the others receive them unevenly, the delay is in the network or
+// the device's radio, not in the page.
+let lastSend = null;
+export function posSent(t) {
+  if (lastSend !== null) push(samples.sendGapMs, t - lastSend);
+  lastSend = t;
 }
 /** The game's position of the own ship, as it arrives (or as the host steps it). */
 export function ownPosition(x, y, t) {
@@ -88,6 +118,16 @@ export function frame(t) {
   if (lastFrame !== null && !document.hidden) push(samples.frameMs, t - lastFrame);
   lastFrame = t;
 }
+addEventListener('online', () => event('browser: network online'));
+addEventListener('offline', () => event('browser: network offline'));
+addEventListener('pagehide', (e) => event(`page hide${e.persisted ? ' (kept in memory)' : ''}`));
+addEventListener('pageshow', (e) => e.persisted && event('page shown again from memory'));
+document.addEventListener('freeze', () => event('page frozen by the browser'));
+document.addEventListener('resume', () => event('page resumed by the browser'));
+navigator.connection?.addEventListener?.('change', () => {
+  const c = navigator.connection;
+  event(`network changed: ${c.type ?? '?'} ${c.effectiveType ?? ''} rtt ${c.rtt ?? '?'} ms`);
+});
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) counts.hidden += 1;
   event(document.hidden ? 'page hidden' : 'page visible');
@@ -123,9 +163,13 @@ export function report(room, extra = {}) {
       keyToMoveMs: stats(samples.startMs),
       keyToStopMs: stats(samples.stopMs),
       positionGapMs: stats(samples.posGapMs),
+      sendGapMs: stats(samples.sendGapMs),
       frameMs: frames,
       fps: frames.mean ? Math.round(10_000 / frames.mean) / 10 : null,
       predictionErrorPx: stats(samples.correctionPx),
+      offlineMs: stats(samples.offlineMs),
+      pauseMs: stats(samples.pauseMs),
+      jumpPx: stats(samples.jumpPx),
       counts: { ...counts },
     },
     recent: { rttMs: samples.rttMs.slice(-30), keyToMoveMs: samples.startMs.slice(-30), keyToStopMs: samples.stopMs.slice(-30) },
@@ -140,4 +184,5 @@ export function reset() {
   events.length = 0;
   since = Date.now();
   lastPos = null;
+  lastSend = null;
 }

@@ -67,6 +67,7 @@ if (saved && (!link || link.code === saved)) {
 // ------------------------------------------------------------- game screen
 
 function log(text) {
+  diag.event(`log: ${text}`);
   const li = document.createElement('li');
   li.textContent = `${new Date().toLocaleTimeString()} ${text}`;
   $('log').prepend(li);
@@ -84,15 +85,22 @@ function showGame() {
 
   room.on('status', renderStatus);
   room.on('room', render);
-  room.on('closed', ({ text }) => {
+  room.on('room', watchRoom);
+  room.on('closed', ({ text, code, reason }) => {
+    diag.event(`room closed: ${code ?? ''} ${reason ?? ''} ${text ?? ''}`);
     sessionStorage.removeItem('demo:room');
     $('overlay').hidden = false;
     $('overlay').textContent = text;
   });
-  room.on('error', ({ code }) => log(`Not possible: ${code}`));
+  room.on('error', ({ code }) => {
+    diag.error();
+    log(`Not possible: ${code}`);
+  });
 
   // This browser runs the game now: from the room's kept state, or from scratch.
   room.on('host', ({ snapshot }) => {
+    // How old the kept state was compared with what this browser last saw.
+    diag.event(`took over the game: ${snapshot ? `from a state ${Math.max(0, world.tick - (snapshot.tick ?? 0))} steps behind what this page last saw` : 'from scratch'}`);
     world = snapshot ?? { ships: {}, tick: 0 };
     inputs = { [room.me]: myKeys };
     ensureShips();
@@ -151,10 +159,37 @@ function showGame() {
 }
 
 let lastStatus = null;
+let offlineSince = null;
+// Pauses, host changes and the own place, with times, for the report (F-047).
+let seen = { hostId: undefined, paused: null, pausedAt: null, place: undefined, phase: undefined };
+function watchRoom(r) {
+  if (!r) return;
+  const t = performance.now();
+  if (r.hostId !== seen.hostId) {
+    if (seen.hostId !== undefined) diag.hostChange();
+    diag.event(`host is ${nameOf(r.hostId) ?? 'nobody'}`);
+  }
+  const reason = r.paused?.reason ?? null;
+  if (reason !== seen.paused) {
+    if (seen.paused && seen.pausedAt !== null) diag.pause(t - seen.pausedAt, seen.paused);
+    if (reason) diag.event(`paused: ${reason}${r.paused.id ? ` (${nameOf(r.paused.id)})` : ''}`);
+    seen.pausedAt = reason ? t : null;
+  }
+  const place = room.self?.place ?? null;
+  if (place !== seen.place) diag.event(`own place: ${place ?? 'none'}`);
+  if (r.phase !== seen.phase) diag.event(`phase: ${r.phase}`);
+  seen = { ...seen, hostId: r.hostId, paused: reason, place, phase: r.phase };
+}
+
 function renderStatus(status) {
   if (status !== lastStatus) {
     diag.event(`status ${status}`);
     if (status === 'reconnecting') diag.reconnect();
+    if (status !== 'online' && lastStatus === 'online') offlineSince = performance.now();
+    if (status === 'online' && offlineSince !== null) {
+      diag.offline(performance.now() - offlineSince);
+      offlineSince = null;
+    }
     lastStatus = status;
   }
   const words = { online: 'Online', connecting: 'Connecting…', reconnecting: 'Reconnecting…', offline: 'Offline', closed: 'Closed' };
@@ -310,6 +345,12 @@ function applyPositions(p, tick) {
     }
     const s = (world.ships[id] ??= { x, y, vx: 0, vy: 0, color: COLORS[Object.keys(world.ships).length % COLORS.length], name: '' });
     const at = drawnAt(s, t);
+    // Between two updates a ship moves at most a few steps; more is a jump.
+    const far = Math.hypot(x - s.x, y - s.y);
+    if (s.glideFrom !== undefined && far > SPEED * 6) {
+      diag.jump(far);
+      diag.event(`${nameOf(id)}'s ship jumped ${Math.round(far)} px`);
+    }
     Object.assign(s, { x, y, fromX: at.x, fromY: at.y, glideFrom: t });
   }
   world.tick = tick;
@@ -420,6 +461,7 @@ setInterval(() => {
   if (world.tick % 2 === 0) {
     const p = Object.entries(world.ships).map(([id, s]) => [id, Math.round(s.x), Math.round(s.y)]);
     room.send({ type: 'pos', tick: world.tick, p }, { latest: 'pos' });
+    diag.posSent(now());
   }
   // The full state every 3 seconds, kept by the room for a reload or a takeover.
   if (world.tick % 90 === 1) room.sendSnapshot(world);
