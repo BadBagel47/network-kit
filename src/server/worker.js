@@ -16,6 +16,7 @@ import {
 } from '../shared/protocol.js';
 import { VERSION } from '../version.js';
 import { RoomCore, resolveOptions } from './room-core.js';
+import { cleanSummary } from './measure-check.js';
 import { newRoomCode } from './random.js';
 
 const SERVER_OPTIONS = {
@@ -189,6 +190,27 @@ export function createRoomServer(gameOptions = {}) {
       }
       const made = await makeRoom(env, { settings: body.settings ?? {} });
       return json(made.body, made.status, cors);
+    }
+
+    // Anonymous measurement from the game's pages (F-052), handed to the admin page.
+    if (parts.length === 1 && parts[0] === 'measure' && request.method === 'POST') {
+      if (overLimit(request, env, 'attempt')) return new Response(null, { status: 429, headers: cors });
+      const link = typeof opts.admin === 'function' ? opts.admin(env) : opts.admin;
+      const api = link && env[link.binding];
+      const text = await request.text();
+      if (!api?.measure || text.length > 8 * 1024) return new Response(null, { status: 204, headers: cors });
+      let summary = null;
+      try {
+        summary = cleanSummary(JSON.parse(text));
+      } catch {
+        summary = null;
+      }
+      if (summary) {
+        const sent = api.measure(link.game, summary).catch(() => {});
+        if (ctx?.waitUntil) ctx.waitUntil(sent);
+        else await sent;
+      }
+      return new Response(null, { status: 204, headers: cors });
     }
 
     if (parts.length === 0 && request.method === 'GET') {

@@ -52,6 +52,7 @@ async function load() {
   $('message').textContent = '';
   $('dashboard').hidden = false;
   render();
+  loadQuality().catch(() => {});
 }
 
 function showSignIn(body) {
@@ -291,6 +292,44 @@ function renderAbout() {
   defs.append(el('li', {}, `Free plan limits checked ${data.limitsChecked}.`));
   const notes = $('notes');
   notes.replaceChildren(...data.notes.map((n) => el('li', {}, n)));
+}
+
+/* ---------- connection quality (F-052) ---------- */
+
+async function loadQuality() {
+  const res = await fetch('/api/quality');
+  if (!res.ok) return;
+  const { days, quality } = await res.json();
+  const table = $('quality');
+  table.replaceChildren();
+  const games = Object.keys(quality).sort();
+  $('quality-note').textContent = games.length
+    ? `Anonymous summaries from the games' pages, the last ${days} days. Response time is to the room and back; position gaps are how evenly the host's messages arrive at the others.`
+    : `No measurements yet. Games send them when they turn measuring on (the last ${days} days are kept).`;
+  if (!games.length) return;
+  const cols = [
+    ['Game', null], ['Summaries', 'summaries'], ['Minutes', 'minutes'], ['Response p50', 'rttP50', 'ms'], ['Response p90', 'rttP90', 'ms'],
+    ['Position gaps p90', 'hostGapP90', 'ms'], ['Frame p50', 'frameP50', 'ms'], ['Reconnects', 'reconnects'], ['Host changes', 'hostChanges'], ['Devices', 'devices'],
+  ];
+  const head = el('tr');
+  for (const [h] of cols) head.append(el('th', { scope: 'col' }, h));
+  table.append(el('thead'));
+  table.tHead.append(head);
+  const body = el('tbody');
+  for (const game of games) {
+    const q = quality[game];
+    const tr = el('tr');
+    tr.append(el('th', { scope: 'row' }, game));
+    for (const [, key, unit] of cols.slice(1)) {
+      let v = q[key];
+      if (key === 'devices') v = Object.entries(v).sort((a, b) => b[1] - a[1]).map(([d, n]) => `${d} ${n}`).join(', ');
+      else if (v === null || v === undefined) v = '–';
+      else v = unit ? `${nf.format(v)} ${unit}` : nf.format(v);
+      tr.append(el('td', {}, v));
+    }
+    body.append(tr);
+  }
+  table.append(body);
 }
 
 /* ---------- controls (F-003, F-004, F-008) ---------- */

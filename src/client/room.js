@@ -18,6 +18,7 @@ import {
 // The largest text a client accepts from the room (joined from parts).
 const MAX_INCOMING_CHARS = 8 * 1024 * 1024;
 import { tabSession } from './tab.js';
+import { Measure } from './measure.js';
 
 // Identities already renewed in this page because the tab was a copy.
 const renewedInThisPage = new Set();
@@ -79,6 +80,7 @@ export class NetworkRoom {
    * @param {object} [o.on] event handlers to register before connecting, e.g. { host: fn }
    * @param {{getItem, setItem, removeItem}} [o.storage] replaces sessionStorage/localStorage
    * @param {number} [o.hostSilentMs] host-run games: report the host when it has sent nothing for this long
+   * @param {boolean} [o.measure] send anonymous connection-quality summaries (F-052); show MEASURE_NOTICE
    */
   constructor(o) {
     this.server = o.server;
@@ -103,6 +105,19 @@ export class NetworkRoom {
     this.maxQueueAgeMs = o.maxQueueAgeMs ?? 60_000; // game messages older than this are not resent
     this.aloneSnapshotMs = o.aloneSnapshotMs ?? 300_000; // a host alone in the room stores state this seldom
     this.hostSilentMs = o.hostSilentMs ?? null;
+    // Anonymous measurement of connection quality (F-052): the game turns it on
+    // and shows MEASURE_NOTICE. Summaries go to the game's Worker (…/measure).
+    this.measure = o.measure
+      ? new Measure(this, {
+        win: this.win,
+        send: (body, leaving) => {
+          const url = `${apiBase(this.server, this.basePath)}/measure`;
+          const nav = this.win?.navigator ?? globalThis.navigator;
+          if (leaving && nav?.sendBeacon) nav.sendBeacon(url, body);
+          else fetch(url, { method: 'POST', body, keepalive: true, headers: { 'content-type': 'application/json' } }).catch(() => {});
+        },
+      })
+      : null;
     // The room tells its own limits at the welcome; these apply until then.
     // Limits given here are kept when they are lower than the room's.
     this.ownLimits = { message: o.maxMessageBytes ?? Infinity, snapshot: o.maxSnapshotBytes ?? Infinity };
@@ -236,6 +251,7 @@ export class NetworkRoom {
   setStatus(status) {
     if (this.status === status) return;
     this.status = status;
+    this.measure?.status(status);
     this.emit('status', status);
   }
 
@@ -324,6 +340,7 @@ export class NetworkRoom {
     ws.onmessage = (event) => {
       if (this.ws !== ws) return;
       if (event.data === 'pong') {
+        this.measure?.pongReceived();
         clearTimeout(this.pongTimer);
         this.pongTimer = null;
         if (this.ready) this.setStatus('online'); // the connection survived a blip
@@ -414,6 +431,7 @@ export class NetworkRoom {
     if (!this.ws || this.ws.readyState !== 1 || this.pongTimer) return;
     try {
       this.ws.send('ping');
+      this.measure?.pingSent();
     } catch {
       this.attempt = 0;
       this.open();
@@ -475,6 +493,7 @@ export class NetworkRoom {
   }
 
   stopTimers() {
+    this.measure?.stop('leave');
     clearTimeout(this.retryTimer);
     clearTimeout(this.connectTimer);
     clearTimeout(this.phaseTimer);
@@ -565,7 +584,10 @@ export class NetworkRoom {
         this.applyRoom(msg.room);
         break;
       case 'msg':
-        if (msg.from === this.room?.hostId) this.lastHostData = Date.now();
+        if (msg.from === this.room?.hostId) {
+          this.lastHostData = Date.now();
+          this.measure?.hostMessage();
+        }
         this.emit('message', { from: msg.from, data: msg.d });
         break;
       case 'host':
@@ -585,6 +607,8 @@ export class NetworkRoom {
         this.rawSend({ t: 'cmd', c: 'alive' });
         break;
       case 'ev':
+        if (msg.e === 'drop') this.measure?.peerDropped();
+        if (msg.e === 'host') this.measure?.hostChanged();
         this.emit('peer', {
           event: msg.e, id: msg.id, why: msg.why, name: msg.name ?? this.player(msg.id)?.name ?? null,
           returning: msg.returning === true, player: this.player(msg.id),

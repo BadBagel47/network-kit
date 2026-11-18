@@ -7,7 +7,8 @@ import {
 import * as diag from './diag.js';
 
 const SERVER = location.origin;
-const OPTIONS = { hostSilentMs: 4_000 }; // report a host that has gone quiet
+// Report a host that has gone quiet; measure connection quality anonymously (F-052).
+const OPTIONS = { hostSilentMs: 4_000, measure: true };
 const PLACES = ['captain', 'gunner', 'engineer'];
 const COLORS = ['#58a6ff', '#3fb950', '#d29922', '#f778ba', '#a5d6ff', '#ff7b72', '#d2a8ff'];
 const $ = (id) => document.getElementById(id);

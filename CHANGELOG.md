@@ -10,10 +10,22 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.7.0 (2026-11-18)
+
+Affects: every game may take it in; nothing has to change in a game. A game that wants the admin page's on/off, budget and measuring adds a service binding and the `admin` option (`docs/ADMIN.md`).
+
+- New (F-052): client option `measure` sends anonymous connection-quality summaries; the game's Worker cleans them and hands them to the admin page, which shows them per game and keeps them 7 days. `MEASURE_NOTICE` is exported. The demo measures and shows the notice.
 - New (F-003, F-004, F-008, F-026): server option `admin` connects a game to the admin page over a service binding. The admin page switches each game on, off, or off until a time, can allow private rooms only, has an emergency stop, gives each game a share of the daily free quota (equal by default) and can close a game for the day when it passes its share (off until the owner turns it on); on the Paid plan it shows the month's estimated cost and closes games at a monthly cap. Off refuses new rooms, newcomers and new rounds; admitted participants come back; a stop closes running rooms. Players get the reason in plain words (`gameClosedText`). The demo is connected and logs a tenth of its requests.
 - New (F-053): server option `limits` (default 10 room creations and 60 look-ups or joins per visitor and minute), checked before a room is woken, so guessing codes or creating rooms in bulk cannot find open rooms or use up the free quota. The demo turns it off in local test runs (`ROOM_LIMITS=off`).
 - Docs (D-056): the security model (what codes, keys, bans and the room protect, and what they do not) in `docs/INTEGRATION.md`.
 - Admin page and demo (F-054, B-055): security headers (a content security policy without inline scripts, no framing, no referrer); the admin page's record of wrong passwords per address is deleted a day after the last one.
+
+### Upgrade guide from 0.6
+
+- Take the client and the server part together (as always). Nothing has to change.
+- New default: `limits` (10 room creations and 60 look-ups or joins per visitor and minute). Local test runs where every request comes from one address may need `limits: null` (the demo uses an environment variable).
+- To connect the game to the admin page: the service binding and `admin: { binding, game }`; for measuring, `measure: true` in the client and a visible notice.
+
 ## 0.6.0 (2026-11-18)
 
 Affects: every game may take it in; nothing has to change in a game. New features for Vättigt (F-039, F-040), Bricks (F-029, F-030), Buzzy (F-030, F-031) and every game (F-051, F-032).

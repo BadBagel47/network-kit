@@ -10,16 +10,7 @@
 
 | ID | Type | Title | Priority | Status | Suggested model |
 | --- | --- | --- | --- | --- | --- |
-| F-003 | Feature | One admin page for all games: on/off/until, private only, emergency stop | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör a-d enligt rek"). Idea; must include the gate redesign (review finding 15, D-012) | Strong, high |
-| F-004 | Feature | Automatic daily budget per game | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör a-d enligt rek"). Proposal | Standard |
-| F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör a-d enligt rek"). First part built 2026-11-17: admin page with usage per game against the free limits (`docs/ADMIN.md`), published at https://network-kit-admin.l8p1.workers.dev and checked against Cloudflare's real figures (all six figures arrive). Left: plan, estimated cost, spending cap | Standard |
-| F-026 | Feature | Operations: what players see when the daily quota is used up, a budget for the public demo, logging in production | Low | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör a-d enligt rek"). Proposal from the review 2026-11-15 | Standard |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
-| F-052 | Feature | Automatic measurement in games: the client collects the demo's measurements (response time, evenness, breaks, host changes, frame rate) and sends a short anonymous summary at the end of a game, when someone leaves and every 5 minutes; the admin page shows them per game. No names or IP addresses (players as "player 1, 2"), device type and browser only, kept 7 days, turned on by the game with a one-line notice | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör a-d enligt rek"). Idea from the owner 2026-11-18 (testing games with friends). Laws: EU data protection if anything can be tied to a person; no storage on the device. Question for the owner: the notice text and whether it is on by default | Standard |
-| F-053 | Feature | Limits per visitor at the Worker, before a room is woken: room creations and join or info attempts (also at unknown codes) per address and minute, so guessing codes or creating rooms in bulk cannot use up the free quota or find open rooms | High | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör a-d enligt rek"). From the external review of Buzzy 2026-11-18 (`docs/reviews/2026-11-18-buzzy-review-lessons.md`). Question for the owner: invitation links with a key (private rooms) by default in games? | Strong, high |
-| F-054 | Feature | Security headers for the admin page and the demo: a content security policy without inline scripts, no framing, no referrer | Low | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör a-d enligt rek"). From the external review of Buzzy 2026-11-18 | Standard |
-| B-055 | Bug | The admin page's brake on wrong passwords keeps a small record per address with no end date; delete it a day after the last attempt | Low | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör a-d enligt rek"). From the external review of Buzzy 2026-11-18 (data clean-up) | Standard |
-| D-056 | Design | Write down network-kit's security model for games: the room code is not a secret, invitation keys are; bans are per browser identity; what the room enforces and what a game must enforce itself | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör a-d enligt rek"). From the external review of Buzzy 2026-11-18 | Standard |
 
 ## Done
 
@@ -61,6 +52,15 @@
 | F-045 | Feature | Demo: ships without inertia (they stop at once) and a response-time meter in milliseconds, so the owner can judge how fast the game answers | 2026-11-17 (demo only; the meter measures this browser to the host's browser and back every 2 seconds; tested in Chromium, not yet on the owner's devices) |
 | B-049 | Bug | Demo: at a change of host the new host continued from the room's kept state (up to 3 s old) although its page had newer positions, so the ships jumped back | 2026-11-18 (the new host continues from the newest positions it has; the browser test moves a ship just before the host leaves and checks it stays; not yet on the owner's devices) |
 | B-050 | Bug | Demo: the game ran at the host's timer speed, about 8 % slower with the iPad as host | 2026-11-18 (the game steps by the clock, 30 steps a second; checked in the browser test; not yet on the owner's devices) |
+| F-053 | Feature | Limits per visitor at the Worker before a room is woken | 2026-11-18, v0.7.0 (server option `limits`, 10 creations and 60 tries a minute; unit tests) |
+| D-056 | Design | The security model for games | 2026-11-18, v0.7.0 (`docs/INTEGRATION.md`, section 9) |
+| F-054 | Feature | Security headers for the admin page and the demo | 2026-11-18 (`_headers`; referrer policy same-origin, since no-referrer broke the admin sign-in in a test) |
+| B-055 | Bug | The admin page's brake on wrong passwords kept a record per address with no end date | 2026-11-18 (deleted a day after the last wrong password; unit test) |
+| F-003 | Feature | One admin page for all games: on/off/until, private only, emergency stop | 2026-11-18, v0.7.0 (checked on new rooms, newcomers and new rounds, not on reconnects; a stop closes running rooms within 30 s; games connect over a service binding; fails open; tests in Node; the demo is connected) |
+| F-004 | Feature | Daily budget per game | 2026-11-18, v0.7.0 (shares of each daily free limit, equal by default; automatic closing for the day is off until the owner turns it on) |
+| F-008 | Feature | Usage on the admin page, plan, estimated cost and spending cap | 2026-11-18, v0.7.0 (usage per game 2026-11-17; plan, the month's cost on the Paid plan, a monthly cap) |
+| F-026 | Feature | Operations: what players see when a game is closed or the quota is used up, a budget for the demo, logging | 2026-11-18, v0.7.0 (plain reasons with the opening time; the demo is a game on the admin page and logs a tenth of its requests) |
+| F-052 | Feature | Automatic anonymous measurement in games | 2026-11-18, v0.7.0 (client option `measure`; summaries cleaned by the game's Worker, kept 7 days by the admin page, shown per game; the demo measures; not yet used by a game) |
 | F-029 | Feature | Rooms created by a game's server without a participating creator, with the first eligible participant leading | 2026-11-18, v0.6.0 (`createRoom(env)`; the demo's `POST /invite`; unit, client and workerd tests; not yet used by a game) |
 | F-030 | Feature | A room-kept state for newcomers, optionally per role | 2026-11-18, v0.6.0 (`setWelcomeState`, rules `room.setWelcomeState`, event `welcome-state`; kept in parts; tests incl. workerd) |
 | F-031 | Feature | Lifting a ban and the ban list for the owner (the other small additions from the games pass wait until a game needs them, owner's answer to Q3) | 2026-11-18, v0.6.0 (`room.bans`, `unban(id)`; unit tests) |
@@ -74,22 +74,11 @@
 
 ## Proposed runs (2026-11-18, rules v1.12)
 
-Ordered for: operations and budget now that a game is live, then measuring in games.
+No runs are proposed: every open item is done or waits for a game or the owner.
 
-- **A** – strong model, high level – Administration and budget
-  - F-008 – The admin page also shows plan, estimated cost and an optional spending cap (usage per game is built).
-  - F-004 – Each game gets a share of the daily free budget and closes for the day when it is used up.
-  - F-003 – One admin page with on/off/until, private only and an emergency stop per game; checked inside the room, also when a round starts (Bricks), not on reconnects.
-  - F-026 – Players get a clear message when the quota is used up; the public demo gets a budget; logging is turned on.
-  - Question: How is the daily free budget shared between the games? Recommendation: set per game on the admin page, equal shares by default.
-  - Question (shown in a later proposal): Should the new admin page also replace Bricks' own admin Worker? Recommendation: no, not now: it serves the games on network-kit, and Bricks moves to it when Bricks moves to network-kit.
-- **B** – standard model, medium level – Measuring in games
-  - F-052 – The kit measures connection quality in games by itself and shows it per game on the admin page, anonymously.
-  - Question: Is the measurement on by default, and what does the one-line notice say? Recommendation: on in the games the owner tests with friends, with the notice "Connection quality is measured anonymously to improve the game."
+Owner tasks: D-028 (decide how Boomers runs its game). Try v0.7.0 on the devices: the admin page's Games section (Off, Off until, Stop) against the demo, the response time and room's data centre in a report, and the connection-quality table.
 
-Owner tasks: D-028 (decide how Boomers runs its game).
-
-Vättigt, Critical ST8, Bricks and Buzzy can build on v0.6.0 following `docs/INTEGRATION.md`.
+Vättigt, Critical ST8, Bricks and Buzzy can build on v0.7.0 following `docs/INTEGRATION.md` and `docs/ADMIN.md`.
 
 ## Details
 

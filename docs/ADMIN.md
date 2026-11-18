@@ -57,6 +57,8 @@ Under *Account*:
 
 Players see why in plain words (`Off`, `Off until …`, `used up today's free quota … opens again at …`, `stopped by its owner`), in the game's own language if the game translates the kit's reasons.
 
+**Connection quality (F-052):** games that turn measuring on (client option `measure`) send anonymous summaries; the page shows per game the response time to the room (typical and slow), how evenly positions arrive at the others, frame time, reconnects, host changes and the kinds of devices. Kept 7 days, then deleted.
+
 **Connecting a game:** the game's Worker gets a service binding to the admin Worker's `GameApi` entrypoint, and the room server the option `admin`:
 
 ```jsonc

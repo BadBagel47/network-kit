@@ -20,4 +20,9 @@ export class GameApi extends WorkerEntrypoint {
     const res = await this.store().fetch(`https://store/status?game=${encodeURIComponent(String(game))}`);
     return res.json();
   }
+
+  /** An anonymous connection-quality summary from one of the game's pages (F-052). */
+  async measure(game, summary) {
+    await this.store().fetch('https://store/measure', { method: 'POST', body: JSON.stringify({ game: String(game), summary }) });
+  }
 }

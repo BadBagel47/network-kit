@@ -6,6 +6,37 @@ import { CloudflareAnalytics } from './analytics.js';
 import { normalizeSettings, budgetState, gameStatus } from './control.js';
 
 const BUDGET_EVERY_MS = 5 * 60_000;
+const KEEP_DAYS = 7; // measurement summaries are kept a week (F-052)
+const PER_DAY_MAX = 3_000;
+const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+const median = (list) => {
+  const s = list.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  return s.length ? s[Math.floor(s.length / 2)] : null;
+};
+
+/** Connection quality per game over the kept days, from the summaries. */
+export function quality(byGame) {
+  const out = {};
+  for (const [game, list] of Object.entries(byGame)) {
+    const devices = {};
+    for (const m of list) devices[`${m.device.kind} ${m.device.browser}`] = (devices[`${m.device.kind} ${m.device.browser}`] ?? 0) + 1;
+    const sum = (k) => list.reduce((a, m) => a + (m.counts?.[k] ?? 0), 0);
+    out[game] = {
+      summaries: list.length,
+      minutes: Math.round(list.reduce((a, m) => a + m.seconds, 0) / 60),
+      rttP50: median(list.map((m) => m.rttMs?.p50)),
+      rttP90: median(list.map((m) => m.rttMs?.p90)),
+      hostGapP90: median(list.filter((m) => m.role !== 'host').map((m) => m.hostGapMs?.p90)),
+      frameP50: median(list.map((m) => m.frameMs?.p50)),
+      reconnects: sum('reconnects'),
+      hostChanges: sum('hostChanges'),
+      dropsSeen: sum('dropsSeen'),
+      offlineP90: median(list.map((m) => m.offlineMs?.p90)),
+      devices,
+    };
+  }
+  return out;
+}
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
@@ -54,10 +85,38 @@ export class AdminStore {
       else await this.storage.deleteAlarm();
       return json({ settings, budget: await this.budget() });
     }
+    if (url.pathname === '/measure' && request.method === 'POST') {
+      // One anonymous summary from a game's page (already cleaned by the room server).
+      const { game, summary } = await request.json();
+      if (typeof game !== 'string' || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(game) || !summary) return json({ error: 'bad' }, 400);
+      const key = `m:${day(this.now())}:${game}`;
+      const list = (await this.storage.get(key)) ?? [];
+      if (list.length < PER_DAY_MAX) {
+        list.push(summary);
+        await this.storage.put(key, list);
+      }
+      await this.dropOldMeasurements();
+      return json({ ok: true });
+    }
+    if (url.pathname === '/quality') {
+      const byGame = {};
+      for (const [key, list] of await this.storage.list({ prefix: 'm:' })) {
+        const game = key.split(':')[2];
+        (byGame[game] ??= []).push(...list);
+      }
+      return json({ days: KEEP_DAYS, quality: quality(byGame) });
+    }
     if (url.pathname === '/status') {
       return json(await this.status(url.searchParams.get('game') ?? ''));
     }
     return json({ error: 'not-found' }, 404);
+  }
+
+  /** Summaries older than a week are deleted. */
+  async dropOldMeasurements() {
+    const oldest = day(this.now() - (KEEP_DAYS - 1) * 86_400_000);
+    const old = [...(await this.storage.list({ prefix: 'm:' })).keys()].filter((k) => k.split(':')[1] < oldest);
+    if (old.length) await this.storage.delete(old);
   }
 
   async alarm() {

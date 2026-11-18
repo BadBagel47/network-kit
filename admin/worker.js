@@ -124,6 +124,12 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
       return json({ error: 'analytics', message: String(e.message ?? e), metrics: METRICS, limitsChecked: LIMITS_CHECKED }, 502);
     }
   }
+  if (pathname === '/api/quality') {
+    if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);
+    const s = store(env);
+    if (!s) return json({ days: 7, quality: {} });
+    return json(await (await s.fetch('https://store/quality')).json());
+  }
   if (pathname === '/api/settings') {
     if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);
     if (request.method === 'GET') return json(await readSettings(env));
