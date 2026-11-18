@@ -10,10 +10,12 @@ import { diagRoute, DiagStore } from './diag-store.js';
 const jurisdiction = (env) => env.ROOM_JURISDICTION || null;
 // Limits per visitor (F-053); the local test runs turn them off, since every test comes from one address.
 const limits = (env) => (env.ROOM_LIMITS === 'off' ? null : { createsPerMinute: 10, attemptsPerMinute: 60 });
+// The admin page's on/off, budget and emergency stop (F-003, F-004); the demo is one game there.
+const admin = { binding: 'NETWORK_KIT_ADMIN', game: 'network-kit-demo' };
 
-const crewRooms = createRoomServer({ ...crew, jurisdiction, limits });
-const turnRooms = createRoomServer({ ...turns, binding: 'TURNS', basePath: '/turns', jurisdiction, limits });
-const quizRooms = createRoomServer({ ...quiz, binding: 'QUIZ', basePath: '/quiz', jurisdiction, limits });
+const crewRooms = createRoomServer({ ...crew, jurisdiction, limits, admin });
+const turnRooms = createRoomServer({ ...turns, binding: 'TURNS', basePath: '/turns', jurisdiction, limits, admin });
+const quizRooms = createRoomServer({ ...quiz, binding: 'QUIZ', basePath: '/quiz', jurisdiction, limits, admin });
 
 export const Room = crewRooms.RoomObject;
 export const TurnRoom = turnRooms.RoomObject;

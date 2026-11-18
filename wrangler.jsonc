@@ -20,6 +20,9 @@
     { "tag": "v2", "new_sqlite_classes": ["QuizRoom"] },
     { "tag": "v3", "new_sqlite_classes": ["DiagStore"] }
   ],
+  // The admin page decides whether the demo is open (F-003, F-004).
+  "services": [{ "binding": "NETWORK_KIT_ADMIN", "service": "network-kit-admin", "entrypoint": "GameApi" }],
   "vars": { "ROOM_JURISDICTION": "eu" },
-  "observability": { "enabled": false }
+  // Logs for the public demo (F-026), a tenth of the requests.
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 }
 }

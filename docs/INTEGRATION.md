@@ -129,7 +129,8 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `allowedOrigins` | `'*'` | Pages allowed to use the API (the game's site). |
 | `jurisdiction` | `null` | `'eu'` keeps rooms in the EU; may be a function `(env) => 'eu' \| null`. |
 | `limits` | 10 creations, 60 tries a minute | Per visitor address, checked before a room is woken: `{ createsPerMinute, attemptsPerMinute }` (attempts are look-ups and joins at a room code). Over the limit a visitor gets 429 or close code `RATE` for the rest of the minute. Counted per Worker instance, which is enough to make guessing codes or creating rooms in bulk pointless; `null` turns it off; may be a function of `env` (from 0.7, F-053). |
-| `gate` | – | **Experimental**, will change with the admin page (F-003): `async ({ request, env, action }) => true \| { open: false, reason }`, checked before a room is created or a connection is opened. |
+| `admin` | – | Connects the game to the admin page (from 0.7, F-003, F-004): `{ binding, game }`, a service binding to the admin Worker's `GameApi` entrypoint and the game's name; may be a function of `env`. New rooms, newcomers and new rounds are refused while the game is off or over its budget; participants already in a room come back; an emergency stop closes running rooms. See `docs/ADMIN.md`. |
+| `gate` | – | **Experimental**, replaced by `admin` for on/off (F-003): `async ({ request, env, action }) => true \| { open: false, reason }`, checked before a room is created or a connection is opened. |
 | `fallback` | – | `async (request, env, ctx) => Response` for other paths. |
 
 ### Room codes
@@ -246,9 +247,9 @@ Identities and owner keys are stored per game server, so games on the same site 
 | `welcome-state` | `{ data }` the room's state for newcomers (F-030), right after the welcome, also after a reconnect; also in `room.welcomeState` |
 | `role` | `{ isHost, isOwner }` when either changes for this client |
 | `peer` | `{ event, id, name, player, why, returning }` with `event` = `join`, `waiting`, `drop`, `back`, `gone`, `host` or `owner`. `back` is sent on every reconnect, also a silent one. The room list already includes the participant when `join` or `back` arrives, and `name` is always given (from 0.5.1). `returning` is true for a `join` by someone who was here before and was away longer than the grace period. |
-| `error` | `{ code, command }` a refused command: `place-taken`, `owner-only`, `host-only`, `not-allowed`, `too-large`, … |
+| `error` | `{ code, command }` a refused command (a refused start because the game is closed: `game-closed`, with `reason`, `until` and `text`): `place-taken`, `owner-only`, `host-only`, `not-allowed`, `too-large`, … |
 | `ok` | `{ command, n }` a command was carried out |
-| `closed` | `{ code, reason, text }` the room is over for this client (no more reconnecting) |
+| `closed` | `{ code, reason, text }` the room is over for this client (no more reconnecting). For a closed game (`GAME_CLOSED`) `reason` is `off`, `until`, `budget` or `stopped` and `text` says so in plain words, with the time it opens again (from 0.7, F-026); `gameClosedText(reason, until)` is exported for games that show their own text. |
 
 ### Methods and properties
 

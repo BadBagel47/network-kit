@@ -12,7 +12,7 @@
 // forgotten tab does not keep knocking for ever.
 
 import {
-  PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, normalizeCode, isValidCode, PART_CHARS, splitIntoParts, PartJoiner,
+  PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, gameClosedText, normalizeCode, isValidCode, PART_CHARS, splitIntoParts, PartJoiner,
 } from '../shared/protocol.js';
 
 // The largest text a client accepts from the room (joined from parts).
@@ -188,8 +188,8 @@ export class NetworkRoom {
     }
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const closed = res.status === 503 && body.error !== 'no-free-code';
-      throw new RoomError(closed ? CLOSE.GAME_CLOSED : 0, body.error ?? 'network');
+      const closed = (res.status === 503 && body.error !== 'no-free-code') || res.status === 429;
+      throw new RoomError(closed ? CLOSE.GAME_CLOSED : 0, body.error ?? 'network', gameClosedText(body.error, body.until));
     }
     const room = new NetworkRoom({ ...options, server, code: body.code, ownerKey: body.ownerKey });
     await room.connect();
@@ -495,7 +495,7 @@ export class NetworkRoom {
     if ([CLOSE.ROOM_CLOSED, CLOSE.KICKED, CLOSE.BANNED, CLOSE.BUDGET, CLOSE.LEFT, CLOSE.NOT_FOUND].includes(code)) {
       this.ownerStore.removeItem(this.ownerKeyName);
     }
-    const detail = { code, reason, text: CLOSE_TEXT[code] ?? UNREACHABLE };
+    const detail = { code, reason, text: gameClosedText(reason, this.closedUntil) ?? CLOSE_TEXT[code] ?? UNREACHABLE };
     if (this.firstWelcome && !this.firstWelcome.done) {
       this.firstWelcome.done = true;
       this.firstWelcome.reject(new RoomError(code, reason));
@@ -594,10 +594,14 @@ export class NetworkRoom {
         this.emit('ok', { command: msg.c, n: msg.n });
         break;
       case 'err':
-        this.emit('error', { code: msg.code, command: msg.c, n: msg.n });
+        this.emit('error', {
+          code: msg.code, command: msg.c, n: msg.n,
+          ...(msg.code === 'game-closed' ? { reason: msg.reason, until: msg.until, text: gameClosedText(msg.reason, msg.until) } : {}),
+        });
         break;
       case 'closed':
       case 'denied':
+        this.closedUntil = msg.until ?? null; // shown in the closed text (F-026)
         break; // handled when the socket closes
     }
   }

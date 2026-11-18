@@ -293,6 +293,94 @@ function renderAbout() {
   notes.replaceChildren(...data.notes.map((n) => el('li', {}, n)));
 }
 
+/* ---------- controls (F-003, F-004, F-008) ---------- */
+
+const cell = (child) => {
+  const td = el('td');
+  td.append(child);
+  return td;
+};
+const REASONS = { off: 'Off', until: 'Off until', budget: 'Closed for today (budget)', stopped: 'Stopped' };
+const toLocalInput = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+function renderControls() {
+  const control = data.control;
+  if (!control) return;
+  const { settings, budget, status } = control;
+  const names = Object.keys(status).sort();
+  const table = $('control-table');
+  table.replaceChildren();
+  const head = el('tr');
+  for (const h of ['Game', 'Now', 'Mode', 'Until', 'Private only', 'Stop', 'Share %']) head.append(el('th', { scope: 'col' }, h));
+  table.append(el('thead'));
+  table.tHead.append(head);
+  const body = el('tbody');
+  for (const name of names) {
+    const g = settings.games[name] ?? { mode: 'on', until: null, privateOnly: false, stopped: false, share: null };
+    const st = status[name];
+    const tr = el('tr', { 'data-game': name });
+    tr.append(el('th', { scope: 'row' }, name));
+    const now = el('td', { class: st.open ? 'state-open' : 'state-closed' }, st.open ? (st.privateOnly ? 'Open (private only)' : 'Open') : REASONS[st.reason] ?? 'Closed');
+    tr.append(now);
+    const mode = el('select', { name: 'mode', 'aria-label': `${name}: mode` });
+    for (const [v, t] of [['on', 'On'], ['off', 'Off'], ['until', 'Off until']]) {
+      const o = el('option', { value: v }, t);
+      if (g.mode === v) o.selected = true;
+      mode.append(o);
+    }
+    tr.append(cell(mode));
+    const until = el('input', { name: 'until', type: 'datetime-local', value: toLocalInput(g.until), 'aria-label': `${name}: off until` });
+    tr.append(cell(until));
+    const priv = el('input', { name: 'privateOnly', type: 'checkbox', 'aria-label': `${name}: private rooms only` });
+    priv.checked = g.privateOnly;
+    tr.append(cell(priv));
+    const stop = el('input', { name: 'stopped', type: 'checkbox', 'aria-label': `${name}: emergency stop (closes running rooms too)` });
+    stop.checked = g.stopped;
+    tr.append(cell(stop));
+    const share = el('input', { name: 'share', type: 'number', min: '0', max: '100', step: '1', placeholder: String(Math.round(budget.share[name] ?? 0)), 'aria-label': `${name}: share of the free quota in percent (empty: equal shares)` });
+    if (g.share !== null && g.share !== undefined) share.value = String(g.share);
+    tr.append(cell(share));
+    body.append(tr);
+  }
+  table.append(body);
+  const form = $('controls');
+  form.plan.value = settings.account.plan;
+  form.capUsd.value = settings.account.capUsd ?? '';
+  form.autoClose.checked = settings.account.autoClose;
+  $('warnings').replaceChildren(...budget.warnings.map((w) => el('li', {}, w)));
+  $('cost').textContent = `This month on the Paid plan would cost about ${budget.cost.usd.toFixed(2)} USD (5 USD a month included). ${budget.cost.note}`;
+  $('control-note').textContent = settings.account.autoClose
+    ? 'Games close for the rest of the UTC day when they pass their share. Running games finish; new rooms, newcomers and new rounds are refused.'
+    : 'Automatic closing is off: shares and warnings are shown, nothing is closed by itself. Off, Off until and Stop act at once (within 30 s). Running games finish, except after Stop.';
+}
+
+$('controls').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const games = {};
+  for (const tr of form.querySelectorAll('tr[data-game]')) {
+    const get = (n) => tr.querySelector(`[name=${n}]`);
+    const untilValue = get('until').value;
+    games[tr.dataset.game] = {
+      mode: get('mode').value,
+      until: untilValue ? new Date(untilValue).toISOString() : null,
+      privateOnly: get('privateOnly').checked,
+      stopped: get('stopped').checked,
+      share: get('share').value === '' ? null : Number(get('share').value),
+    };
+  }
+  const account = { plan: form.plan.value, capUsd: form.capUsd.value === '' ? null : Number(form.capUsd.value), autoClose: form.autoClose.checked };
+  $('saved').textContent = 'Saving…';
+  const res = await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ account, games }) });
+  $('saved').textContent = res.ok ? 'Saved. Games see the change within 30 seconds.' : `Not saved (${res.status}).`;
+  if (res.ok) await load();
+});
+
 function render() {
   const select = $('metric');
   if (!select.options.length) {
@@ -300,6 +388,7 @@ function render() {
     select.value = metricsShown().find((m) => m.key === 'doRequests')?.key ?? select.value;
   }
   renderMeters();
+  renderControls();
   renderGames();
   renderChart();
   renderAbout();

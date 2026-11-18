@@ -98,6 +98,8 @@ export class FakeWorld {
       },
       // A living client's heartbeat keeps arriving; a frozen one's stopped (F-051).
       lastPingAt: (ws) => (ws.alive ? world.time : ws.lastPing ?? null),
+      // The admin page's word on the game (F-003), when a test sets world.word.
+      ...(world.word !== undefined ? { admission: async () => world.word } : {}),
     };
   }
 

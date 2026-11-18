@@ -94,3 +94,15 @@ td .bar { min-width: 72px; }
 .about { margin: 28px 0; color: var(--text-secondary); font-size: 0.875rem; }
 .about li { margin: 4px 0; }
 .notes { color: var(--text-muted); }
+
+.controls { display: grid; gap: 12px; }
+.controls select, .controls input[type=number], .controls input[type=datetime-local] { padding: 4px 6px; }
+.controls td input[type=number] { width: 5em; }
+.account { border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: grid; gap: 8px; background: var(--surface-1); }
+.account label { display: grid; gap: 4px; max-width: 360px; }
+.account label.check { display: flex; gap: 8px; align-items: center; max-width: none; }
+.warnings { margin: 0 0 8px; padding-left: 18px; font-size: 0.875rem; }
+.warnings li::marker { content: "▲ "; color: var(--warning); }
+.state-open { color: var(--text-secondary); }
+.state-closed { color: var(--critical); font-weight: 600; }
+.controls > button { justify-self: start; }

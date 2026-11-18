@@ -4,13 +4,19 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "network-kit-admin",
-  "main": "worker.js",
+  "main": "entry.js",
   "compatibility_date": "2026-11-01",
   "assets": { "directory": "public", "binding": "ASSETS" },
   "durable_objects": {
-    "bindings": [{ "name": "GUARD", "class_name": "AdminGuard" }]
+    "bindings": [
+      { "name": "GUARD", "class_name": "AdminGuard" },
+      { "name": "STORE", "class_name": "AdminStore" }
+    ]
   },
   // Free plan: SQLite-backed Durable Objects only.
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AdminGuard"] }],
-  "observability": { "enabled": false }
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["AdminGuard"] },
+    { "tag": "v2", "new_sqlite_classes": ["AdminStore"] }
+  ],
+  "observability": { "enabled": true }
 }

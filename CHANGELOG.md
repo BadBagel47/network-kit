@@ -10,6 +10,7 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+- New (F-003, F-004, F-008, F-026): server option `admin` connects a game to the admin page over a service binding. The admin page switches each game on, off, or off until a time, can allow private rooms only, has an emergency stop, gives each game a share of the daily free quota (equal by default) and can close a game for the day when it passes its share (off until the owner turns it on); on the Paid plan it shows the month's estimated cost and closes games at a monthly cap. Off refuses new rooms, newcomers and new rounds; admitted participants come back; a stop closes running rooms. Players get the reason in plain words (`gameClosedText`). The demo is connected and logs a tenth of its requests.
 - New (F-053): server option `limits` (default 10 room creations and 60 look-ups or joins per visitor and minute), checked before a room is woken, so guessing codes or creating rooms in bulk cannot find open rooms or use up the free quota. The demo turns it off in local test runs (`ROOM_LIMITS=off`).
 - Docs (D-056): the security model (what codes, keys, bans and the room protect, and what they do not) in `docs/INTEGRATION.md`.
 - Admin page and demo (F-054, B-055): security headers (a content security policy without inline scripts, no framing, no referrer); the admin page's record of wrong passwords per address is deleted a day after the last one.

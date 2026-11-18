@@ -33,6 +33,26 @@
       <p class="muted" id="today-note"></p>
       <ul id="meters" class="meters"></ul>
 
+      <h2>Games</h2>
+      <p class="muted" id="control-note"></p>
+      <ul id="warnings" class="warnings"></ul>
+      <form id="controls" class="controls">
+        <div class="table-wrap"><table id="control-table"></table></div>
+        <fieldset class="account">
+          <legend>Account</legend>
+          <label>Plan
+            <select name="plan"><option value="free">Free</option><option value="paid">Paid</option></select>
+          </label>
+          <label>Monthly cap (USD, Paid plan)
+            <input name="capUsd" type="number" min="0" step="1" inputmode="decimal">
+          </label>
+          <label class="check"><input name="autoClose" type="checkbox"> Close a game for the day when it passes its share (on the Paid plan: when the cap is reached)</label>
+          <p class="muted" id="cost"></p>
+        </fieldset>
+        <button type="submit">Save</button>
+        <span id="saved" class="muted" role="status"></span>
+      </form>
+
       <h2>Per game</h2>
       <div class="filters" role="group" aria-label="Period">
         <button type="button" data-period="today" aria-pressed="true">Today</button>

@@ -92,9 +92,9 @@ function showGame() {
     $('overlay').hidden = false;
     $('overlay').textContent = text;
   });
-  room.on('error', ({ code }) => {
+  room.on('error', ({ code, text }) => {
     diag.error();
-    log(`Not possible: ${code}`);
+    log(text ? `Not possible: ${text}` : `Not possible: ${code}`);
   });
 
   // This browser runs the game now: from the room's kept state, or from scratch.

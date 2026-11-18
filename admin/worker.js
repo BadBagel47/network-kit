@@ -2,13 +2,20 @@
 //   GET  /            the page (static, admin/public); it asks /api/usage
 //   POST /login       password sign-in (form post, so password managers save it)
 //   POST /logout      sign out
-//   GET  /api/usage   usage per game and day (signed in only)
+//   GET  /api/usage   usage per game and day, with each game's share, budget
+//                     and status (signed in only)
+//   GET/PUT /api/settings  on/off/until, private only, stop, shares, plan, cap,
+//                     automatic closing (signed in only) (F-003, F-004, F-008)
+//
+// Games ask whether they are open through the GameApi entrypoint (entry.js),
+// over a service binding.
 //
 // Secrets (set by .github/workflows/deploy-admin.yml): ADMIN_PASSWORD and
 // CF_ANALYTICS_TOKEN (read-only Cloudflare token). Variable: CF_ACCOUNT_ID.
 
 import { CloudflareAnalytics } from './analytics.js';
 import { METRICS, LIMITS_CHECKED } from './limits.js';
+import { budgetState, gameStatus, normalizeSettings } from './control.js';
 import {
   LoginGuard, checkPassword, passwordConfigured, newSession, validSession,
   readCookie, sessionCookie, clearCookie,
@@ -75,6 +82,29 @@ async function usage(env, deps) {
   return data;
 }
 
+function store(env) {
+  return env.STORE ? env.STORE.get(env.STORE.idFromName('main')) : null;
+}
+
+async function readSettings(env) {
+  const s = store(env);
+  if (!s) return { settings: normalizeSettings({}), budget: null };
+  return (await s.fetch('https://store/settings')).json();
+}
+
+/** The usage with each game's share, budget and status as the games see it. */
+async function usageWithControl(env, deps) {
+  const data = await usage(env, deps);
+  if (data.error) return data;
+  const { settings } = await readSettings(env);
+  const budget = budgetState(settings, data);
+  const now = deps.now();
+  const status = Object.fromEntries(
+    [...new Set([...data.games.map((g) => g.name), ...Object.keys(settings.games)])].map((n) => [n, gameStatus(settings, budget, n, now)]),
+  );
+  return { ...data, control: { settings, budget, status } };
+}
+
 /** The request handler; `deps` lets tests replace the clock and the network. */
 export async function handle(request, env, deps = { fetch: (...a) => fetch(...a), now: Date.now }) {
   const url = new URL(request.url);
@@ -89,10 +119,25 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
       return json({ error: 'signed-out', passwordSet: passwordConfigured(env) }, 401);
     }
     try {
-      return json(await usage(env, deps));
+      return json(await usageWithControl(env, deps));
     } catch (e) {
       return json({ error: 'analytics', message: String(e.message ?? e), metrics: METRICS, limitsChecked: LIMITS_CHECKED }, 502);
     }
+  }
+  if (pathname === '/api/settings') {
+    if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);
+    if (request.method === 'GET') return json(await readSettings(env));
+    if (request.method === 'PUT') {
+      if (!sameOrigin(request)) return new Response('Forbidden', { status: 403 });
+      const s = store(env);
+      if (!s) return json({ error: 'no-store' }, 500);
+      const body = await request.text();
+      if (body.length > 32 * 1024) return json({ error: 'too-large' }, 413);
+      return new Response((await s.fetch('https://store/settings', { method: 'PUT', body })).body, {
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+      });
+    }
+    return json({ error: 'method' }, 405);
   }
   if (env.ASSETS) return env.ASSETS.fetch(request);
   return new Response('Not found', { status: 404 });

@@ -29,6 +29,10 @@ const SERVER_OPTIONS = {
   // rooms created, and look-ups or joins at a room code. null turns it off;
   // may be a function (env) => limits | null.
   limits: { createsPerMinute: 10, attemptsPerMinute: 60 },
+  // The admin page (F-003, F-004): { binding, game } — a service binding to the
+  // admin Worker's GameApi entrypoint and this game's name (its Worker's name).
+  // May be a function (env) => { binding, game } | null. null: not connected.
+  admin: null,
   fallback: null, // async (request, env, ctx) => Response for other paths
 };
 
@@ -132,6 +136,26 @@ export function createRoomServer(gameOptions = {}) {
     return v[kind] > max;
   }
 
+  // The admin page's word, asked at most every 30 s per Worker instance. If
+  // the admin Worker cannot be reached the game stays open: a broken admin
+  // page must not stop every game.
+  let word = { at: 0, value: null };
+  async function adminWord(env) {
+    const link = typeof opts.admin === 'function' ? opts.admin(env) : opts.admin;
+    const api = link && env[link.binding];
+    if (!api?.status) return null;
+    const now = Date.now();
+    if (now - word.at < 30_000) return word.value;
+    let value = null;
+    try {
+      value = await api.status(link.game);
+    } catch {
+      value = null;
+    }
+    word = { at: now, value };
+    return value;
+  }
+
   async function gate(request, env, action) {
     if (!opts.gate) return { open: true };
     const result = await opts.gate({ request, env, action });
@@ -153,6 +177,8 @@ export function createRoomServer(gameOptions = {}) {
 
     if (parts.length === 0 && request.method === 'POST') {
       if (overLimit(request, env, 'create')) return json({ error: 'too-many-requests' }, 429, { ...cors, 'retry-after': '60' });
+      const status = await adminWord(env);
+      if (status && !status.open) return json({ error: status.reason ?? 'off', until: status.until ?? null }, 503, cors);
       const open = await gate(request, env, 'create');
       if (!open.open) return json({ error: open.reason }, 503, cors);
       let body = {};
@@ -195,6 +221,10 @@ export function createRoomServer(gameOptions = {}) {
       if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
         return json({ error: 'websocket-expected' }, 426, cors);
       }
+      // An emergency stop turns everyone away here; otherwise the room decides,
+      // so participants who were already in a room can come back (F-003).
+      const status = await adminWord(env);
+      if (status?.stopped) return closedSocket(CLOSE.GAME_CLOSED, 'stopped');
       const open = await gate(request, env, 'join');
       if (!open.open) return closedSocket(CLOSE.GAME_CLOSED, open.reason);
       return stub(env, code).fetch('https://room/ws', { headers: { upgrade: 'websocket' } });
@@ -246,6 +276,7 @@ export function createRoomServer(gameOptions = {}) {
             // already closed
           }
         },
+        admission: () => adminWord(env),
         lastPingAt(ws) {
           // When the platform last answered this socket's heartbeat for us (F-051).
           return ctx.getWebSocketAutoResponseTimestamp?.(ws)?.getTime() ?? null;
