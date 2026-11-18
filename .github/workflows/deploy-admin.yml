@@ -78,7 +78,7 @@ jobs:
             sleep 5
           done
           [ "$code" = "401" ] || { echo "::error::$url/api/usage answered $code, expected 401 (signed out)"; exit 1; }
-          curl -fsS "$url/" | grep -q 'network-kit usage' || { echo "::error::$url did not serve the page"; exit 1; }
+          curl -fsS "$url/" | grep -q 'Delar av adminsidan' || { echo "::error::$url did not serve the page"; exit 1; }
           echo "The page answers and asks for sign-in." >> "$GITHUB_STEP_SUMMARY"
       - name: Check Cloudflare's usage figures
         if: steps.token.outputs.skip != 'true' && env.CLOUDFLARE_ANALYTICS_TOKEN != ''
