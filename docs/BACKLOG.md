@@ -11,8 +11,8 @@
 | ID | Type | Title | Priority | Status | Suggested model |
 | --- | --- | --- | --- | --- | --- |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
-| F-057 | Feature | Modes per game on the admin page (e.g. Bricks' 1 Player and 2 Players, each with its own On/Off/Until), and a room-less check a game page can call ("is this mode open now?") without waking a room | Medium | Asked by the Bricks session 2026-11-18 (Bricks F-007); needed when Bricks moves | Standard |
-| F-058 | Feature | Administrators may play while a game is off: a signed-in administrator can start and join games (all modes) while public play is closed | Medium | Asked by the Bricks session 2026-11-18 (Bricks F-007); needed when Bricks moves. Note: private invitation links while public play is off are already covered by "Private only" | Strong, high |
+| F-057 | Feature | Modes per game on the admin page (e.g. Bricks' 1 Player and 2 Players, each with its own On/Off/Until), and a room-less check a game page can call ("is this mode open now?") without waking a room | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A rek"). Asked by the Bricks session 2026-11-18 (Bricks F-007); needed when Bricks moves | Standard |
+| F-058 | Feature | Administrators may play while a game is off: a signed-in administrator can start and join games (all modes) while public play is closed | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A rek"). Asked by the Bricks session 2026-11-18 (Bricks F-007); needed when Bricks moves. Note: private invitation links while public play is off are already covered by "Private only" | Strong, high |
 
 ## Done
 
