@@ -15,15 +15,7 @@
 | F-008 | Feature | Usage on the admin page: today/this month per game, free or paid plan, estimated cost and a monthly spending cap | Medium | First part built 2026-11-17: admin page with usage per game against the free limits (`docs/ADMIN.md`), published at https://network-kit-admin.l8p1.workers.dev and checked against Cloudflare's real figures (all six figures arrive). Left: plan, estimated cost, spending cap | Standard |
 | F-026 | Feature | Operations: what players see when the daily quota is used up, a budget for the public demo, logging in production | Low | Proposal from the review 2026-11-15 | Standard |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
-| F-029 | Feature | Rooms created by a game's server without a participating creator (e.g. an invitation two people open), with the first eligible participant leading | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A, B, C, E rek"). Idea from the games pass (D-012); needed when Bricks moves | Strong, high |
-| F-030 | Feature | A room-kept state for newcomers, optionally per role, so joiners and reloading participants get it without relying on the host | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A, B, C, E rek"). Idea from the games pass (D-012) | Strong, high |
-| F-031 | Feature | Smaller additions found in the games pass: automatic placement, ready flags, pause timeline in server time, grace period per phase, unban and ban list, admit one by one, access per role, private kept state per participant, server time on relayed messages, state saved in parts, rate caps per role | Low | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A, B, C, E rek"). Ideas from the games pass (D-012); each is added when a game needs it | Standard |
-| F-032 | Feature | Follow-ups from the check of v0.2.0: notice a room nobody is playing in (beyond the cap on busy minutes), test the update template and the release workflow in CI, test the gate on joining, a CI check that a change to `src/` comes with a version bump | Low | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A, B, C, E rek"). Ideas from the check 2026-11-15 | Standard |
-| F-039 | Feature | Direct sends from playing participants in host-run rooms: a role option lets a participant send to everyone (or chosen participants) like the host, instead of only to the host | Low | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A, B, C, E rek"). Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
-| F-040 | Feature | Preferred successor for takeover: the host names an order (e.g. the player whose turn it is) that is tried before the owner and the longest-present participant | Low | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A, B, C, E rek"). Idea from Vättigt 2026-11-17; not blocking, added when a game needs it | Standard |
-| F-051 | Feature | Faster notice when someone's connection dies silently: the room checks any participant (not only the host) that others have not heard from for a few seconds, and marks them away if they do not answer; games can also show a "connection problems" hint at once. Target about 5 s for host and players | Medium | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A, B, C, E rek"). Asked by the owner 2026-11-18 after the test; measured: app switch or locked screen noticed in 3.5–4.5 s, wifi gone silently (the host) about 10 s, a silent ordinary player not measured (probably longer: only the host is checked today) | Standard |
 | F-052 | Feature | Automatic measurement in games: the client collects the demo's measurements (response time, evenness, breaks, host changes, frame rate) and sends a short anonymous summary at the end of a game, when someone leaves and every 5 minutes; the admin page shows them per game. No names or IP addresses (players as "player 1, 2"), device type and browser only, kept 7 days, turned on by the game with a one-line notice | Medium | Idea from the owner 2026-11-18 (testing games with friends). Laws: EU data protection if anything can be tied to a person; no storage on the device. Question for the owner: the notice text and whether it is on by default | Standard |
-| D-046 | Design | Where EU rooms run: find which data centre a room is placed in and whether EU rooms can be placed nearer Sweden, to cut the round trip (110–120 ms measured, four legs through one room) | Low | Pågår 2026-11-18 (session ccr-d6b5c771-fnfalf, owner: "Kör A, B, C, E rek"). Idea from the phone/iPad test 2026-11-17 (D-025); not started | Standard |
 
 ## Done
 
@@ -65,36 +57,35 @@
 | F-045 | Feature | Demo: ships without inertia (they stop at once) and a response-time meter in milliseconds, so the owner can judge how fast the game answers | 2026-11-17 (demo only; the meter measures this browser to the host's browser and back every 2 seconds; tested in Chromium, not yet on the owner's devices) |
 | B-049 | Bug | Demo: at a change of host the new host continued from the room's kept state (up to 3 s old) although its page had newer positions, so the ships jumped back | 2026-11-18 (the new host continues from the newest positions it has; the browser test moves a ship just before the host leaves and checks it stays; not yet on the owner's devices) |
 | B-050 | Bug | Demo: the game ran at the host's timer speed, about 8 % slower with the iPad as host | 2026-11-18 (the game steps by the clock, 30 steps a second; checked in the browser test; not yet on the owner's devices) |
+| F-029 | Feature | Rooms created by a game's server without a participating creator, with the first eligible participant leading | 2026-11-18, v0.6.0 (`createRoom(env)`; the demo's `POST /invite`; unit, client and workerd tests; not yet used by a game) |
+| F-030 | Feature | A room-kept state for newcomers, optionally per role | 2026-11-18, v0.6.0 (`setWelcomeState`, rules `room.setWelcomeState`, event `welcome-state`; kept in parts; tests incl. workerd) |
+| F-031 | Feature | Lifting a ban and the ban list for the owner (the other small additions from the games pass wait until a game needs them, owner's answer to Q3) | 2026-11-18, v0.6.0 (`room.bans`, `unban(id)`; unit tests) |
+| F-032 | Feature | Follow-ups from the check of v0.2.0: forgotten rooms, workflow and template checks in CI, the gate on joining, a version check | 2026-11-18, v0.6.0 (`idleCloseMs` 60 min; CI lints the workflows and the update template, runs a vendored copy's smoke test and `scripts/version-check.mjs`; the gate on joining is tested) |
+| F-039 | Feature | Direct sends from playing participants in host-run rooms (role option `sendsTo: 'all'`) | 2026-11-18, v0.6.0 (asked by Vättigt; unit tests) |
+| F-040 | Feature | Preferred successor for takeover (`setSuccessors`) | 2026-11-18, v0.6.0 (asked by Vättigt; a preferred one who does not answer is passed over; unit tests) |
+| F-051 | Feature | Faster notice when someone's connection dies silently (room option `heartbeatMs`) | 2026-11-18, v0.6.0 (2.5 heartbeats, about 5 s with 2 s; the demo uses it; unit, client and workerd tests, where a silent connection was dropped within 9 s; not yet seen on the owner's devices) |
+| D-046 | Design | Where EU rooms run | 2026-11-18 (documented: a room stays where its first visitor created it, inside the EU; rooms now report their data centre and the demo's reports include it; to be read from the next report) |
 | F-047 | Feature | Demo: measurement report per device (key to movement, key to stop, response time, how evenly positions arrive, frame rate, device and network), sent with "Send report", kept 7 days in the demo Worker and read by the agent through a workflow that seals it with the agent's key (the repository is public) | 2026-11-17 (tested in Chromium and local workerd; not yet used on the owner's devices) |
 | F-048 | Feature | Demo: the player's own ship moves at once in their browser and is corrected towards the host's position after it stops; switch "Instant own ship: on/off" to compare | 2026-11-17 (tested in Chromium; not yet on the owner's devices) |
 
-## Proposed runs (2026-11-17, rules v1.12)
+## Proposed runs (2026-11-18, rules v1.12)
 
-Ordered for: what the games moving here next need first (Bricks, Buzzy), operations and budget after; Vättigt, the first game, needs nothing here to start.
+Ordered for: operations and budget now that a game is live, then measuring in games.
 
-- **A** – strong model, high level – Additions for Bricks and Buzzy
-  - F-029 – A game's server can create a room that nobody in it created, so two people opening the same invitation land in one room (Bricks).
-  - F-030 – The room keeps a state for newcomers, so players who join or reload get it without the host being awake.
-  - Question: Who owns a room created by an invitation? Recommendation: the first participant who enters in a role that may host becomes owner and host, as in Bricks today ("the first to redeem becomes host").
-  - Question: Who sets the state for newcomers, and is there one per role? Recommendation: the host (or the rules, in server-run rooms) sets it; one shared state by default and optionally one per role, so a quiz can give players and screens different views.
-- **B** – standard model, medium level – Smaller additions and follow-ups
-  - F-031 – Lifting a ban, with a list of banned people for the owner, so Buzzy's leader can undo a ban; the other small additions wait until a game needs them.
-  - F-032 – Rooms nobody is playing in are noticed, and the update and release workflows are tested automatically, so a forgotten room costs less and workflow mistakes are caught early.
-  - Question: Which of the small additions in F-031 now? Recommendation: only lifting a ban and the ban list (Buzzy needs them); the rest when a game asks.
-- **C** – strong model, high level – Administration and budget
+- **A** – strong model, high level – Administration and budget
   - F-008 – The admin page also shows plan, estimated cost and an optional spending cap (usage per game is built).
   - F-004 – Each game gets a share of the daily free budget and closes for the day when it is used up.
   - F-003 – One admin page with on/off/until, private only and an emergency stop per game; checked inside the room, also when a round starts (Bricks), not on reconnects.
   - F-026 – Players get a clear message when the quota is used up; the public demo gets a budget; logging is turned on.
   - Question: How is the daily free budget shared between the games? Recommendation: set per game on the admin page, equal shares by default.
   - Question (shown in a later proposal): Should the new admin page also replace Bricks' own admin Worker? Recommendation: no, not now: it serves the games on network-kit, and Bricks moves to it when Bricks moves to network-kit.
-- **D** – standard model, medium level – Turn-based games (from Vättigt)
-  - F-039 – A playing participant can send straight to everyone, so a turn's inputs cross the room once and keep flowing while the host's phone sleeps.
-  - F-040 – The host can name who takes over first (e.g. the player whose turn it is), so takeover lands on a phone that is awake.
+- **B** – standard model, medium level – Measuring in games
+  - F-052 – The kit measures connection quality in games by itself and shows it per game on the admin page, anonymously.
+  - Question: Is the measurement on by default, and what does the one-line notice say? Recommendation: on in the games the owner tests with friends, with the notice "Connection quality is measured anonymously to improve the game."
 
-Owner tasks: D-025 (try the demo on phones and an iPad) and D-028 (decide how Boomers runs its game).
+Owner tasks: D-028 (decide how Boomers runs its game).
 
-Vättigt (first game on network-kit, owner's decision 2026-11-17) and Critical F-040 (online mode) can build on v0.5.0 following `docs/INTEGRATION.md`. None of the runs here is needed for them.
+Vättigt, Critical ST8, Bricks and Buzzy can build on v0.6.0 following `docs/INTEGRATION.md`.
 
 ## Details
 

@@ -10,6 +10,10 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.6.0 (2026-11-18)
+
+Affects: every game may take it in; nothing has to change in a game. New features for Vättigt (F-039, F-040), Bricks (F-029, F-030), Buzzy (F-030, F-031) and every game (F-051, F-032).
+
 - New (F-031): the owner's `room.bans` lists who was banned (name, time) and `unban(id)` lifts a ban. For Buzzy.
 - New (F-032): room option `idleCloseMs` (60 min): a room whose connected pages have all been in the background that long closes with reason `idle`. Clients report when their page is hidden.
 - CI (F-032): the version check (`scripts/version-check.mjs`, warns when `src/` changed without a new version), a lint of the workflows and the games' update template, and a game's vendored copy running the shipped smoke test.
@@ -17,10 +21,17 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 - New (F-030): `setWelcomeState(data, { role })` (host) and `room.setWelcomeState` (rules): a state the room keeps and sends to everyone who joins or comes back, shared or per role; event `welcome-state`. For Bricks and Buzzy.
 - New (F-039): role option `sendsTo: 'all'` lets a participant in a host-run room send like the host (everyone, a list, a role or a place), also while the host is away. Default unchanged (`'host'`). Asked by Vättigt.
 - New (F-040): `setSuccessors([ids])` lets the host name who takes over first (e.g. the player whose turn it is); one who does not answer is passed over. Asked by Vättigt.
+- New (D-046): `GET /rooms/<code>` (and `NetworkRoom.info`) includes `where`, the Cloudflare data centre the room runs in.
 - New (F-051): room option `heartbeatMs`. Clients send their free heartbeat that often, and a participant silent for 2.5 heartbeats is treated as dropped, so a phone that loses its network is noticed in about 5 s (2 s heartbeat) instead of a minute. `CLOSE_UNRESPONSIVE` is exported by the client. The demo's crew game uses 2 s.
 - Demo: a new host continues from the newest positions it has (B-049) and the game steps by the clock (B-050); the guide says games should do both. The kit itself is unchanged.
 - Demo: ships without inertia and a response-time meter, to judge how fast the game answers (F-045). The kit itself is unchanged.
 - Demo: "Instant own ship" moves a player's own ship at once and corrects it towards the host (F-048), and "Send report" sends the device's measurements for the agent to read (F-047). The kit itself is unchanged.
+
+### Upgrade guide from 0.5
+
+- Take the client and the server part together (as always). Nothing in a game has to change.
+- New default: a room whose connected pages have all been in the background for an hour closes with reason `idle` (`idleCloseMs`, set `null` to turn it off).
+- Recommended: set `heartbeatMs: 2000` in the room options, so a phone that loses its network is noticed in about 5 s; turn-based games may use `sendsTo: 'all'` and `setSuccessors`.
 
 ## 0.5.1 (2026-11-17)
 
