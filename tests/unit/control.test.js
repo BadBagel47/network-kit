@@ -488,3 +488,19 @@ test('F-072: rooms and players now and the peak today, from open connections', a
     vattigt: { rooms: 0, players: 0, peak: 2, at: null },
   });
 });
+
+test('B-080: a room made with a game link remembers it on the owner\'s very first hello, so invited friends get in', async () => {
+  const GOOD = 'good.pass-xxxxxxxxxxxxxxxxxxxxx';
+  const { FakeWorld } = await import('./fake-host.js');
+  const world = new FakeWorld();
+  const core = await world.core(CREW);
+  world.word = { open: false, reason: 'off', until: null, stopped: false };
+  core.host = { ...world.host(), checkAdminPass: async (t) => t === GOOD };
+  const created = await core.create({}, 'ABCDEF');
+  // As the page does it: the creator's first hello carries the owner key and the game link.
+  const owner = await connect(world, core, { name: 'Owner', owner: created.ownerKey, adminPass: GOOD });
+  assert.equal(core.state.ownerId, owner.id);
+  assert.equal(core.state.pass, GOOD);
+  const friend = await connect(world, core, { name: 'Friend', key: created.keys.player.k });
+  assert.ok(friend.last('welcome'), 'the invited friend gets in');
+});

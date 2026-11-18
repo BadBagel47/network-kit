@@ -1032,7 +1032,8 @@ export class RoomCore {
       const pass = msg.adminPass.slice(0, 100);
       (this.adminPasses ??= new WeakMap()).set(ws, pass);
       // The owner's room made with a game link: its invitations get past "no new players" (F-068).
-      if (player.id === s.ownerId && !s.lobbyEnds && s.pass !== pass && (await this.isAdminPass(pass))) s.pass = pass;
+      // The owner key counts on the very first hello too, before the room has recorded its owner (B-080).
+      if ((isOwner || player.id === s.ownerId) && !s.lobbyEnds && s.pass !== pass && (await this.isAdminPass(pass))) s.pass = pass;
     }
     this.remember(player);
     this.host.setAttachment(ws, { id: player.id, n: player.lastN, sid: player.sid, at: now });

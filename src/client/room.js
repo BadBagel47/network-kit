@@ -575,7 +575,7 @@ export class NetworkRoom {
     const detail = { code, reason, text: gameClosedText(reason, this.closedUntil) ?? CLOSE_TEXT[code] ?? UNREACHABLE };
     if (this.firstWelcome && !this.firstWelcome.done) {
       this.firstWelcome.done = true;
-      this.firstWelcome.reject(new RoomError(code, reason));
+      this.firstWelcome.reject(new RoomError(code, reason, detail.text)); // the closed game's own words (F-026)
     }
     this.emit('closed', detail);
   }

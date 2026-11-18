@@ -10,6 +10,12 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.13.1 (2026-11-18)
+
+Affects: games that use game links; take 0.13.1.
+
+- Fixed (B-080): friends invited from a room made with a game link were refused while the game took no new players, because the room recorded the game link only when it already knew its owner, which it does not on the owner's first hello. A refused join now also shows the closed game's own words ("The game is not taking new players right now.").
+
 ## 0.13.0 (2026-11-18)
 
 Affects: games that want lobbies, fair buzz order or slow-game checks; nothing has to change. A game that compares whole `message` events (for example in tests) sees the new `at` field.
