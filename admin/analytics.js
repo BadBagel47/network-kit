@@ -16,6 +16,15 @@ export const API_URL = 'https://api.cloudflare.com/client/v4';
 /** The row for usage that Cloudflare reports without a Worker's name. */
 export const UNNAMED = 'Not named by Cloudflare';
 
+/**
+ * Figures kept beside the metrics (B-069): all room requests as Cloudflare's
+ * statistics count them, and the incoming WebSocket messages among them.
+ */
+export const EXTRA_KEYS = ['doRequestsAll', 'doMessages'];
+
+/** Cloudflare counts this many incoming WebSocket messages as one room request. */
+export const MESSAGES_PER_REQUEST = 20;
+
 /** Duration is billed for 128 MB per active Durable Object. */
 const GB_PER_OBJECT = 128 / 1024;
 
@@ -268,7 +277,7 @@ export function buildUsage({ now, dates, shapes, results, namespaceMap = null, n
   const game = (name) => {
     if (!games.has(name)) {
       const daily = {};
-      for (const k of METRIC_KEYS) daily[k] = Object.fromEntries(dates.map((d) => [d, 0]));
+      for (const k of [...METRIC_KEYS, ...EXTRA_KEYS]) daily[k] = Object.fromEntries(dates.map((d) => [d, 0]));
       games.set(name, { name, daily });
     }
     return games.get(name);
@@ -300,7 +309,7 @@ export function buildUsage({ now, dates, shapes, results, namespaceMap = null, n
   }
   if (results.invocations) {
     available.add('doRequests');
-    add(shapes.invocations, results.invocations, (r) => ({ doRequests: r.sum?.requests ?? 0 }));
+    add(shapes.invocations, results.invocations, (r) => ({ doRequestsAll: r.sum?.requests ?? 0 }));
   }
   if (results.periodic) {
     const p = shapes.periodic;
@@ -314,7 +323,20 @@ export function buildUsage({ now, dates, shapes, results, namespaceMap = null, n
         : r.sum?.duration ?? 0,
       rowsRead: r.sum?.rowsRead ?? 0,
       rowsWritten: r.sum?.rowsWritten ?? 0,
+      doMessages: r.sum?.inboundWebsocketMsgCount ?? 0,
     }));
+  }
+  // Room requests as Cloudflare counts them against the free limit (B-069):
+  // the statistics count every incoming WebSocket message as a request, but
+  // 20 of them count as one; connections, alarms and other calls count fully.
+  const messagesKnown = has(shapes.periodic, 'sum', 'inboundWebsocketMsgCount');
+  if (results.invocations && !messagesKnown) notes.push('Room requests: incoming WebSocket messages are not reported, so each is counted as a whole request.');
+  for (const g of games.values()) {
+    for (const d of dates) {
+      const all = g.daily.doRequestsAll[d];
+      const messages = messagesKnown ? Math.min(g.daily.doMessages[d], all) : 0;
+      g.daily.doRequests[d] = all - messages + messages / MESSAGES_PER_REQUEST;
+    }
   }
   if (results.storage) {
     available.add('storedBytes');

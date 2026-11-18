@@ -10,6 +10,12 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.11.1 (2026-11-18)
+
+Affects: the admin page only; games need no change.
+
+- Fixed (B-069): room requests are counted as Cloudflare counts them against the free limit: 20 incoming WebSocket messages count as one request; connections, alarms and other calls count fully. Before, every message counted fully, so a game's share looked up to 20 times fuller than it was, and Cloudflare limiting and its warnings (F-004, F-065) would have acted far too early. The page shows what today's room requests are made of.
+
 ## 0.11.0 (2026-11-18)
 
 Affects: the admin page and games connected to it (owner's decisions 2026-11-18); games need no change.

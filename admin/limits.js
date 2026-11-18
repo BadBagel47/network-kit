@@ -24,7 +24,7 @@ export const METRICS = [
     unit: 'requests',
     limit: 100_000,
     per: 'day',
-    note: 'Durable Object requests: connections, alarms and incoming WebSocket messages. Cloudflare bills incoming WebSocket messages at 1 in 20, so the billed figure is lower than this count.',
+    note: 'Durable Object requests as Cloudflare counts them against the limit: connections, alarms and other calls count fully, and 20 incoming WebSocket messages count as one request.',
   },
   {
     key: 'doDuration',

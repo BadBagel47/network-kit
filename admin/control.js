@@ -103,7 +103,7 @@ export const PAID = {
   ],
   storageIncludedGb: 5,
   storagePerGbMonthUsd: 0.20,
-  note: 'Workers CPU time is not counted (it is not in the usage figures); Durable Object requests are counted as measured, while Cloudflare bills incoming WebSocket messages at 1 in 20, so the real figure is lower.',
+  note: 'Workers CPU time is not counted (it is not in the usage figures). Room requests count 20 incoming WebSocket messages as one, as Cloudflare bills them.',
 };
 
 /** What this month's use would cost on the Paid plan. `month`: totals per metric key. */

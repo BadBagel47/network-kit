@@ -20,6 +20,8 @@ console.log(`Today (${usage.today} UTC):`);
 for (const game of usage.games) {
   const parts = METRICS.filter((m) => usage.available.includes(m.key))
     .map((m) => `${m.key}=${Math.round(game.daily[m.key][usage.today] * 10) / 10}`);
+  // B-069: all room requests in the statistics, and the incoming WebSocket messages among them.
+  parts.push(`doRequestsAll=${game.daily.doRequestsAll[usage.today]}`, `doMessages=${game.daily.doMessages[usage.today]}`);
   console.log(`  ${game.name}: ${parts.join(' ')}`);
 }
 if (!usage.available.length) process.exitCode = 1;

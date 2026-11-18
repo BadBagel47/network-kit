@@ -127,7 +127,13 @@ function renderMeters() {
     list.append(li);
   }
   const at = new Date(data.generatedAt);
-  $('today-note').textContent = `${data.today} (UTC), up to ${at.toISOString().slice(11, 16)} UTC. The free limits are for the whole account and reset at 00:00 UTC. Cloudflare's figures can lag a few minutes.`;
+  // B-069: what the room requests are made of.
+  const sumOf = (key) => data.games.reduce((sum, g) => sum + (g.daily[key]?.[data.today] ?? 0), 0);
+  const messages = sumOf('doMessages');
+  const rooms = data.available.includes('doRequests')
+    ? ` Room requests: ${nf.format(sumOf('doRequestsAll') - messages)} connections and other calls, and ${nf.format(messages)} incoming messages, of which 20 count as one request.`
+    : '';
+  $('today-note').textContent = `${data.today} (UTC), up to ${at.toISOString().slice(11, 16)} UTC. The free limits are for the whole account and reset at 00:00 UTC. Cloudflare's figures can lag a few minutes.${rooms}`;
 }
 
 function renderGames() {

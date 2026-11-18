@@ -36,7 +36,7 @@ const TYPES = {
   DOIDims: { fields: [field('date'), field('scriptName'), field('namespaceId'), field('datetimeHour')] },
   DOIFilter: { inputFields: [{ name: 'date_geq' }, { name: 'date_leq' }] },
   DOP: { fields: [field('sum', obj('DOPSum')), field('dimensions', obj('DOPDims'))] },
-  DOPSum: { fields: [field('activeTime'), field('cpuTime'), field('rowsRead'), field('rowsWritten')] },
+  DOPSum: { fields: [field('activeTime'), field('cpuTime'), field('rowsRead'), field('rowsWritten'), field('inboundWebsocketMsgCount')] },
   DOPDims: { fields: [field('date'), field('namespaceId')] },
   DOPFilter: { inputFields: [{ name: 'date_geq' }, { name: 'date_leq' }] },
   DOS: { fields: [field('max', obj('DOSMax')), field('dimensions', obj('DOSDims'))] },
@@ -58,7 +58,7 @@ const ROWS = {
   ],
   durableObjectsPeriodicGroups: [
     // 1 hour of one active room = 3,600 s × 0.125 GB = 450 GB-s.
-    { sum: { activeTime: 3_600_000_000, rowsRead: 900, rowsWritten: 120 }, dimensions: { date: '2026-11-17', namespaceId: 'ns-vattigt' } },
+    { sum: { activeTime: 3_600_000_000, rowsRead: 900, rowsWritten: 120, inboundWebsocketMsgCount: 3800 }, dimensions: { date: '2026-11-17', namespaceId: 'ns-vattigt' } },
   ],
   durableObjectsStorageGroups: [
     { max: { storedBytes: 5000 }, dimensions: { datetimeHour: '2026-11-17T10:00:00Z', namespaceId: 'ns-vattigt' } },
@@ -107,7 +107,10 @@ test('usage is gathered per game from all four datasets', async () => {
   const vattigt = usage.games.find((g) => g.name === 'vattigt');
   assert.equal(vattigt.daily.workerRequests['2026-11-17'], 1200);
   assert.equal(vattigt.daily.workerRequests['2026-11-16'], 300);
-  assert.equal(vattigt.daily.doRequests['2026-11-17'], 4000);
+  // B-069: 3,800 of the 4,000 room requests were incoming messages, which count 1 in 20.
+  assert.equal(vattigt.daily.doRequestsAll['2026-11-17'], 4000);
+  assert.equal(vattigt.daily.doMessages['2026-11-17'], 3800);
+  assert.equal(vattigt.daily.doRequests['2026-11-17'], 200 + 190);
   assert.equal(vattigt.daily.doDuration['2026-11-17'], 450);
   assert.equal(vattigt.daily.rowsWritten['2026-11-17'], 120);
   assert.equal(vattigt.daily.storedBytes['2026-11-17'], 7000, 'the day’s peak, not a sum of hours');
@@ -259,4 +262,23 @@ test('B-055: the record about an address is deleted a day after its last wrong p
   assert.ok(storage.alarmAt > Date.now() + 86_000_000, 'until a day later');
   await guard.alarm();
   assert.equal(storage.store.size, 0, 'then forgotten');
+});
+
+test('B-069: without the message count every room request counts fully, with a note', () => {
+  const dates = ['2026-11-17'];
+  const shapes = {
+    invocations: { day: 'date', owner: 'scriptName', values: { sum: ['requests'] } },
+    periodic: { day: 'date', owner: 'scriptName', values: { sum: ['rowsRead'] } },
+  };
+  const results = {
+    invocations: [{ sum: { requests: 500 }, dimensions: { date: '2026-11-17', scriptName: 'demo' } }],
+    periodic: [{ sum: { rowsRead: 1 }, dimensions: { date: '2026-11-17', scriptName: 'demo' } }],
+  };
+  const usage = buildUsage({ now: NOW, dates, shapes, results });
+  assert.equal(usage.games[0].daily.doRequests['2026-11-17'], 500);
+  assert.ok(usage.notes.some((n) => /not reported/.test(n)));
+  // More messages than requests (figures from two datasets): never below the calls that are not messages.
+  shapes.periodic.values.sum.push('inboundWebsocketMsgCount');
+  results.periodic[0].sum.inboundWebsocketMsgCount = 900;
+  assert.equal(buildUsage({ now: NOW, dates, shapes, results }).games[0].daily.doRequests['2026-11-17'], 25);
 });
