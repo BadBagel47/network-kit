@@ -3,6 +3,8 @@
 // textContent, never as HTML; styles are set through the CSSOM, never as a
 // style attribute (the page's Content-Security-Policy allows no inline styles).
 
+import { qrSvg } from './network-kit/client/share.js';
+
 const $ = (id) => document.getElementById(id);
 const SVG = 'http://www.w3.org/2000/svg';
 const SERIES = 8;
@@ -46,6 +48,31 @@ const SV = {
   storedBytes: ['Lagrad data', 'Data som ligger sparad på kontot (5 GB totalt på gratisplanen).'],
 };
 const label = (m) => SV[m.key]?.[0] ?? m.label;
+
+/* ---------- QR codes: links from this page to a phone or a tablet ---------- */
+
+function showQr(title, link, hint = '') {
+  $('qr-title').textContent = title;
+  $('qr-code').innerHTML = qrSvg(link, { title }); // made by network-kit from the link; no outside text
+  $('qr-hint').textContent = hint || 'Skanna med kameran på mobilen eller paddan.';
+  $('qr-copy').onclick = async () => {
+    await navigator.clipboard?.writeText(link);
+    $('qr-copy').textContent = 'Kopierad';
+    setTimeout(() => { $('qr-copy').textContent = 'Kopiera länken'; }, 1500);
+  };
+  $('qr-dialog').showModal();
+}
+$('qr-close').addEventListener('click', () => $('qr-dialog').close());
+$('qr-dialog').addEventListener('click', (e) => { if (e.target === $('qr-dialog')) $('qr-dialog').close(); });
+
+// The game's page per game, remembered in this browser (B-079): links are only whole with it.
+const PAGE_KEY = 'nk-admin:page:';
+const pageOf = (game) => localStorage.getItem(PAGE_KEY + game) || data?.control.settings.games[game]?.url || '';
+const rememberPage = (game, page) => { if (page) localStorage.setItem(PAGE_KEY + game, page); };
+function prefillPage(form) {
+  const page = pageOf(form.game.value);
+  if (page) form.page.value = page;
+}
 
 let data = null;
 let tab = 'spel';
@@ -177,6 +204,12 @@ function card(name) {
   const titles = el('div');
   titles.append(el('h2', {}, name), el('span', { class: `status ${cls}` }, text));
   head.append(titles);
+  const page = pageOf(name);
+  if (page) {
+    const qr = el('button', { type: 'button', class: 'qr', 'aria-label': `QR-kod till ${name}` }, 'QR');
+    qr.addEventListener('click', () => showQr(name, page, 'Öppnar spelet på den enhet som skannar.'));
+    head.append(qr);
+  }
   article.append(head);
 
   // Rooms and players (F-072), version, deploy and errors (F-074).
@@ -615,6 +648,7 @@ function fillGameSelects() {
   };
   fill($('new-pass').game, []);
   fill($('new-lobby').game, []);
+  for (const form of [$('new-pass'), $('new-lobby')]) if (!form.page.value) prefillPage(form);
   fill($('new-message').game, [['*', 'Alla spel']]);
   fill($('log-game'), [['', 'Alla spel']]);
 }
@@ -651,6 +685,7 @@ async function loadPasses() {
   $('old-passes').hidden = !old.length;
 }
 
+$('new-pass').game.addEventListener('change', () => { $('new-pass').page.value = ''; prefillPage($('new-pass')); });
 $('new-pass').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.currentTarget;
@@ -663,20 +698,25 @@ $('new-pass').addEventListener('submit', async (e) => {
     return;
   }
   const { token, pass } = await res.json();
-  const link = page ? `${page.split('#')[0]}#nk-admin=${token}` : `#nk-admin=${token}`;
+  const link = `${page.split('#')[0]}#nk-admin=${token}`;
+  rememberPage(game, page);
   const copy = el('button', { type: 'button' }, 'Kopiera');
   copy.addEventListener('click', async () => {
     await navigator.clipboard?.writeText(link);
     copy.textContent = 'Kopierad';
   });
-  out.replaceChildren(el('p', { class: 'muted small' }, `Öppna eller skicka länken. Den visas bara nu och gäller till ${dayTime(pass.expires)}.`), el('code', {}, link), copy);
+  const qr = el('button', { type: 'button' }, 'Visa QR-kod');
+  const title = `Spellänk${pass.label ? ` till ${pass.label}` : ''}`;
+  const hint = `Skanna med enheten som ska få länken. Den visas bara nu och gäller till ${dayTime(pass.expires)}.`;
+  qr.addEventListener('click', () => showQr(title, link, hint));
+  out.replaceChildren(el('p', { class: 'muted small' }, `Öppna eller skicka länken. Den visas bara nu och gäller till ${dayTime(pass.expires)}.`), el('code', {}, link), copy, qr);
+  showQr(title, link, hint);
   form.label.value = '';
   loadPasses();
 });
 
 /* Lobbies (F-059): a host link and a guest link, kept so they can be copied again. */
 
-const PAGE_KEY = 'nk-admin:page:';
 const lobbyLink = (l, token) => `${l.page ?? ''}#nk-lobby=${token}`;
 async function copy(button, text) {
   await navigator.clipboard?.writeText(text);
@@ -699,13 +739,17 @@ function lobbyItem(l, old) {
     host.addEventListener('click', () => copy(host, lobbyLink(l, l.hostToken)));
     const guest = el('button', { type: 'button' }, 'Kopiera gästlänk');
     guest.addEventListener('click', () => copy(guest, lobbyLink(l, l.guestToken)));
+    const qrHost = el('button', { type: 'button' }, 'QR värd');
+    qrHost.addEventListener('click', () => showQr(`Värdlänk · ${l.label || 'Lobby'}`, lobbyLink(l, l.hostToken), 'Den som skannar blir värd i lobbyns rum.'));
+    const qrGuest = el('button', { type: 'button' }, 'QR gäst');
+    qrGuest.addEventListener('click', () => showQr(`Gästlänk · ${l.label || 'Lobby'}`, lobbyLink(l, l.guestToken), 'Den som skannar kommer in som gäst och väntar på värden.'));
     const revoke = el('button', { type: 'button' }, 'Återkalla');
     revoke.addEventListener('click', async () => {
       if (!confirm(`Återkalla lobbyn${l.label ? ` ${l.label}` : ''}? Länkarna slutar fungera och rummet stängs inom en minut.`)) return;
       await fetch(`/api/lobbies/${encodeURIComponent(l.id)}`, { method: 'DELETE' });
       loadLobbies();
     });
-    actions.append(host, guest, revoke);
+    actions.append(host, qrHost, guest, qrGuest, revoke);
     item.append(actions);
     if (!l.page) item.append(el('span', { class: 'sub' }, 'Ingen adress till spelet angavs: länkarna är bara slutet av en adress.'));
   }
@@ -724,10 +768,7 @@ async function loadLobbies() {
   $('old-lobbies').hidden = !old.length;
 }
 
-$('new-lobby').game.addEventListener('change', (e) => {
-  const page = localStorage.getItem(PAGE_KEY + e.currentTarget.value);
-  if (page && !$('new-lobby').page.value) $('new-lobby').page.value = page;
-});
+$('new-lobby').game.addEventListener('change', () => { $('new-lobby').page.value = ''; prefillPage($('new-lobby')); });
 $('new-lobby').addEventListener('submit', async (e) => {
   e.preventDefault();
   const form = e.currentTarget;
@@ -738,7 +779,7 @@ $('new-lobby').addEventListener('submit', async (e) => {
     $('lobby-note').textContent = answer.error === 'too-many' ? 'Skapades inte: 30 lobbyer är redan aktiva.' : `Skapades inte (${answer.error ?? res.status}).`;
     return;
   }
-  if (body.page) localStorage.setItem(PAGE_KEY + body.game, body.page);
+  rememberPage(body.game, body.page);
   $('lobby-note').textContent = 'Lobbyn är skapad. Kopiera värdlänken till värden och gästlänken till gästerna.';
   form.label.value = '';
   loadLobbies();

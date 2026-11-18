@@ -201,3 +201,12 @@ details li { margin: 4px 0; }
 .log .entry .text { font-size: 14px; overflow-wrap: anywhere; }
 .item.wrap { flex-wrap: wrap; }
 .item .actions { display: flex; flex-wrap: wrap; gap: 6px; flex-direction: row; }
+
+/* QR codes for moving links between devices */
+.qr-dialog { width: min(420px, calc(100vw - 24px)); padding: 20px; border-radius: 20px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+.qr-dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
+.qr-dialog[open] { display: flex; flex-direction: column; gap: 12px; }
+.qr-code { background: #ffffff; border-radius: 12px; padding: 10px; }
+.qr-code svg { display: block; width: 100%; height: auto; }
+.qr-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.card-head .qr { margin-left: auto; min-height: 36px; font-size: 13px; }

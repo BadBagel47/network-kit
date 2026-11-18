@@ -93,6 +93,12 @@ try {
   await page.click('[data-tab=lankar]');
   assert.match(await page.textContent('#lobbies'), /Fredagsmatch · bricks.*rum ABCDEF/s, 'a lobby with its room');
   assert.equal(await page.locator('#lobbies button', { hasText: 'Kopiera gästlänk' }).count(), 1);
+  // QR codes move links to another device: a lobby's guest link.
+  await page.locator('#lobbies button', { hasText: 'QR gäst' }).click();
+  await page.waitForSelector('#qr-dialog[open] #qr-code svg');
+  assert.match(await page.textContent('#qr-title'), /Gästlänk · Fredagsmatch/);
+  await page.screenshot({ path: `${shots}/admin-qr.png` });
+  await page.click('#qr-close');
   await page.screenshot({ path: `${shots}/admin-lankar.png`, fullPage: true });
   for (const tab of ['lankar', 'forbrukning', 'installningar', 'logg']) {
     await page.click(`[data-tab=${tab}]`);

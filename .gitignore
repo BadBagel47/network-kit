@@ -3,4 +3,5 @@ node_modules/
 .dev.vars
 .env
 examples/demo/public/network-kit/
+admin/public/network-kit/
 test-results/

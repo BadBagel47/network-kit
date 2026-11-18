@@ -12,6 +12,7 @@ on:
     paths:
       - admin/**
       - src/shared/protocol.js
+      - src/client/**
       - scripts/admin-check.mjs
       - .github/workflows/deploy-admin.yml
   workflow_dispatch:
@@ -51,6 +52,7 @@ jobs:
         run: |
           npm ci
           node --test tests/unit/admin.test.js
+          npm run admin:assets # the QR codes come from network-kit's client
           if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             CLOUDFLARE_ACCOUNT_ID=$(npx wrangler whoami 2>/dev/null | grep -oE '\b[0-9a-f]{32}\b' | head -1)
           fi

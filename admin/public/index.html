@@ -63,7 +63,7 @@
               </label>
             </div>
             <label>Till vem <input name="label" placeholder="t.ex. Pixel eller en kompis" autocomplete="off" maxlength="40"></label>
-            <label>Spelets adress <input name="page" type="url" placeholder="https://…" autocomplete="off"></label>
+            <label>Spelets adress <input name="page" type="url" placeholder="https://…" autocomplete="off" required></label>
             <button type="submit" class="primary">Skapa spellänk</button>
           </form>
           <div id="pass-link" class="pass-link" role="status"></div>
@@ -85,7 +85,7 @@
               </label>
             </div>
             <label>Namn <input name="label" placeholder="t.ex. Fredagsmatch" autocomplete="off" maxlength="40"></label>
-            <label>Spelets adress <input name="page" type="url" placeholder="https://…" autocomplete="off"></label>
+            <label>Spelets adress <input name="page" type="url" placeholder="https://…" autocomplete="off" required></label>
             <button type="submit" class="primary">Skapa lobby</button>
           </form>
           <p id="lobby-note" class="muted small" role="status"></p>
@@ -239,6 +239,15 @@
       </section>
     </div>
   </main>
+  <dialog id="qr-dialog" class="qr-dialog" aria-labelledby="qr-title">
+    <h2 id="qr-title"></h2>
+    <div id="qr-code" class="qr-code"></div>
+    <p id="qr-hint" class="muted small"></p>
+    <div class="qr-actions">
+      <button type="button" id="qr-copy">Kopiera länken</button>
+      <button type="button" id="qr-close" class="primary">Stäng</button>
+    </div>
+  </dialog>
   <script type="module" src="app.js"></script>
 </body>
 </html>
