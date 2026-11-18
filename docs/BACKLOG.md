@@ -11,6 +11,8 @@
 | ID | Type | Title | Priority | Status | Suggested model |
 | --- | --- | --- | --- | --- | --- |
 | D-028 | Design | Boomers' recorded decision says its gameplay runs on the room server, but the kit runs no real-time game on the server (free plan): decide in Boomers, recommendation host-run | High | Needs the owner's decision (in `BadBagel47/boomers`) | – |
+| F-057 | Feature | Modes per game on the admin page (e.g. Bricks' 1 Player and 2 Players, each with its own On/Off/Until), and a room-less check a game page can call ("is this mode open now?") without waking a room | Medium | Asked by the Bricks session 2026-11-18 (Bricks F-007); needed when Bricks moves | Standard |
+| F-058 | Feature | Administrators may play while a game is off: a signed-in administrator can start and join games (all modes) while public play is closed | Medium | Asked by the Bricks session 2026-11-18 (Bricks F-007); needed when Bricks moves. Note: private invitation links while public play is off are already covered by "Private only" | Strong, high |
 
 ## Done
 
@@ -343,6 +345,12 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
 - Measured so far: both test devices reach Cloudflare in Stockholm (ARN); the response time through a room is about 45 ms when the Pixel is host, which suggests the room is not in Stockholm itself.
 - Built for measuring: a room now reports its data centre in `GET /rooms/<code>` (`where`, asked once per wake-up from Cloudflare's trace page), and the demo's report includes it (`roomRunsIn`). The next report from the owner shows it.
 - Not changed: no location hint is set; a hint would only matter if the first visitor were often far from the others, which is not the case for games among friends in Sweden. Revisit if the measured data centre turns out far away.
+
+### F-057 and F-058: Bricks' admin needs (2026-11-18, from the Bricks session)
+- Bricks has separate public On/Off/Until for 1 Player (offline in the browser, no room; the page only asks "is 1 Player open?" before a new game) and 2 Players. Today the admin page has one row per game (a Worker name). A game could already use a second name (e.g. `bricks-solo`) through `GameApi.status`, but the page cannot add such a row and the kit has no room-less check for pages. F-057: modes per game on the page, and `GET <basePath>/status?mode=…` answering from the admin page's word without waking a room.
+- Bricks rule: the owner and administrators may start and join games while public play is off. The admin page's sign-in is on its own address, so a game page cannot see it. F-058 needs a design: for example a short-lived signed pass the admin page gives the owner for a game, which the game's Worker checks through `GameApi`.
+- Bricks' "private invitations work while public play is off" matches the admin page's **Private only**: newcomers need an invitation key, and rooms made by the game's server (`createRoom`) are not refused. Off, by contrast, refuses everyone new.
+- Owner's decision (relayed by the Bricks session 2026-11-18): when Bricks moves it uses network-kit's admin page and sign-in as they are, and Bricks' own admin Worker is retired. This answers the earlier question about replacing Bricks' admin Worker.
 
 ### F-035 Room code length (2026-11-17, v0.3.0)
 - Asked for by Buzzy (#408) and Bricks (F-007), which use four-character codes; the owner decided on 4 to 12 characters, easy for each game to set.
