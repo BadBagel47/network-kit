@@ -1235,7 +1235,7 @@ async function loadReports() {
     $('report-game').replaceChildren(el('option', { value: '' }, 'Alla spel'), ...games.map((g) => el('option', { value: g }, g)));
     $('report-game').value = keepChoice;
   }
-  $('reports').replaceChildren(...(list.length ? list.map(reportItem) : [el('p', { class: 'muted small' }, 'Inga rapporter än. Skapa en testarlänk under Länkar och meddelanden.')]));
+  $('reports').replaceChildren(...(list.length ? list.map(reportItem) : [el('p', { class: 'muted small' }, 'Inga rapporter än. Skapa en testarlänk eller slå på Öppet test under Länkar och meddelanden.')]));
 }
 $('report-game').addEventListener('change', () => loadReports().catch(() => {}));
 
