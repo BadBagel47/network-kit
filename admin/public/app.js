@@ -125,6 +125,7 @@ async function load() {
   loadPasses().catch(() => {});
   loadLobbies().catch(() => {});
   loadTesters().catch(() => {});
+  loadOpenTests().catch(() => {});
   loadMessages().catch(() => {});
   if (tab === 'logg') loadLog().catch(() => {});
   if (tab === 'rapporter') { loadReports().catch(() => {}); loadRecordings().catch(() => {}); }
@@ -1106,6 +1107,67 @@ $('new-tester').addEventListener('submit', async (e) => {
   showQr(title, link, hint);
   form.label.value = '';
   loadTesters();
+});
+
+/* ---------- Open test (F-118): ready addresses, no tester link ---------- */
+
+/** The page's address with ?record, ?report or both (owner Q10: never typed by hand). */
+function openAddress(page, ask) {
+  const base = String(page).split('#')[0];
+  return `${base}${base.includes('?') ? '&' : '?'}${ask}`;
+}
+
+function openItem(o) {
+  const item = el('div', { class: `item open-test${o.state === 'on' ? '' : ' old'}` });
+  const info = el('div');
+  info.append(el('span', { class: 'title' }, o.state === 'on' ? `${o.game} · på till ${clock(o.until)}` : `${o.game} · avslaget ${clock(o.until)}`));
+  info.append(el('span', { class: 'sub' }, o.page));
+  item.append(info);
+  if (o.state !== 'on') return item;
+  const stop = el('button', { type: 'button' }, 'Slå av');
+  stop.addEventListener('click', async () => {
+    await fetch(`/api/open-tests/${encodeURIComponent(o.game)}`, { method: 'DELETE' });
+    loadOpenTests();
+  });
+  item.append(stop);
+  const addresses = el('div', { class: 'open-addresses' });
+  for (const [ask, what] of [['record', 'Spelar in'], ['report', 'Visar Playtest-rutan för att rapportera'], ['record&report', 'Båda']]) {
+    const link = openAddress(o.page, ask);
+    const copyButton = el('button', { type: 'button' }, 'Kopiera');
+    copyButton.addEventListener('click', () => copy(copyButton, link));
+    const qr = el('button', { type: 'button' }, 'QR-kod');
+    qr.addEventListener('click', () => showQr(`Öppet test: ${what.toLowerCase()}`, link, `Gäller till ${clock(o.until)}, sedan gör adressen ingenting.`));
+    const row = el('div', { class: 'open-address' });
+    row.append(el('span', { class: 'sub' }, what), el('code', {}, link), copyButton, qr);
+    addresses.append(row);
+  }
+  item.append(addresses);
+  return item;
+}
+
+async function loadOpenTests() {
+  const res = await fetch('/api/open-tests');
+  if (!res.ok) return;
+  const list = await res.json();
+  $('open-tests').replaceChildren(...(list.length ? list.map(openItem) : [el('p', { class: 'muted small' }, 'Öppet test är av för alla spel.')]));
+}
+
+$('new-open').game.addEventListener('change', () => {
+  const page = pageOf($('new-open').game.value.trim());
+  if (page) $('new-open').page.value = page;
+});
+$('new-open').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const game = form.game.value.trim().toLowerCase();
+  const page = form.page.value.trim();
+  const res = await fetch('/api/open-tests', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ game, page, hours: Number(form.hours.value) }) });
+  if (!res.ok) {
+    $('open-tests').prepend(el('p', { class: 'error' }, `Öppet test slogs inte på (${res.status}).`));
+    return;
+  }
+  rememberPage(game, page);
+  loadOpenTests();
 });
 
 const RESULT_SV = { worked: 'Fungerade', partly: 'Delvis', failed: 'Fungerade inte', cancelled: 'Avbrutet', note: 'Anteckning' };

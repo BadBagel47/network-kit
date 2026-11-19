@@ -245,3 +245,10 @@ svg.ring .arc { transition: stroke-dashoffset 0.9s cubic-bezier(0.2, 0.8, 0.2, 1
 /* Playtest Recorder (F-092): a download link that looks like the buttons beside it. */
 a.button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); color: var(--text); font-weight: 600; text-decoration: none; }
 .item .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Open test (F-118): the three ready addresses under a game that is on. */
+.open-test { flex-wrap: wrap; }
+.open-addresses { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.open-address { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.open-address .sub { flex-basis: 100%; }
+.open-address code { flex: 1; min-width: 0; overflow-wrap: anywhere; }

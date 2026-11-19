@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.18** (0.18.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.19** (0.19.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -433,7 +433,7 @@ The panel talks to the admin page's versioned paths (`/playtest/v1/…`, from 0.
 
 **Playtest Remote.** *Fjärr* in the panel opens a small room on the admin page's Worker (only with a working tester link) and shows a QR code, a six-character code and a link. The other device scans the code, opens the link, or types the code at `https://network-kit-admin.l8p1.workers.dev/remote/`. The remote shows the list; *Starta* loads the test's start address on the game page (which pairs again after loading); the steps, questions, result, *Skärmbild från spelet* (taken on the game page and sent with the report), *Ta foto eller välj bild* (the remote's own camera; it sends with a key that only sends pictures and lasts six hours, never the tester link, from 0.14.1), *Skicka*, *Börja om* and *Avbryt* work from there, and the game page folds the panel to a small tab while a remote is connected. The report goes through the game page, which adds its context. Rooms stay in the EU and close an hour after every page was hidden.
 
-**Playtest Recorder (from 0.18, F-092).** Records a match without disturbing the players, so it can be read afterwards to see what can be improved or what went wrong. It runs only in a browser that has opened a tester link (owner 2026-11-19, Q7); everyone else records nothing and loads nothing more.
+**Playtest Recorder (from 0.18, F-092).** Records a match without disturbing the players, so it can be read afterwards to see what can be improved or what went wrong. It runs in a browser that has opened a tester link (owner 2026-11-19, Q7), and from 0.19 in Open test (below); everyone else records nothing and loads nothing more.
 
 ```js
 import { startPlaytest, startRecorder, RECORDER_NOTICE } from './vendor/network-kit/client/playtest-entry.js';
@@ -448,6 +448,22 @@ recorder?.attach(room);                          // a NetworkRoom, also one join
 - A small red badge *● Inspelning* shows in the corner of the recording browser (not with `?still`, or with `badge: false`); a tap on it asks (the text changes), a second tap stops recording in that tab, also after a reload (sessionStorage `nk-playtest:recording-off`). `recorder.onStop(fn)` is called once when recording stops (the badge, *Sluta testa på den här enheten* or `stop()`), so the game can tell the others; the demo sends `{ type: 'recording', on: false }` and the others take the notice away. **Other players are to be told** (owner, Q8): when a recording browser is in a room, the game shows `RECORDER_NOTICE` ("This match is being recorded for a playtest.") to the others, for example by sending a game message the others answer by showing it, as the demo does. `recorder.stop()` sends what is left and stops.
 - Content-Security-Policy as for the panel (`connect-src` to the admin page). Nothing is kept in the browser.
 - The owner sees the sessions under *Rapporter → Inspelningar* on the admin page (kept 30 days; *Behåll* keeps one until unmarked, at most 20 per game; *Ladda ner* gives the whole session as JSON). Stored in the admin page's Playtest store as `rcs:` (a session) and `rck:<session>:<batch>` (a batch).
+
+**Starting and stopping (from 0.19, F-120).** `recorder.recording` says whether it records now. A browser with a tester link records from the start; one that stopped in this tab, or Open test with `?report` alone, does not. While not recording, the Recorder keeps the last two minutes in the browser's memory only (nothing is sent; owner Q12). Playtest-rutan shows *Spela in* / *Sluta spela in* when the game runs the Recorder: *Spela in* starts a new session that begins with those two minutes (their `t` is negative). `recorder.start()` and `recorder.stop()` do the same from the game; `recorder.onStart(fn)` and `recorder.onStop(fn)` are called each time, so the game tells the others (the demo sends `{ type: 'recording' }` and `{ type: 'recording', on: false }`). `stop()` no longer ends the Recorder; `close()` does (the panel's *Sluta testa på den här enheten* calls it).
+
+**Open test (from 0.19, F-118).** A switch per game on the admin page (*Länkar och meddelanden → Öppet test*): off by default, on for 1 to 6 hours (owner Q6), then off by itself. While it is on, the game's page takes part without a tester link:
+
+| Address | Records | Shows Playtest-rutan |
+| --- | --- | --- |
+| `…/?record` | yes, from the start | no |
+| `…/?report` | no (*Spela in* starts it) | yes, with an optional name field (owner Q8) |
+| `…/?record&report` | yes | yes |
+| a tester link (as before) | yes | yes |
+
+- The admin page shows the three addresses with *Kopiera* and a QR code, built from the game's page (owner Q10), and until when the test is on.
+- The page asks the admin page once per tab (`POST /playtest/v1/open`; the browser's `Origin` says which game's page it is, so the page must be on the address given when switching it on). Without `?record` or `?report` nothing is asked or loaded. The answer is kept in sessionStorage (`nk-playtest:open`; the name in `nk-playtest:name`).
+- Reports and recordings are marked *Öppet test* (with the name) under Rapporter, and `open: true` for the agent. Caps per game and UTC day (owner Q9): 300 recording batches, 50 reports, 100 pictures. No Playtest Remote in Open test (it needs a tester link).
+- Nothing changes in the game: `startPlaytest` and `startRecorder` from `client/playtest-entry.js` handle it. The game's page must allow the admin page in `connect-src`, as for tester links.
 
 **What the agent does with the reports.** The owner sees them under *Rapporter* on the admin page (kept 30 days; *Behåll* keeps one until unmarked, at most 50 per game). The developing agent reads them sealed (the repository is public), from its own session with `BadBagel47/network-kit` added:
 

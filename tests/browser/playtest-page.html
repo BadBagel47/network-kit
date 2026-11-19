@@ -10,7 +10,7 @@
   <canvas id="game" width="640" height="360" tabindex="0"></canvas>
   <p id="keys">0</p>
   <script type="module">
-    import { startPlaytest } from '/src/client/playtest-entry.js';
+    import { startPlaytest, startRecorder } from '/src/client/playtest-entry.js';
     // The game draws something to take a picture of, and counts the keys it gets.
     const c = document.getElementById('game');
     const g = c.getContext('2d');
@@ -31,6 +31,8 @@
       ],
       context: () => ({ mode: 'test', at: new URLSearchParams(location.search).get('at') }),
     });
+    // Playtest Recorder too, when the test asks (Open test, F-118).
+    if (new URLSearchParams(location.search).has('rec')) window.recorder = await startRecorder({ admin, version: 'test-1' });
     window.ready = true;
   </script>
 </body>

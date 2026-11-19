@@ -44,13 +44,12 @@ startPlaytest({
   // rooms without disturbing anyone; the others in the room are told.
   recorder = await startRecorder({ admin: ADMIN, version: VERSION });
   // Stopped with the badge or "Sluta testa på den här enheten": the others are told.
-  recorder?.onStop(() => {
-    recorder = null;
-    room?.send({ type: 'recording', on: false });
-  });
+  // Started or stopped (the badge, Spela in in Playtest-rutan): the others are told.
+  recorder?.onStart(() => room?.send({ type: 'recording' }));
+  recorder?.onStop(() => room?.send({ type: 'recording', on: false }));
   if (recorder && room) {
     recorder.attach(room);
-    room.send({ type: 'recording' });
+    if (recorder.recording) room.send({ type: 'recording' });
   }
 }).catch(() => {});
 let recorder = null;
@@ -180,7 +179,7 @@ function showGame() {
     log(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}.`);
     diag.event(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}`);
     // Whoever comes in or back is told that this browser records (F-092, owner Q8).
-    if (recorder && (event === 'join' || event === 'back')) room.send({ type: 'recording' }, { to: [id] });
+    if (recorder?.recording && (event === 'join' || event === 'back')) room.send({ type: 'recording' }, { to: [id] });
     if (room.isHost) {
       if (event === 'join' || event === 'back') {
         ensureShips();
@@ -199,7 +198,7 @@ function showGame() {
 
   // Tell the others when this browser records (F-092, owner Q8); the recording
   // browser tells each who joins later itself (the peer handler above).
-  if (recorder) room.send({ type: 'recording' });
+  if (recorder?.recording) room.send({ type: 'recording' });
   room.on('message', ({ from, data }) => {
     diag.messageIn();
     if (data?.type === 'recording') {
@@ -207,7 +206,7 @@ function showGame() {
         $('recording-note')?.remove();
         return;
       }
-      if (!recorder && !$('recording-note')) {
+      if (!recorder?.recording && !$('recording-note')) {
         const note = document.createElement('p');
         note.id = 'recording-note';
         note.className = 'hint';

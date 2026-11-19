@@ -12,6 +12,7 @@
 //   GET  /api/control settings and the games' status without Cloudflare's figures, fast (F-078)
 //   GET/POST/DELETE /api/lobbies  lobbies with host and guest links (F-059) (signed in only)
 //   GET/POST/DELETE /api/testers, /api/reports  Playtest tester links and reports (F-091) (signed in only)
+//   GET/POST/DELETE /api/open-tests            Open test per game (F-118) (signed in only)
 //   POST /playtest/check, /playtest/report, /playtest/image, /playtest/upload-key  from a
 //                     tester's browser on any site (CORS), with the tester link's token (F-091),
 //                     or for pictures an upload key for Playtest Remote (B-094)
@@ -126,7 +127,9 @@ async function playtestRoom(request, env) {
       token = '';
     }
     const s = playtestStore(env);
-    const ok = s && (await s.fetch('https://store/playtest/check', { method: 'POST', body: JSON.stringify({ token }) })).ok;
+    const checked = s && (await s.fetch('https://store/playtest/check', { method: 'POST', body: JSON.stringify({ token }) }));
+    // Playtest Remote needs a tester link; an Open test token makes no room (F-118).
+    const ok = checked?.ok && !(await checked.json()).open;
     if (!ok) return json({ error: 'no-tester' }, 401, { ...PLAYTEST_CORS, 'access-control-allow-origin': request.headers.get('origin') ?? '*', vary: 'origin' });
     return playtestRooms.fetch(new Request(request.url, { method: 'POST', headers: request.headers, body: JSON.stringify({ settings: { access: 'open' } }) }), env);
   }
@@ -199,6 +202,12 @@ async function playtestPublic(request, env, deps) {
     const body = await request.text();
     if (body.length > 128 * 1024) return cors(json({ error: 'too-large' }, 413));
     return cors(await s.fetch('https://store/playtest/record', { method: 'POST', body }));
+  }
+  if (path === '/playtest/open') {
+    // Open test (F-118): a page with ?record or ?report asks whether its game's test is on.
+    // The browser's own Origin header says which game's page it is.
+    const origin = request.headers.get('origin') ?? '';
+    return cors(await s.fetch('https://store/playtest/open', { method: 'POST', body: JSON.stringify({ origin }) }));
   }
   if (path === '/playtest/check' || path === '/playtest/report' || path === '/playtest/upload-key') {
     const body = await request.text();
@@ -357,12 +366,12 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
   }
   if (pathname === '/playtest/rooms' || pathname.startsWith('/playtest/rooms/')) return playtestRoom(request, env);
   if (pathname.startsWith('/playtest/')) return playtestPublic(request, env, deps);
-  const listApi = ['/api/passes', '/api/messages', '/api/log', '/api/lobbies', '/api/testers', '/api/reports', '/api/recordings'].find((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const listApi = ['/api/passes', '/api/messages', '/api/log', '/api/lobbies', '/api/testers', '/api/reports', '/api/recordings', '/api/open-tests'].find((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (listApi) {
     // The owner's personal links per game (F-058) and messages to players (F-066).
     if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);
     if (request.method !== 'GET' && !sameOrigin(request)) return new Response('Forbidden', { status: 403 });
-    const s = ['/api/testers', '/api/reports', '/api/recordings'].includes(listApi) ? playtestStore(env) : store(env);
+    const s = ['/api/testers', '/api/reports', '/api/recordings', '/api/open-tests'].includes(listApi) ? playtestStore(env) : store(env);
     if (!s) return json({ error: 'no-store' }, 500);
     if (listApi === '/api/log' && request.method !== 'GET') return json({ error: 'method' }, 405);
     const rest = pathname.slice('/api'.length) + url.search;
