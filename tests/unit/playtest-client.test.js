@@ -51,3 +51,37 @@ test('F-096: the light entry loads nothing without a tester link', async () => {
   assert.equal(hasTesterLink({ location: { hash: '' }, localStorage: store('"pt_a.b"') }), true);
   assert.equal(await startPlaytest({ admin: 'https://x', window: { location: { hash: '' }, localStorage: store(null) } }), null);
 });
+
+test('F-092: the Recorder sends batches with the game\'s events, the room\'s and the page\'s errors; a closing page sends with a beacon', async () => {
+  const { Recorder } = await import('../../src/client/recorder.js');
+  const sent = [];
+  const beacons = [];
+  const listeners = new Map();
+  const win = {
+    crypto: globalThis.crypto, location: { href: 'https://game.example/', search: '' }, navigator: { userAgent: 'test', sendBeacon: (url, blob) => { beacons.push({ url, blob }); return true; } },
+    innerWidth: 800, innerHeight: 600, screen: { width: 800, height: 600 }, devicePixelRatio: 2,
+    addEventListener: (type, fn) => listeners.set(type, fn), setInterval: () => 1, clearInterval: () => {},
+  };
+  const fetchStub = async (url, init) => { sent.push({ url, body: JSON.parse(init.body) }); return new Response('{}', { status: 200 }); };
+  const rec = new Recorder({ admin: 'https://admin.example/', token: 'pt_a.b', version: 'v1', window: win, document: null, fetch: fetchStub, badge: false });
+  const handlers = new Map();
+  const room = { code: 'ABCDEF', me: 'p1', on: (type, fn) => handlers.set(type, fn) };
+  rec.attach(room);
+  rec.record('level-start', { level: 2 });
+  handlers.get('peer')({ event: 'join', id: 'p2' });
+  handlers.get('status')('reconnecting');
+  listeners.get('error')({ message: 'boom', filename: 'https://game.example/app.js', lineno: 12 });
+  await rec.flush();
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].url, 'https://admin.example/playtest/v1/record');
+  const first = sent[0].body;
+  assert.equal(first.seq, 0);
+  assert.equal(first.token, 'pt_a.b');
+  assert.equal(first.context.version, 'v1');
+  assert.deepEqual(first.events.map((e) => e.k), ['room', 'level-start', 'room-peer', 'room-status', 'error']);
+  assert.equal(await rec.flush(), false, 'nothing new, nothing sent');
+  rec.record('death', { by: 'wind' });
+  listeners.get('pagehide')();
+  assert.equal(beacons.length, 1, 'the last batch goes with a beacon');
+  assert.equal(JSON.parse(await beacons[0].blob.text()).seq, 1);
+});

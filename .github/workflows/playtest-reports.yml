@@ -22,6 +22,10 @@ on:
         description: Report ids to keep past 30 days (Behåll), separated by commas
         required: false
         default: ''
+      what:
+        description: reports, recordings (Playtest Recorder, F-092) or both
+        required: false
+        default: reports
 
 permissions:
   contents: write
@@ -40,6 +44,7 @@ jobs:
       GAME: ${{ inputs.game }}
       SINCE: ${{ inputs.since }}
       KEEP: ${{ inputs.keep }}
+      WHAT: ${{ inputs.what }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,6 +53,7 @@ jobs:
       - name: Fetch and seal the reports
         run: |
           case "$GAME" in (*[!a-z0-9-]*|'') echo "::error::bad game name"; exit 1;; esac
+          case "$WHAT" in (reports|recordings|both) ;; (*) echo "::error::what must be reports, recordings or both"; exit 1;; esac
           # The same key the admin deploy gives the Worker (see deploy-admin.yml).
           READ_KEY=$(printf 'network-kit playtest read\n%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)
           echo "::add-mask::$READ_KEY"
@@ -61,7 +67,9 @@ jobs:
           else
             git checkout -q --orphan playtest-reports && git rm -rqf .
           fi
-          cp "$RUNNER_TEMP/sealed.txt" "$GAME.txt"
-          git add "$GAME.txt"
-          git commit -q -m "Sealed Playtest reports for $GAME (F-091)" || echo "Nothing new"
+          # Recordings alone go in their own file, so a reading of reports never replaces them (F-092).
+          FILE="$GAME.txt"; [ "$WHAT" = recordings ] && FILE="$GAME-recordings.txt"
+          cp "$RUNNER_TEMP/sealed.txt" "$FILE"
+          git add "$FILE"
+          git commit -q -m "Sealed Playtest $WHAT for $GAME (F-091, F-092)" || echo "Nothing new"
           git push -q origin playtest-reports

@@ -15,7 +15,9 @@
 //   POST /playtest/check, /playtest/report, /playtest/image, /playtest/upload-key  from a
 //                     tester's browser on any site (CORS), with the tester link's token (F-091),
 //                     or for pictures an upload key for Playtest Remote (B-094)
+//   POST /playtest/v1/record  Playtest Recorder's batches from a tester's browser (F-092)
 //   GET  /playtest/read, POST /playtest/keep  the agent's workflow, with PLAYTEST_READ_KEY
+//        (also read-image, read-recordings, read-recording)
 //
 // Games ask whether they are open through the GameApi entrypoint (entry.js),
 // over a service binding.
@@ -147,7 +149,7 @@ async function playtestPublic(request, env, deps) {
   // in 0.17 (F-114): no game took 0.14 (docs/DEPRECATIONS.md).
   if (!url.pathname.startsWith('/playtest/v1/')) return cors(json({ error: 'not-found' }, 404));
   const path = url.pathname.replace(/^\/playtest\/v1\//, '/playtest/');
-  if (path === '/playtest/read' || path === '/playtest/keep' || path === '/playtest/read-image') {
+  if (path === '/playtest/read' || path === '/playtest/keep' || path === '/playtest/read-image' || path === '/playtest/read-recordings' || path === '/playtest/read-recording') {
     // The agent's workflow (playtest-reports.yml), with the key the deploy derives.
     if (!(await sameKey(request.headers.get('x-playtest-key'), env.PLAYTEST_READ_KEY))) return json({ error: 'forbidden' }, 403);
     if (path === '/playtest/keep' && request.method === 'POST') {
@@ -157,6 +159,16 @@ async function playtestPublic(request, env, deps) {
         out[id] = await (await s.fetch(`https://store/reports/${encodeURIComponent(id)}/keep`, { method: 'POST', body: JSON.stringify({ keep }) })).json();
       }
       return json(out);
+    }
+    if (path === '/playtest/read-recordings') {
+      const q = new URLSearchParams({ game: url.searchParams.get('game') ?? '', since: url.searchParams.get('since') ?? '0' });
+      return json(await (await s.fetch(`https://store/recordings?${q}`)).json());
+    }
+    if (path === '/playtest/read-recording') {
+      const id = url.searchParams.get('id') ?? '';
+      if (!/^[A-Za-z0-9_-]{8,40}$/.test(id)) return json({ error: 'bad-id' }, 400);
+      const res = await s.fetch(`https://store/recordings/${id}`);
+      return new Response(res.body, { status: res.status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
     }
     if (path === '/playtest/read-image') {
       // One picture at a time (B-099): the reading never holds them all.
@@ -181,6 +193,12 @@ async function playtestPublic(request, env, deps) {
     return cors(await s.fetch(`https://store/playtest/image?token=${encodeURIComponent(token)}`, {
       method: 'POST', headers: { 'content-type': request.headers.get('content-type') ?? '' }, body: bytes,
     }));
+  }
+  if (path === '/playtest/record') {
+    // Playtest Recorder's batches (F-092); a page that closes sends its last one with sendBeacon.
+    const body = await request.text();
+    if (body.length > 128 * 1024) return cors(json({ error: 'too-large' }, 413));
+    return cors(await s.fetch('https://store/playtest/record', { method: 'POST', body }));
   }
   if (path === '/playtest/check' || path === '/playtest/report' || path === '/playtest/upload-key') {
     const body = await request.text();
@@ -339,12 +357,12 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
   }
   if (pathname === '/playtest/rooms' || pathname.startsWith('/playtest/rooms/')) return playtestRoom(request, env);
   if (pathname.startsWith('/playtest/')) return playtestPublic(request, env, deps);
-  const listApi = ['/api/passes', '/api/messages', '/api/log', '/api/lobbies', '/api/testers', '/api/reports'].find((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const listApi = ['/api/passes', '/api/messages', '/api/log', '/api/lobbies', '/api/testers', '/api/reports', '/api/recordings'].find((p) => pathname === p || pathname.startsWith(`${p}/`));
   if (listApi) {
     // The owner's personal links per game (F-058) and messages to players (F-066).
     if (!(await validSession(env, readCookie(request)))) return json({ error: 'signed-out' }, 401);
     if (request.method !== 'GET' && !sameOrigin(request)) return new Response('Forbidden', { status: 403 });
-    const s = listApi === '/api/testers' || listApi === '/api/reports' ? playtestStore(env) : store(env);
+    const s = ['/api/testers', '/api/reports', '/api/recordings'].includes(listApi) ? playtestStore(env) : store(env);
     if (!s) return json({ error: 'no-store' }, 500);
     if (listApi === '/api/log' && request.method !== 'GET') return json({ error: 'method' }, 405);
     const rest = pathname.slice('/api'.length) + url.search;

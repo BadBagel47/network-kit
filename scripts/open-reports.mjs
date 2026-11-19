@@ -22,7 +22,8 @@ const data = Buffer.concat([decipher.update(Buffer.from(sealed.d, 'base64')), de
 const text = gunzipSync(data).toString('utf8');
 if (!pictureDir) process.stdout.write(text);
 else {
-  const reports = JSON.parse(text);
+  const parsed = JSON.parse(text);
+  const reports = Array.isArray(parsed) ? parsed : parsed.reports ?? [];
   mkdirSync(pictureDir, { recursive: true });
   for (const r of reports) {
     for (const p of r.pictures ?? []) {
@@ -32,5 +33,5 @@ else {
       delete p.data;
     }
   }
-  process.stdout.write(`${JSON.stringify(reports, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
 }

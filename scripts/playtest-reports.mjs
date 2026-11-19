@@ -3,12 +3,13 @@
 // sealed, as scripts/demo-reports.mjs does: gzip, AES-256-GCM with a fresh key,
 // and that key wrapped with the reader's RSA public key. Pictures are included.
 // Open with: node scripts/open-reports.mjs <private-key.pem> <file> [picture dir]
-//   ADMIN_URL=… READ_KEY=… PUBLIC_KEY=<base64 SPKI DER> GAME=<game> [SINCE=<ms>] [KEEP=<ids>] [OUT=<file>] node scripts/playtest-reports.mjs
+//   ADMIN_URL=… READ_KEY=… PUBLIC_KEY=<base64 SPKI DER> GAME=<game> [SINCE=<ms>] [KEEP=<ids>] [WHAT=reports|recordings|both] [OUT=<file>] node scripts/playtest-reports.mjs
+// With recordings the sealed text is { reports, recordings } instead of the list of reports.
 import { createPublicKey, publicEncrypt, randomBytes, createCipheriv, constants } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
 
-const { ADMIN_URL, READ_KEY, PUBLIC_KEY, GAME = '', SINCE = '0', KEEP = '' } = process.env;
+const { ADMIN_URL, READ_KEY, PUBLIC_KEY, GAME = '', SINCE = '0', KEEP = '', WHAT = 'reports' } = process.env;
 if (!ADMIN_URL || !READ_KEY || !PUBLIC_KEY) {
   console.error('ADMIN_URL, READ_KEY and PUBLIC_KEY are needed');
   process.exit(1);
@@ -35,8 +36,19 @@ for (const r of reports) {
     if (pic.ok) r.pictures.push({ id, type: pic.headers.get('content-type'), data: Buffer.from(await pic.arrayBuffer()).toString('base64') });
   }
 }
-const text = JSON.stringify(reports);
-const count = reports.length;
+// Playtest Recorder's sessions (F-092), whole, when asked for.
+let recordings = null;
+if (/recordings|both/.test(WHAT)) {
+  recordings = [];
+  const list = await (await fetch(`${ADMIN_URL}/playtest/v1/read-recordings?${q}`, { headers })).json();
+  for (const r of list) {
+    const res = await fetch(`${ADMIN_URL}/playtest/v1/read-recording?id=${encodeURIComponent(r.id)}`, { headers });
+    if (res.ok) recordings.push(await res.json());
+  }
+}
+const wanted = /reports|both/.test(WHAT) ? reports : [];
+const text = JSON.stringify(recordings ? { reports: wanted, recordings } : wanted);
+const count = wanted.length + (recordings?.length ?? 0);
 const publicKey = createPublicKey({ key: Buffer.from(PUBLIC_KEY.replace(/\s+/g, ''), 'base64'), format: 'der', type: 'spki' });
 const key = randomBytes(32);
 const iv = randomBytes(12);

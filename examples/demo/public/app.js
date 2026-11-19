@@ -3,7 +3,7 @@
 // host sends positions often and gives the room a full snapshot now and then.
 import {
   NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession, VERSION, watchNotices, readLobbyLink, forgetLobbyLink,
-  startPlaytest,
+  startPlaytest, startRecorder, RECORDER_NOTICE,
 } from './network-kit/client/index.js';
 import * as diag from './diag.js';
 
@@ -31,14 +31,29 @@ const PLAYTEST_ITEMS = [
     steps: ['Tryck Fjärr i Playtest-rutan.', 'Skanna QR-koden med en annan enhet, eller skriv in koden på fjärrkontrollens sida.', 'Rapportera det här testet från den andra enheten.'],
     links: [], ask: 'Var det enkelt att koppla ihop?' },
 ];
+// The preview demo talks to the preview admin page (owner 2026-11-19, Q11).
+const ADMIN = location.hostname.includes('-preview') ? 'https://nk-admin-preview.trythis.one' : 'https://network-kit-admin.l8p1.workers.dev';
 startPlaytest({
-  // The preview demo talks to the preview admin page (owner 2026-11-19, Q11).
-  admin: location.hostname.includes('-preview') ? 'https://nk-admin-preview.trythis.one' : 'https://network-kit-admin.l8p1.workers.dev',
+  admin: ADMIN,
   items: PLAYTEST_ITEMS,
   version: VERSION,
   context: () => ({ room: room?.code ?? null, status: room?.status ?? null, players: room?.players?.length ?? 0 }),
   canvas: () => document.querySelector('canvas'),
+}).then(async () => {
+  // Playtest Recorder (F-092), also only with a tester link: records the demo's
+  // rooms without disturbing anyone; the others in the room are told.
+  recorder = await startRecorder({ admin: ADMIN, version: VERSION });
+  // Stopped with the badge or "Sluta testa på den här enheten": the others are told.
+  recorder?.onStop(() => {
+    recorder = null;
+    room?.send({ type: 'recording', on: false });
+  });
+  if (recorder && room) {
+    recorder.attach(room);
+    room.send({ type: 'recording' });
+  }
 }).catch(() => {});
+let recorder = null;
 
 let room = null;
 let world = { ships: {}, tick: 0 };
@@ -62,6 +77,7 @@ async function enter(promise) {
   for (const b of document.querySelectorAll('#start button')) b.disabled = true;
   try {
     room = await promise;
+    recorder?.attach(room);
     sessionStorage.setItem('demo:room', room.code);
     forgetShareKey();
     forgetLobbyLink(); // the lobby link is a key too (F-059)
@@ -163,6 +179,8 @@ function showGame() {
     const words = { join: 'joined', back: 'is back', drop: 'lost the connection', gone: 'left', host: 'runs the game', waiting: 'is waiting', owner: 'owns the room' };
     log(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}.`);
     diag.event(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}`);
+    // Whoever comes in or back is told that this browser records (F-092, owner Q8).
+    if (recorder && (event === 'join' || event === 'back')) room.send({ type: 'recording' }, { to: [id] });
     if (room.isHost) {
       if (event === 'join' || event === 'back') {
         ensureShips();
@@ -179,8 +197,25 @@ function showGame() {
     }
   });
 
+  // Tell the others when this browser records (F-092, owner Q8); the recording
+  // browser tells each who joins later itself (the peer handler above).
+  if (recorder) room.send({ type: 'recording' });
   room.on('message', ({ from, data }) => {
     diag.messageIn();
+    if (data?.type === 'recording') {
+      if (data.on === false) {
+        $('recording-note')?.remove();
+        return;
+      }
+      if (!recorder && !$('recording-note')) {
+        const note = document.createElement('p');
+        note.id = 'recording-note';
+        note.className = 'hint';
+        note.textContent = RECORDER_NOTICE;
+        $('status').after(note);
+      }
+      return;
+    }
     if (data?.type === 'ping') {
       room.send({ type: 'pong', t: data.t }, { to: [from] }); // answered at once
       return;
@@ -363,6 +398,12 @@ for (const button of document.querySelectorAll('#pad button')) {
   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(type, up);
   button.addEventListener('contextmenu', (e) => e.preventDefault());
 }
+// B-116: Safari on an iPad starts its own gestures (text menu, magnifier, zoom)
+// from a double tap held on the pad; only a stopped touchstart prevents them.
+// Pointer events still arrive, so steering is unchanged.
+for (const type of ['touchstart', 'touchend']) $('pad').addEventListener(type, (e) => e.preventDefault(), { passive: false });
+// No text menu anywhere on the page, except in fields and on links.
+addEventListener('contextmenu', (e) => { if (!e.target.closest?.('input, textarea, a[href]')) e.preventDefault(); });
 // Let go of everything when the page is left, so no direction stays held.
 addEventListener('blur', () => { for (const k of Object.keys(myKeys)) press(k, false); });
 

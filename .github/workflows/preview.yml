@@ -5,7 +5,7 @@
 # which deploys the real ones (deploy-admin.yml, deploy-demo.yml) and releases.
 # Repository secrets:
 #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ANALYTICS_TOKEN, CLOUDFLARE_ACCOUNT_ID  as for the real ones
-#   ADMIN_PASSWORD_PREVIEW   the preview admin page's own password; without it nobody can sign in there
+#   NK_ADMIN_PREVIEW_LOGIN_PASSWORD   the preview admin page's own password; without it nobody can sign in there
 #   TRYTHIS_COUNTRY_BYPASS   lets the checks past the country rule on trythis.one
 name: Preview
 
@@ -28,7 +28,7 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_ANALYTICS_TOKEN: ${{ secrets.CLOUDFLARE_ANALYTICS_TOKEN }}
-      ADMIN_PASSWORD_PREVIEW: ${{ secrets.ADMIN_PASSWORD_PREVIEW }}
+      NK_ADMIN_PREVIEW_LOGIN_PASSWORD: ${{ secrets.NK_ADMIN_PREVIEW_LOGIN_PASSWORD }}
       TRYTHIS_COUNTRY_BYPASS: ${{ secrets.TRYTHIS_COUNTRY_BYPASS }}
     steps:
       - name: Check for the Cloudflare token
@@ -68,10 +68,10 @@ jobs:
           if [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then vars=(--var "CF_ACCOUNT_ID:$CLOUDFLARE_ACCOUNT_ID"); fi
           # The admin page first: the demo is bound to it.
           deploy --config admin/wrangler.preview.jsonc "${vars[@]}" --domain nk-admin-preview.trythis.one
-          if [ -n "$ADMIN_PASSWORD_PREVIEW" ]; then
-            printf '%s' "$ADMIN_PASSWORD_PREVIEW" | npx wrangler secret put ADMIN_PASSWORD --config admin/wrangler.preview.jsonc
+          if [ -n "$NK_ADMIN_PREVIEW_LOGIN_PASSWORD" ]; then
+            printf '%s' "$NK_ADMIN_PREVIEW_LOGIN_PASSWORD" | npx wrangler secret put ADMIN_PASSWORD --config admin/wrangler.preview.jsonc
           else
-            echo "::warning::ADMIN_PASSWORD_PREVIEW is not set; nobody can sign in on the preview admin page."
+            echo "::warning::NK_ADMIN_PREVIEW_LOGIN_PASSWORD is not set; nobody can sign in on the preview admin page."
           fi
           if [ -n "$CLOUDFLARE_ANALYTICS_TOKEN" ]; then
             printf '%s' "$CLOUDFLARE_ANALYTICS_TOKEN" | npx wrangler secret put CF_ANALYTICS_TOKEN --config admin/wrangler.preview.jsonc

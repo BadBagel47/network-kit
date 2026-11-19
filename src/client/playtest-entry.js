@@ -25,3 +25,18 @@ export async function startPlaytest(options = {}) {
   const { startPlaytest: start } = await import('./playtest.js');
   return start(options);
 }
+
+/** What a game shows the other players while a browser in the room records (F-092, owner Q8). */
+export const RECORDER_NOTICE = 'This match is being recorded for a playtest.';
+
+/**
+ * Starts Playtest Recorder (F-092) when this browser has a tester link;
+ * otherwise resolves to null at once. The tester link's token must already be
+ * kept (startPlaytest takes it out of the address, so start that first).
+ */
+export async function startRecorder(options = {}) {
+  const win = options.window ?? globalThis.window;
+  if (!hasTesterLink(win)) return null;
+  const { startRecorder: start } = await import('./recorder.js');
+  return start(options);
+}

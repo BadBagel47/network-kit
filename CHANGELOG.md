@@ -10,6 +10,16 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.18.0 (2026-11-19)
+
+Affects: games that want Playtest Recorder (take 0.18.0 and add a few lines; nothing to change otherwise), and the admin page.
+
+- New (F-092): Playtest Recorder records a match without disturbing the players, in a browser that has opened a tester link: the game's own events (`record(kind, data)`), the page's errors, frames per second and the room's connection and participants (`attach(room)`), sent in batches about once a minute and when the page closes. Other players are to be told (`RECORDER_NOTICE`). `startRecorder` in `client/playtest-entry.js`; see the guide, section 11.
+- New (F-092): the admin page's *Rapporter* tab lists the recordings under *Inspelningar* (kept 30 days; *Behåll* at most 20 per game; *Ladda ner*, *Ta bort*), and the workflow *Playtest reports* reads them sealed (`what: recordings` or `both`).
+- Changed (F-117): Playtest-rutan folded is a small round button with a drawn flask (a tap opens it, a drag moves it), with the running test's id in a badge and a dot while Playtest Remote is connected.
+- New (F-117): *Sluta testa på den här enheten* in Playtest-rutan makes the browser forget the tester link; a tap on the badge *● Inspelning* stops recording in that tab after a second tap (both confirm in the page, not with Safari's suppressible dialog); `recorder.onStop(fn)` lets the game tell the others.
+- Fixed (B-116): no text on the demo's pages can be selected, and the steering buttons stop the iPad's own gestures (text menu, magnifier, zoom), also on a double tap held down (fields to type in and links keep theirs).
+
 ## 0.17.0 (2026-11-19)
 
 Affects: games that use notices or Playtest (take 0.17.0; nothing to change in the game), and the admin page. The rest of the review D-093, the clean-up and Bricks' suggestions; does not close live rooms.

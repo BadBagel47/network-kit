@@ -10,6 +10,8 @@
 //   imgd:<id>             the picture itself (base64), read only when one picture is asked for
 //   ptn:<tester>:<day>    how many reports and pictures a tester sent that day
 //   ptu:<id>              an upload key for Playtest Remote (B-094): pictures only, a few hours
+//   rcs:<session>         a Playtest Recorder session's facts (F-092): game, tester, times, counts
+//   rck:<session>:<seq>   one batch of a session's events (about a minute)
 //
 // They live in a Durable Object of their own (PlaytestStore, F-095), so pictures
 // never slow the games' status checks in the admin page's main store.
@@ -25,7 +27,13 @@ const TESTER_DEFAULT_HOURS = 30 * 24;
 const TESTER_MAX_HOURS = 90 * 24;
 const TESTER_KEEP_MS = 14 * 86_400_000; // links no longer active stay listed this long
 const UNUSED_IMAGE_MS = 86_400_000; // a picture no report points to is deleted after a day
-const PER_DAY = { report: 200, image: 100 }; // per tester link and UTC day
+const PER_DAY = { report: 200, image: 100, chunk: 1500 }; // per tester link and UTC day
+// Playtest Recorder (F-092): batches of about a minute, at most this many per
+// session (four hours) and events per batch; kept like the reports.
+export const RECORDING_CHUNKS_MAX = 240;
+export const RECORDING_EVENTS_MAX = 500;
+export const RECORDING_KEEP_MAX = 20;
+const SESSION_ID = /^[A-Za-z0-9_-]{8,40}$/;
 const RESULTS = new Set(['worked', 'partly', 'failed', 'cancelled', 'note']);
 
 export const validGame = (g) => typeof g === 'string' && /^[a-z0-9][a-z0-9-]{0,62}$/.test(g);
@@ -150,7 +158,7 @@ export class Playtest {
 
   async count(tester, kind) {
     const key = `ptn:${tester.id}:${day(this.now())}`;
-    const n = (await this.storage.get(key)) ?? { report: 0, image: 0 };
+    const n = { report: 0, image: 0, chunk: 0, ...((await this.storage.get(key)) ?? {}) };
     if (n[kind] >= PER_DAY[kind]) return false;
     n[kind] += 1;
     await this.storage.put(key, n);
@@ -284,6 +292,88 @@ export class Playtest {
     await this.storage.delete([found.key, ...found.r.images.flatMap((i) => [`img:${i}`, `imgd:${i}`])]);
   }
 
+  // ---- Playtest Recorder (F-092)
+
+  /** One batch of a recording session: { session, seq, events: [{ t, k, d }], context }. */
+  async addRecording(token, raw) {
+    const t = await this.testerFor(token);
+    if (!t) return { error: 'no-tester', status: 401 };
+    const session = String(raw?.session ?? '');
+    const seq = Number(raw?.seq);
+    if (!SESSION_ID.test(session) || !Number.isInteger(seq) || seq < 0 || seq >= RECORDING_CHUNKS_MAX) return { error: 'bad-chunk', status: 400 };
+    if (!(await this.count(t, 'chunk'))) return { error: 'too-many', status: 429 };
+    const now = this.now();
+    const metaKey = `rcs:${session}`;
+    const meta = (await this.storage.get(metaKey)) ?? {
+      id: session, game: t.game, tester: t.label || 'Testare', testerId: t.id, startedAt: now, lastAt: now,
+      chunks: 0, events: 0, keep: false, context: cleanReport({ context: raw?.context }).context,
+    };
+    if (meta.testerId !== t.id) return { error: 'not-yours', status: 403 };
+    const events = Array.isArray(raw?.events) ? raw.events.slice(0, RECORDING_EVENTS_MAX).map((e) => ({
+      t: Number.isFinite(Number(e?.t)) ? Number(e.t) : null,
+      k: typeof e?.k === 'string' ? e.k.slice(0, 40) : 'event',
+      d: plain(e?.d),
+    })) : [];
+    const chunkKey = `rck:${session}:${String(seq).padStart(4, '0')}`;
+    const fresh = !(await this.storage.get(chunkKey));
+    await this.storage.put(chunkKey, { seq, at: now, events });
+    meta.lastAt = now;
+    if (fresh) {
+      meta.chunks = Math.max(meta.chunks, seq + 1);
+      meta.events += events.length;
+    }
+    await this.storage.put(metaKey, meta);
+    await this.clean();
+    return { ok: true };
+  }
+
+  /** Sessions, newest first (their facts only). */
+  async recordings({ game = null, since = 0 } = {}) {
+    await this.clean();
+    const out = [];
+    for (const m of (await this.storage.list({ prefix: 'rcs:' })).values()) {
+      if ((game && m.game !== game) || m.lastAt <= since) continue;
+      out.push(m);
+    }
+    return out.sort((a, b) => b.startedAt - a.startedAt);
+  }
+
+  /** One session with all its events in order, or null. */
+  async recording(id) {
+    const meta = SESSION_ID.test(String(id)) ? await this.storage.get(`rcs:${id}`) : null;
+    if (!meta) return null;
+    const events = [];
+    for (let seq = 0; seq < meta.chunks; seq += 1) {
+      const chunk = await this.storage.get(`rck:${id}:${String(seq).padStart(4, '0')}`);
+      if (chunk) events.push(...chunk.events);
+    }
+    return { ...meta, events };
+  }
+
+  async setKeepRecording(id, keep) {
+    const meta = SESSION_ID.test(String(id)) ? await this.storage.get(`rcs:${id}`) : null;
+    if (!meta) return { error: 'not-found', status: 404 };
+    if (keep && !meta.keep) {
+      let kept = 0;
+      for (const m of (await this.storage.list({ prefix: 'rcs:' })).values()) if (m.keep && m.game === meta.game) kept += 1;
+      if (kept >= RECORDING_KEEP_MAX) return { error: 'keep-full', status: 409 };
+    }
+    meta.keep = Boolean(keep);
+    await this.storage.put(`rcs:${id}`, meta);
+    return { ok: true, keep: meta.keep };
+  }
+
+  recordingKeys(meta) {
+    return [`rcs:${meta.id}`, ...Array.from({ length: meta.chunks }, (_, seq) => `rck:${meta.id}:${String(seq).padStart(4, '0')}`)];
+  }
+
+  async deleteRecording(id) {
+    const meta = SESSION_ID.test(String(id)) ? await this.storage.get(`rcs:${id}`) : null;
+    if (!meta) return;
+    const keys = this.recordingKeys(meta);
+    for (let i = 0; i < keys.length; i += 128) await this.storage.delete(keys.slice(i, i + 128));
+  }
+
   /** Reports older than 30 days (unless kept), their pictures, and stray pictures go. */
   async clean() {
     const now = this.now();
@@ -295,6 +385,10 @@ export class Playtest {
     }
     for (const [key, img] of await this.storage.list({ prefix: 'img:' })) {
       if (!img.report && now - img.at > UNUSED_IMAGE_MS) gone.push(key, `imgd:${img.id}`);
+    }
+    // Recordings go like reports (F-092); their batches are deleted by name, never listed.
+    for (const m of (await this.storage.list({ prefix: 'rcs:' })).values()) {
+      if (!m.keep && now - m.lastAt > REPORT_KEEP_MS) gone.push(...this.recordingKeys(m));
     }
     for (const [key, u] of await this.storage.list({ prefix: 'ptu:' })) {
       if (u.expires <= now) gone.push(key);
@@ -338,6 +432,23 @@ export class PlaytestStore {
     }
     if (path === '/playtest/upload-key' && request.method === 'POST') {
       return answer(await pt.createUploadKey((await body()).token));
+    }
+    if (path === '/playtest/record' && request.method === 'POST') {
+      const { token, ...chunk } = await body();
+      return answer(await pt.addRecording(token, chunk));
+    }
+    if (path === '/recordings' && request.method === 'GET') {
+      return json(await pt.recordings({ game: url.searchParams.get('game') || null, since: Number(url.searchParams.get('since')) || 0 }));
+    }
+    const rec = path.match(/^\/recordings\/([A-Za-z0-9_-]{8,40})(\/keep)?$/);
+    if (rec && rec[2] && request.method === 'POST') return answer(await pt.setKeepRecording(rec[1], (await body()).keep !== false));
+    if (rec && !rec[2] && request.method === 'GET') {
+      const found = await pt.recording(rec[1]);
+      return found ? json(found) : json({ error: 'not-found' }, 404);
+    }
+    if (rec && !rec[2] && request.method === 'DELETE') {
+      await pt.deleteRecording(rec[1]);
+      return json({ ok: true });
     }
     if (path === '/playtest/report' && request.method === 'POST') {
       const { token, report } = await body();

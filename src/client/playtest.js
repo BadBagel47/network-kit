@@ -142,10 +142,18 @@ const STYLE = `
   box-shadow: 0 10px 30px rgba(0,0,0,.5); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; overflow: hidden; }
 .nkp[hidden] { display: none; }
-.nkp.folded { width: auto; max-height: none; border-radius: 999px; }
+.nkp.folded { width: auto; max-height: none; border: 0; border-radius: 50%; background: transparent; box-shadow: none; overflow: visible; }
 .nkp * { box-sizing: border-box; }
 .nkp .bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; background: #1b2147; cursor: grab; touch-action: none; }
-.nkp.folded .bar { padding: 6px 12px; border-radius: 999px; }
+.nkp.folded .bar { padding: 0; background: transparent; }
+.nkp button.fab { position: relative; width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 50%; background: #1b2147;
+  border: 2px solid #7db4ff; display: grid; place-items: center; box-shadow: 0 6px 18px rgba(0,0,0,.5); touch-action: none; cursor: grab; }
+.nkp .fab svg { width: 22px; height: 22px; display: block; }
+.nkp .fab .tag { position: absolute; top: -9px; left: 26px; background: #ffcc33; color: #1a1a1a; font: 700 10px/1.4 ui-monospace, Menlo, monospace;
+  border-radius: 999px; padding: 0 5px; white-space: nowrap; pointer-events: none; }
+.nkp .fab .linked { position: absolute; right: -3px; bottom: -3px; width: 12px; height: 12px; border-radius: 50%; background: #3fb950;
+  border: 2px solid #10142a; pointer-events: none; }
+.nkp button.quiet { background: transparent; border-color: transparent; color: #a9b0d6; font-size: 13px; text-decoration: underline; }
 .nkp .bar b { flex: 1; font-size: 14px; letter-spacing: .04em; white-space: nowrap; }
 .nkp .dot { width: 10px; height: 10px; border-radius: 50%; background: #ffcc33; display: inline-block; margin-right: 4px; }
 .nkp button { font: inherit; color: inherit; background: #262d5c; border: 1px solid #3a4386; border-radius: 8px;
@@ -304,6 +312,38 @@ export async function startPlaytest(options = {}) {
   const panel = new PlaytestPanel({ ...options, win, doc, admin, token, tester, fetch: f, storage: local });
   panel.mount();
   return panel;
+}
+
+/**
+ * A second tap within four seconds confirms (owner Q11): the first changes the
+ * button's text. Used instead of confirm(), which Safari offers to suppress.
+ */
+export function confirmTap(win, button, ask, ms = 4000) {
+  if (button.dataset.confirming) {
+    win.clearTimeout?.(Number(button.dataset.confirming));
+    delete button.dataset.confirming;
+    return true;
+  }
+  const before = button.textContent;
+  button.textContent = ask;
+  button.dataset.confirming = String(win.setTimeout?.(() => {
+    delete button.dataset.confirming;
+    button.textContent = before;
+  }, ms) ?? 1);
+  return false;
+}
+
+const SVG = 'http://www.w3.org/2000/svg';
+/** The folded panel's flask (F-117), drawn so it looks the same on every device. */
+function flaskIcon(doc) {
+  const svg = doc.createElementNS(SVG, 'svg');
+  for (const [k, v] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: '#7db4ff', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) svg.setAttribute(k, v);
+  for (const d of ['M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3', 'M7 15h10']) {
+    const path = doc.createElementNS(SVG, 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  }
+  return svg;
 }
 
 export class PlaytestPanel {
@@ -490,6 +530,18 @@ export class PlaytestPanel {
     const root = this.root;
     root.replaceChildren();
     root.classList.toggle('folded', this.folded);
+    if (this.folded) {
+      // A round button with a flask (F-117): a tap opens the box, a drag moves it.
+      const label = `Visa Playtest${this.run ? ` (test ${this.run.id} pågår)` : ''}${this.remotes ? ', fjärrkontroll ansluten' : ''}`;
+      const fab = this.el('button', { type: 'button', class: 'fab', 'aria-label': label, title: label, on: { click: () => { if (!this.dragged) this.fold(false); } } },
+        flaskIcon(this.doc),
+        this.run ? this.el('span', { class: 'tag' }, this.run.id) : null,
+        this.remotes ? this.el('span', { class: 'linked' }) : null);
+      const bar = this.el('div', { class: 'bar' }, fab);
+      this.drag(bar, true);
+      root.append(bar);
+      return;
+    }
     const bar = this.el('div', { class: 'bar' },
       this.run ? this.el('span', { class: 'dot', title: 'Ett test pågår' }) : null,
       this.el('b', {}, `Playtest${this.folded && this.run ? ` · ${this.run.id}` : ''}${this.folded && this.remotes ? ' · fjärr' : ''}`),
@@ -513,16 +565,23 @@ export class PlaytestPanel {
     if (folded) this.giveBack();
   }
 
-  drag(bar) {
+  drag(bar, onButtons = false) {
     let start = null;
     bar.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button')) return;
+      if (!onButtons && e.target.closest('button')) return;
       start = { px: e.clientX, py: e.clientY, ...this.at };
-      bar.setPointerCapture?.(e.pointerId);
+      this.dragged = false;
+      // Captured only once it is a drag: a capture from the start would send a tap's click to the bar, not the button.
+      if (!onButtons) bar.setPointerCapture?.(e.pointerId);
     });
     bar.addEventListener('pointermove', (e) => {
       if (!start) return;
-      this.place({ x: start.x + e.clientX - start.px, y: start.y + e.clientY - start.py });
+      // A few pixels are still a tap (F-117: the folded button opens on a tap).
+      if (!this.dragged && Math.abs(e.clientX - start.px) + Math.abs(e.clientY - start.py) > 6) {
+        this.dragged = true;
+        if (onButtons) bar.setPointerCapture?.(e.pointerId);
+      }
+      if (this.dragged) this.place({ x: start.x + e.clientX - start.px, y: start.y + e.clientY - start.py });
     });
     const end = () => {
       if (!start) return;
@@ -545,6 +604,30 @@ export class PlaytestPanel {
         this.el('span', {}, item.title ?? item.id)));
     }
     body.append(this.el('button', { type: 'button', on: { click: () => this.note() } }, 'Skriv en anteckning utan test'));
+    // Confirmed in the page, not with confirm(): Safari offers to suppress a page's dialogs (owner Q11).
+    const stop = this.el('button', { type: 'button', class: 'quiet', on: { click: () => this.forget(stop) } }, 'Sluta testa på den här enheten');
+    body.append(stop);
+  }
+
+  /**
+   * Makes this browser forget the tester link (F-117, owner Q3): the box, Playtest
+   * Remote and the Recorder stop here; other devices and the link itself are
+   * untouched, and opening the link again starts over.
+   */
+  async forget(button) {
+    if (button && !confirmTap(this.win, button, 'Tryck igen för att sluta testa här')) return;
+    await this.sender.flush().catch(() => {}); // what waits to be sent goes first
+    try {
+      this.remote?.leave();
+    } catch {
+      // already gone
+    }
+    write(this.storage, TOKEN_KEY, null);
+    write(this.session, RUN_KEY, null);
+    write(this.session, PAIR_KEY, null);
+    this.win.dispatchEvent?.(new this.win.CustomEvent('nk-playtest-forget'));
+    this.root.remove();
+    this.giveBack();
   }
 
   open(id) {

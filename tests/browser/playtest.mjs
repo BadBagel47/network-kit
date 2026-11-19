@@ -114,6 +114,21 @@ try {
   await game.locator('.nkp').waitFor();
   assert.ok(Math.abs((await game.locator('.nkp .bar').boundingBox()).x - moved.x) < 3, 'kept after a reload');
 
+  // F-117: folded it is a small round button with a flask; a drag moves it, a tap opens it.
+  await game.locator('.nkp').getByRole('button', { name: 'Fäll ihop' }).click();
+  const fab = game.locator('.nkp button.fab');
+  const round = await fab.boundingBox();
+  assert.ok(round.width <= 44 && round.height <= 44, `small when folded (${round.width}x${round.height})`);
+  assert.equal(await fab.locator('svg').count(), 1, 'a drawn flask');
+  await game.mouse.move(round.x + 20, round.y + 20);
+  await game.mouse.down();
+  await game.mouse.move(round.x + 80, round.y + 20, { steps: 5 });
+  await game.mouse.up();
+  assert.ok(Math.abs((await fab.boundingBox()).x - round.x - 60) < 3, 'the folded button is dragged');
+  assert.equal(await fab.count(), 1, 'a drag does not open it');
+  await fab.click();
+  await game.locator('.nkp').getByRole('button', { name: 'Fjärr' }).waitFor();
+
   // Playtest Remote on a phone.
   await game.locator('.nkp').getByRole('button', { name: 'Fjärr' }).click();
   const code = (await game.locator('.nkp .code').innerText({ timeout: 10_000 })).trim();
@@ -125,7 +140,7 @@ try {
   await phone.locator('#code').fill(code.toLowerCase());
   await phone.getByRole('button', { name: 'Koppla' }).click();
   await phone.getByRole('button', { name: /T-1/ }).waitFor();
-  await game.locator('.nkp .bar').getByText('Playtest · fjärr').waitFor(); // the game screen keeps a small tab
+  await game.locator('.nkp button.fab .linked').waitFor(); // the game screen keeps a small round button, marked as linked
 
   // Starting T-1 from the phone loads its start address on the game page, which pairs again.
   await phone.getByRole('button', { name: /T-1/ }).click();
@@ -136,7 +151,10 @@ try {
   await phone.locator('#questions textarea').first().fill('Too dark in the cellar');
   await phone.getByRole('button', { name: 'Nästa steg' }).click();
   await phone.locator('#steps li.now').getByText('Look at the light').waitFor();
-  assert.match(await game.locator('.nkp .bar').innerText(), /Playtest · T-1 · fjärr/);
+  // Folded while the remote leads: the running test's id in the badge, the linked dot (F-117).
+  assert.equal(await game.locator('.nkp button.fab .tag').innerText(), 'T-1');
+  assert.equal(await game.locator('.nkp button.fab .linked').count(), 1);
+  assert.match(await game.locator('.nkp button.fab').getAttribute('aria-label'), /test T-1 pågår.*fjärrkontroll ansluten/);
   await phone.getByRole('button', { name: 'Skärmbild från spelet' }).click();
   await phone.locator('#thumbs img').waitFor();
   // A photo from the remote's own camera goes with its upload key, never the tester link (B-094).
@@ -165,18 +183,55 @@ try {
   const read = await (await fetch(`${A}/playtest/v1/read?game=testgame`, { headers: { 'x-playtest-key': 'test-read' } })).json();
   assert.ok(read.some((r) => r.id === second.id && r.images.length === 2));
 
-  // The admin page lists them under Rapporter.
+  // Playtest Recorder (F-092) in the browser that has the tester link: a batch
+  // from another origin reaches the admin page, and the agent can read it.
+  const before = Date.now() - 1000; // the local store may keep sessions from earlier runs
+  const recorded = await game.evaluate(async (admin) => {
+    const { startRecorder } = await import('/src/client/playtest-entry.js');
+    const rec = await startRecorder({ admin, version: 'test-1' });
+    if (!rec) return { started: false };
+    rec.record('level-start', { level: 3 });
+    const sent = await rec.flush();
+    const badge = document.querySelector('button[aria-label^="Playtest Recorder spelar in"]');
+    window.recorderStopped = false;
+    rec.onStop(() => { window.recorderStopped = true; });
+    return { started: true, sent, badge: badge?.textContent ?? null };
+  }, A);
+  assert.deepEqual(recorded, { started: true, sent: true, badge: '● Inspelning' });
+  // Owner Q3: a tap on the badge asks, then stops recording in this tab, also after a reload.
+  const badgeButton = game.locator('button[aria-label^="Playtest Recorder spelar in"]');
+  await badgeButton.click();
+  assert.equal(await badgeButton.innerText(), '● Tryck igen för att sluta spela in', 'the first tap asks (owner Q11)');
+  await badgeButton.click();
+  await game.waitForFunction(() => window.recorderStopped === true);
+  assert.equal(await game.locator('button[aria-label^="Playtest Recorder spelar in"]').count(), 0, 'the badge goes');
+  assert.equal(await game.evaluate(async (admin) => (await import('/src/client/playtest-entry.js')).startRecorder({ admin }).then((r) => r === null), A), true, 'not again in this tab');
+  const sessions = await (await fetch(`${A}/playtest/v1/read-recordings?game=testgame&since=${before}`, { headers: { 'x-playtest-key': 'test-read' } })).json();
+  assert.equal(sessions.length, 1);
+  const session = await (await fetch(`${A}/playtest/v1/read-recording?id=${sessions[0].id}`, { headers: { 'x-playtest-key': 'test-read' } })).json();
+  assert.ok(session.events.some((e) => e.k === 'level-start' && e.d.level === 3), 'the game\'s event was recorded');
+  assert.equal(session.context.version, 'test-1');
+
+  // The admin page lists them under Rapporter, and the recording under Inspelningar.
   const owner = await ctx.newPage();
   await ctx.addCookies([{ name: cookie.split('=')[0], value: cookie.split('=').slice(1).join('='), url: A }]);
   await owner.goto(A);
   await owner.getByRole('button', { name: 'Rapporter' }).click();
   await owner.locator('.report').filter({ hasText: 'T-1 · The base inside' }).first().waitFor();
+  await owner.locator('#recordings .item').filter({ hasText: 'testgame' }).first().waitFor();
   if (process.env.SHOTS) {
     await owner.locator('.report summary').first().click();
     await owner.screenshot({ path: `${process.env.SHOTS}/rapporter.png`, fullPage: true });
     await owner.getByRole('button', { name: 'Länkar och meddelanden' }).click();
     await owner.locator('#new-tester').screenshot({ path: `${process.env.SHOTS}/testers.png` });
   }
+
+  // Owner Q3: "Sluta testa på den här enheten" makes this browser forget the tester link.
+  if (await game.locator('.nkp button.fab').count()) await game.locator('.nkp button.fab').click();
+  await game.locator('.nkp').getByRole('button', { name: 'Sluta testa på den här enheten' }).click();
+  await game.locator('.nkp').getByRole('button', { name: 'Tryck igen för att sluta testa här' }).click();
+  await game.locator('.nkp').waitFor({ state: 'detached' });
+  assert.equal(await game.evaluate(() => localStorage.getItem('nk-playtest:tester')), null, 'the link is forgotten here');
 
   assert.deepEqual(errors, [], 'no page errors');
   console.log('playtest browser test passed');
