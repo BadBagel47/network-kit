@@ -165,12 +165,33 @@ try {
   const read = await (await fetch(`${A}/playtest/v1/read?game=testgame`, { headers: { 'x-playtest-key': 'test-read' } })).json();
   assert.ok(read.some((r) => r.id === second.id && r.images.length === 2));
 
-  // The admin page lists them under Rapporter.
+  // Playtest Recorder (F-092) in the browser that has the tester link: a batch
+  // from another origin reaches the admin page, and the agent can read it.
+  const before = Date.now() - 1000; // the local store may keep sessions from earlier runs
+  const recorded = await game.evaluate(async (admin) => {
+    const { startRecorder } = await import('/src/client/playtest-entry.js');
+    const rec = await startRecorder({ admin, version: 'test-1' });
+    if (!rec) return { started: false };
+    rec.record('level-start', { level: 3 });
+    const sent = await rec.flush();
+    const badge = document.querySelector('[aria-label="Playtest Recorder spelar in"]')?.textContent ?? null;
+    await rec.stop();
+    return { started: true, sent, badge };
+  }, A);
+  assert.deepEqual(recorded, { started: true, sent: true, badge: '● Inspelning' });
+  const sessions = await (await fetch(`${A}/playtest/v1/read-recordings?game=testgame&since=${before}`, { headers: { 'x-playtest-key': 'test-read' } })).json();
+  assert.equal(sessions.length, 1);
+  const session = await (await fetch(`${A}/playtest/v1/read-recording?id=${sessions[0].id}`, { headers: { 'x-playtest-key': 'test-read' } })).json();
+  assert.ok(session.events.some((e) => e.k === 'level-start' && e.d.level === 3), 'the game\'s event was recorded');
+  assert.equal(session.context.version, 'test-1');
+
+  // The admin page lists them under Rapporter, and the recording under Inspelningar.
   const owner = await ctx.newPage();
   await ctx.addCookies([{ name: cookie.split('=')[0], value: cookie.split('=').slice(1).join('='), url: A }]);
   await owner.goto(A);
   await owner.getByRole('button', { name: 'Rapporter' }).click();
   await owner.locator('.report').filter({ hasText: 'T-1 · The base inside' }).first().waitFor();
+  await owner.locator('#recordings .item').filter({ hasText: 'testgame' }).first().waitFor();
   if (process.env.SHOTS) {
     await owner.locator('.report summary').first().click();
     await owner.screenshot({ path: `${process.env.SHOTS}/rapporter.png`, fullPage: true });

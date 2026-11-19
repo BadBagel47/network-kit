@@ -241,3 +241,7 @@ svg.ring .arc { transition: stroke-dashoffset 0.9s cubic-bezier(0.2, 0.8, 0.2, 1
 .report-body .pics { display: flex; gap: 8px; flex-wrap: wrap; }
 .report-body .pics img { width: 160px; max-height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid var(--divider); }
 .report-body .actions { display: flex; gap: 8px; }
+
+/* Playtest Recorder (F-092): a download link that looks like the buttons beside it. */
+a.button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); color: var(--text); font-weight: 600; text-decoration: none; }
+.item .actions { display: flex; gap: 8px; flex-wrap: wrap; }

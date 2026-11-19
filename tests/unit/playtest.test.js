@@ -189,3 +189,34 @@ test('F-114: Playtest data left in the main store by 0.14.0 is deleted once', as
   await main.fetch(new Request('https://store/settings'));
   assert.deepEqual([...storage.data.keys()].sort(), ['dropped:playtest-0.14', 'settings']);
 });
+
+test('F-092: Playtest Recorder keeps a session in batches; the owner and the agent read it whole; it goes after 30 days unless kept', async () => {
+  const { env, call, tick } = setup();
+  const cookie = `nk_admin=${await newSession(env)}`;
+  const { token } = await (await call('/api/testers', { method: 'POST', headers: { cookie }, body: JSON.stringify({ game: 'demo', label: 'Kväll', hours: 720 }) })).json();
+  const session = 'session-abc123';
+  const send = (seq, events, extra = {}) => call('/playtest/v1/record', { method: 'POST', headers: { 'content-type': 'text/plain', origin: 'https://game.example' }, body: JSON.stringify({ token, session, seq, events, ...extra }) });
+  assert.equal((await send(0, [{ t: 0, k: 'room', d: { code: 'ABCDEF' } }, { t: 5, k: 'level-start', d: { level: 1 } }], { context: { device: 'iPad', browser: 'Brave' } })).status, 200);
+  assert.equal((await send(1, [{ t: 60_000, k: 'perf', d: { fps: 58 } }])).status, 200);
+  assert.equal((await send(1, [{ t: 60_000, k: 'perf', d: { fps: 58 } }])).status, 200, 'a batch sent twice counts once');
+  assert.equal((await call('/playtest/v1/record', { method: 'POST', body: JSON.stringify({ token: 'pt_x.y', session, seq: 2, events: [] }) })).status, 401);
+  assert.equal((await send(9999, [])).status, 400, 'a session has at most 240 batches');
+
+  const list = await (await call('/api/recordings', { headers: { cookie } })).json();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].tester, 'Kväll');
+  assert.equal(list[0].events, 3);
+  assert.equal(list[0].context.device, 'iPad');
+  const whole = await (await call(`/api/recordings/${session}`, { headers: { cookie } })).json();
+  assert.deepEqual(whole.events.map((e) => e.k), ['room', 'level-start', 'perf']);
+  const read = await (await call(`/playtest/v1/read-recording?id=${session}`, { headers: { 'x-playtest-key': 'read-key' } })).json();
+  assert.equal(read.events.length, 3, 'the agent reads it too');
+  assert.equal((await call('/playtest/v1/read-recordings', { headers: { 'x-playtest-key': 'nope' } })).status, 403);
+
+  assert.equal((await (await call(`/api/recordings/${session}/keep`, { method: 'POST', headers: { cookie }, body: JSON.stringify({ keep: true }) })).json()).keep, true);
+  tick(31 * 86_400_000);
+  assert.equal((await (await call('/api/recordings', { headers: { cookie } })).json()).length, 1, 'kept');
+  await call(`/api/recordings/${session}/keep`, { method: 'POST', headers: { cookie }, body: JSON.stringify({ keep: false }) });
+  tick(61_000);
+  assert.equal((await (await call('/api/recordings', { headers: { cookie } })).json()).length, 0, 'gone after 30 days');
+});

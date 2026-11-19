@@ -127,7 +127,7 @@ async function load() {
   loadTesters().catch(() => {});
   loadMessages().catch(() => {});
   if (tab === 'logg') loadLog().catch(() => {});
-  if (tab === 'rapporter') loadReports().catch(() => {});
+  if (tab === 'rapporter') { loadReports().catch(() => {}); loadRecordings().catch(() => {}); }
   loadUsage().catch(() => {});
 }
 
@@ -202,7 +202,7 @@ for (const b of document.querySelectorAll('[data-tab]')) {
     }
     for (const s of document.querySelectorAll('.tab')) s.hidden = s.id !== `tab-${tab}`;
     if (tab === 'logg') loadLog().catch(() => {});
-    if (tab === 'rapporter') loadReports().catch(() => {});
+    if (tab === 'rapporter') { loadReports().catch(() => {}); loadRecordings().catch(() => {}); }
   });
 }
 
@@ -1176,3 +1176,40 @@ async function loadReports() {
   $('reports').replaceChildren(...(list.length ? list.map(reportItem) : [el('p', { class: 'muted small' }, 'Inga rapporter än. Skapa en testarlänk under Länkar och meddelanden.')]));
 }
 $('report-game').addEventListener('change', () => loadReports().catch(() => {}));
+
+/* Playtest Recorder (F-092): sessions with what happened during a match. */
+
+function recordingItem(r) {
+  const item = el('div', { class: 'item' });
+  const info = el('div');
+  const minutes = Math.max(1, Math.round((r.lastAt - r.startedAt) / 60_000));
+  info.append(el('span', { class: 'title' }, `${r.game} · ${r.tester}`));
+  info.append(el('span', { class: 'sub' }, `${dayTime(r.startedAt)} · ${minutes} min · ${r.events} händelser${r.context?.device ? ` · ${r.context.device}` : ''}${r.keep ? ' · behålls' : ''}`));
+  item.append(info);
+  const actions = el('div', { class: 'actions' });
+  const download = el('a', { href: `/api/recordings/${r.id}`, download: `inspelning-${r.game}-${r.id}.json`, class: 'button' }, 'Ladda ner');
+  const keep = el('button', { type: 'button' }, r.keep ? 'Sluta behålla' : 'Behåll');
+  keep.addEventListener('click', async () => {
+    const res = await fetch(`/api/recordings/${r.id}/keep`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ keep: !r.keep }) });
+    if (res.status === 409) alert('Det finns redan 20 behållna inspelningar för spelet. Ta bort märkningen på någon först.');
+    loadRecordings();
+  });
+  const del = el('button', { type: 'button' }, 'Ta bort');
+  del.addEventListener('click', async () => {
+    if (!confirm('Ta bort inspelningen?')) return;
+    await fetch(`/api/recordings/${r.id}`, { method: 'DELETE' });
+    loadRecordings();
+  });
+  actions.append(download, keep, del);
+  item.append(actions);
+  return item;
+}
+
+async function loadRecordings() {
+  const game = $('report-game').value;
+  const res = await fetch(`/api/recordings${game ? `?game=${encodeURIComponent(game)}` : ''}`);
+  if (!res.ok) return;
+  const list = await res.json();
+  $('recordings').replaceChildren(...(list.length ? list.map(recordingItem) : [el('p', { class: 'muted small' }, 'Inga inspelningar än.')]));
+}
+$('report-game').addEventListener('change', () => loadRecordings().catch(() => {}));

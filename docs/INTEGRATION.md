@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.17** (0.17.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.18** (0.18.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -433,11 +433,27 @@ The panel talks to the admin page's versioned paths (`/playtest/v1/…`, from 0.
 
 **Playtest Remote.** *Fjärr* in the panel opens a small room on the admin page's Worker (only with a working tester link) and shows a QR code, a six-character code and a link. The other device scans the code, opens the link, or types the code at `https://network-kit-admin.l8p1.workers.dev/remote/`. The remote shows the list; *Starta* loads the test's start address on the game page (which pairs again after loading); the steps, questions, result, *Skärmbild från spelet* (taken on the game page and sent with the report), *Ta foto eller välj bild* (the remote's own camera; it sends with a key that only sends pictures and lasts six hours, never the tester link, from 0.14.1), *Skicka*, *Börja om* and *Avbryt* work from there, and the game page folds the panel to a small tab while a remote is connected. The report goes through the game page, which adds its context. Rooms stay in the EU and close an hour after every page was hidden.
 
+**Playtest Recorder (from 0.18, F-092).** Records a match without disturbing the players, so it can be read afterwards to see what can be improved or what went wrong. It runs only in a browser that has opened a tester link (owner 2026-11-19, Q7); everyone else records nothing and loads nothing more.
+
+```js
+import { startPlaytest, startRecorder, RECORDER_NOTICE } from './vendor/network-kit/client/playtest-entry.js';
+startPlaytest({ admin: ADMIN, items: ITEMS, version: VERSION });
+const recorder = await startRecorder({ admin: ADMIN, version: VERSION }); // null without a tester link
+recorder?.record('level-start', { level: 3 });   // the game's own events, small values
+recorder?.attach(room);                          // a NetworkRoom, also one joined later
+```
+
+- It collects what the game hands over (`record(kind, data)`: a level start, a death, a choice …) and what the kit sees itself: the page's errors and unhandled rejections, frames per second and the slowest frame each minute, the page being hidden or shown, and for each attached room its code, status (connecting, reconnecting …), participants coming and going, phase, host, owner and pause, closing and refused commands. The first batch carries the address, `version`, network-kit's version, device, browser, window, screen and language.
+- It sends a batch about once a minute (at most 500 events; more in a minute are counted as dropped) and the last one with `sendBeacon` when the page is hidden or closes. A session is one page visit, at most 240 batches (four hours); then a new session starts. A lost batch is not sent again: recording never disturbs the game. At most 1,500 batches a day per tester link.
+- A small red badge *● Inspelning* shows in the corner of the recording browser (not with `?still`, or with `badge: false`). **Other players are to be told** (owner, Q8): when a recording browser is in a room, the game shows `RECORDER_NOTICE` ("This match is being recorded for a playtest.") to the others, for example by sending a game message the others answer by showing it, as the demo does. `recorder.stop()` sends what is left and stops.
+- Content-Security-Policy as for the panel (`connect-src` to the admin page). Nothing is kept in the browser.
+- The owner sees the sessions under *Rapporter → Inspelningar* on the admin page (kept 30 days; *Behåll* keeps one until unmarked, at most 20 per game; *Ladda ner* gives the whole session as JSON). Stored in the admin page's Playtest store as `rcs:` (a session) and `rck:<session>:<batch>` (a batch).
+
 **What the agent does with the reports.** The owner sees them under *Rapporter* on the admin page (kept 30 days; *Behåll* keeps one until unmarked, at most 50 per game). The developing agent reads them sealed (the repository is public), from its own session with `BadBagel47/network-kit` added:
 
 1. Make a key pair: `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out key.pem` and the public key as base64 SPKI DER: `openssl pkey -in key.pem -pubout -outform DER | base64 -w0`. Keep `key.pem` in the session's scratch directory, never in a repository.
-2. Run the workflow *Playtest reports* (`playtest-reports.yml`) in network-kit with `game`, `public_key`, optionally `since` (ms; only newer reports) and `keep` (report ids to keep past 30 days).
-3. Read `<game>.txt` on the branch `playtest-reports`, and open it: `node scripts/open-reports.mjs key.pem <game>.txt <picture dir>` prints the reports as JSON and writes the pictures as files.
+2. Run the workflow *Playtest reports* (`playtest-reports.yml`) in network-kit with `game`, `public_key`, optionally `since` (ms; only newer reports), `keep` (report ids to keep past 30 days) and `what` (`reports`, the default; `recordings` for Playtest Recorder's sessions; `both`).
+3. Read `<game>.txt` (with `what: recordings`: `<game>-recordings.txt`) on the branch `playtest-reports`, and open it: `node scripts/open-reports.mjs key.pem <game>.txt <picture dir>` prints the reports as JSON and writes the pictures as files. With recordings the JSON is `{ reports, recordings }`; each recording is a session with its `context` and its `events` (`t` ms from the start, `k` the kind, `d` the data).
 4. Write what matters into the game's backlog with the test's id, and take reported tests out of the game's list.
 
 ## 12. Continuing after a page reload (host-run games where each browser runs its own game)

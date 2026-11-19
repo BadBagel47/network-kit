@@ -10,6 +10,13 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.18.0 (2026-11-19)
+
+Affects: games that want Playtest Recorder (take 0.18.0 and add a few lines; nothing to change otherwise), and the admin page.
+
+- New (F-092): Playtest Recorder records a match without disturbing the players, in a browser that has opened a tester link: the game's own events (`record(kind, data)`), the page's errors, frames per second and the room's connection and participants (`attach(room)`), sent in batches about once a minute and when the page closes. Other players are to be told (`RECORDER_NOTICE`). `startRecorder` in `client/playtest-entry.js`; see the guide, section 11.
+- New (F-092): the admin page's *Rapporter* tab lists the recordings under *Inspelningar* (kept 30 days; *Behåll* at most 20 per game; *Ladda ner*, *Ta bort*), and the workflow *Playtest reports* reads them sealed (`what: recordings` or `both`).
+
 ## 0.17.0 (2026-11-19)
 
 Affects: games that use notices or Playtest (take 0.17.0; nothing to change in the game), and the admin page. The rest of the review D-093, the clean-up and Bricks' suggestions; does not close live rooms.

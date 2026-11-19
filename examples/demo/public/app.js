@@ -3,7 +3,7 @@
 // host sends positions often and gives the room a full snapshot now and then.
 import {
   NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession, VERSION, watchNotices, readLobbyLink, forgetLobbyLink,
-  startPlaytest,
+  startPlaytest, startRecorder, RECORDER_NOTICE,
 } from './network-kit/client/index.js';
 import * as diag from './diag.js';
 
@@ -31,14 +31,21 @@ const PLAYTEST_ITEMS = [
     steps: ['Tryck Fjärr i Playtest-rutan.', 'Skanna QR-koden med en annan enhet, eller skriv in koden på fjärrkontrollens sida.', 'Rapportera det här testet från den andra enheten.'],
     links: [], ask: 'Var det enkelt att koppla ihop?' },
 ];
+// The preview demo talks to the preview admin page (owner 2026-11-19, Q11).
+const ADMIN = location.hostname.includes('-preview') ? 'https://nk-admin-preview.trythis.one' : 'https://network-kit-admin.l8p1.workers.dev';
 startPlaytest({
-  // The preview demo talks to the preview admin page (owner 2026-11-19, Q11).
-  admin: location.hostname.includes('-preview') ? 'https://nk-admin-preview.trythis.one' : 'https://network-kit-admin.l8p1.workers.dev',
+  admin: ADMIN,
   items: PLAYTEST_ITEMS,
   version: VERSION,
   context: () => ({ room: room?.code ?? null, status: room?.status ?? null, players: room?.players?.length ?? 0 }),
   canvas: () => document.querySelector('canvas'),
+}).then(async () => {
+  // Playtest Recorder (F-092), also only with a tester link: records the demo's
+  // rooms without disturbing anyone; the others in the room are told.
+  recorder = await startRecorder({ admin: ADMIN, version: VERSION });
+  if (recorder && room) recorder.attach(room);
 }).catch(() => {});
+let recorder = null;
 
 let room = null;
 let world = { ships: {}, tick: 0 };
@@ -62,6 +69,7 @@ async function enter(promise) {
   for (const b of document.querySelectorAll('#start button')) b.disabled = true;
   try {
     room = await promise;
+    recorder?.attach(room);
     sessionStorage.setItem('demo:room', room.code);
     forgetShareKey();
     forgetLobbyLink(); // the lobby link is a key too (F-059)
@@ -179,8 +187,21 @@ function showGame() {
     }
   });
 
+  // Tell the others when this browser records (F-092, owner Q8): the host passes it on.
+  if (recorder) room.send({ type: 'recording' });
   room.on('message', ({ from, data }) => {
     diag.messageIn();
+    if (data?.type === 'recording') {
+      if (room.isHost) room.send({ type: 'recording' });
+      if (!recorder && !$('recording-note')) {
+        const note = document.createElement('p');
+        note.id = 'recording-note';
+        note.className = 'hint';
+        note.textContent = RECORDER_NOTICE;
+        $('status').after(note);
+      }
+      return;
+    }
     if (data?.type === 'ping') {
       room.send({ type: 'pong', t: data.t }, { to: [from] }); // answered at once
       return;
