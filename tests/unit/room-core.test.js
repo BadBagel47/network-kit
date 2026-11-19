@@ -385,3 +385,13 @@ test('server-run room: the memory example with turns, a timer and a secret seed'
   assert.equal(b.last('msg').d.scores[b.id], 1);
   assert.equal(b.last('msg').d.turn, b.id, 'a match keeps the turn');
 });
+
+test('D-105: every earlier stored-room version is either carried over or named as closed', async () => {
+  const { STATE_VERSION, STATE_MIGRATIONS, STATE_DROPPED } = await import('../../src/server/room-core.js');
+  for (let v = 1; v < STATE_VERSION; v += 1) {
+    assert.ok(STATE_MIGRATIONS[v] || STATE_DROPPED.has(v), `stored rooms of version ${v}: add a step to STATE_MIGRATIONS, or put ${v} in STATE_DROPPED and say in CHANGELOG.md that the update closes live rooms`);
+  }
+  for (const [from, step] of Object.entries(STATE_MIGRATIONS)) {
+    assert.ok(Number(from) < STATE_VERSION && typeof step === 'function', `step from ${from}`);
+  }
+});

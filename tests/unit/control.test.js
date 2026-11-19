@@ -524,3 +524,30 @@ test('B-080: a room made with a game link remembers it on the owner\'s very firs
   const friend = await connect(world, core, { name: 'Friend', key: created.keys.player.k });
   assert.ok(friend.last('welcome'), 'the invited friend gets in');
 });
+
+test('B-109: a save from an older copy is refused, so one device cannot undo another (an emergency stop stays)', async () => {
+  const store = storeWith();
+  const call = async (path, method = 'GET', body) => {
+    const res = await store.fetch(new Request(`https://store${path}`, { method, body: body && JSON.stringify(body) }));
+    return { status: res.status, body: await res.json() };
+  };
+  const first = (await call('/settings')).body;
+  assert.equal(first.rev, 0);
+  // The phone stops the game.
+  const phone = structuredClone(first.settings);
+  phone.games.bricks = { mode: 'on', stopped: true };
+  assert.equal((await call('/settings', 'PUT', { rev: first.rev, settings: phone })).status, 200);
+  // The computer, still on the old copy, changes a share: refused.
+  const computer = structuredClone(first.settings);
+  computer.games.bricks = { mode: 'on', share: 30 };
+  const stale = await call('/settings', 'PUT', { rev: first.rev, settings: computer });
+  assert.equal(stale.status, 409);
+  assert.equal(stale.body.settings.games.bricks.stopped, true, 'the refusal carries the current settings');
+  // Made again on the current settings, both changes stand.
+  const again = structuredClone(stale.body.settings);
+  again.games.bricks.share = 30;
+  assert.equal((await call('/settings', 'PUT', { rev: stale.body.rev, settings: again })).status, 200);
+  const now = (await call('/settings')).body.settings.games.bricks;
+  assert.equal(now.stopped, true);
+  assert.equal(now.share, 30);
+});

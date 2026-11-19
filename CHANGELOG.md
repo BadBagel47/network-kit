@@ -10,6 +10,17 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.15.1 (2026-11-19)
+
+Affects: games whose pages are on another address than their Worker (take 0.15.1), and the admin page. From the review D-093; does not close live rooms.
+
+- Fixed (B-104): the room server's CORS let only `content-type` through, so a page on another address than its Worker could not ask its status with a game link (`x-admin-pass`): the browser refused, the check read as open and notices did not show. Checked in Chromium from another address.
+- Fixed (B-109): the admin page saved the whole settings from a copy up to a minute old, so two devices could undo each other, also an emergency stop. A save now carries the revision it started from; an older copy is refused and the page makes its change again on the current settings.
+- New (D-102): the guide labels each part stable, on trial, experimental, deprecated or internal (section 1).
+- New (F-103): `GameApi` only grows (`admin/gameapi.js`); `tests/compat/gameapi.mjs` runs the game Worker of the newest release of each earlier minor line against the current admin page.
+- New (D-105): a stored room of an earlier shape is carried over where a step is known (`STATE_MIGRATIONS`) and otherwise closed; a test makes sure each earlier shape is one or the other, and the guide says how to update when a release closes live rooms.
+- Fixed: the room server answers 404 to a path with a doubled slash anywhere (B-097, completed).
+
 ## 0.15.0 (2026-11-19)
 
 Affects: games that use Playtest; take 0.15.0 and import `startPlaytest` from `client/playtest-entry.js`. The admin page. From the review D-093.

@@ -7,44 +7,26 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import worker, { AdminGuard, playtestRooms } from './worker.js';
 import { AdminStore } from './store.js';
 import { PlaytestStore } from './playtest.js';
+import { gameApi } from './gameapi.js';
 
 export { AdminGuard, AdminStore, PlaytestStore };
 // Playtest Remote's rooms (F-091).
 export const PlaytestRoom = playtestRooms.RoomObject;
 export default worker;
 
+/** The entrypoint games call; its methods live in gameapi.js, which only ever grows (F-103). */
 export class GameApi extends WorkerEntrypoint {
-  store() {
-    return this.env.STORE.get(this.env.STORE.idFromName('main'));
+  api() {
+    return gameApi(this.env.STORE.get(this.env.STORE.idFromName('main')));
   }
 
-  /** { open, reason, until, stopped, notices } for the game (its Worker's name); the game tells its network-kit version (F-074). */
-  async status(game, mode = null, version = null) {
-    const q = new URLSearchParams({ game: String(game), ...(mode ? { mode: String(mode) } : {}), ...(version ? { version: String(version) } : {}) });
-    const res = await this.store().fetch(`https://store/status?${q}`);
-    return res.json();
-  }
+  status(game, mode = null, version = null) { return this.api().status(game, mode, version); }
 
-  /** Is this the owner's admin pass for the game (F-058)? */
-  async checkPass(game, token) {
-    const res = await this.store().fetch('https://store/check-pass', { method: 'POST', body: JSON.stringify({ game: String(game), token: String(token ?? '') }) });
-    return (await res.json()).valid === true;
-  }
+  checkPass(game, token) { return this.api().checkPass(game, token); }
 
-  /** Which lobby a host or guest link belongs to (F-059): { id, role, expires, room } or { error }. */
-  async lobby(game, token) {
-    const res = await this.store().fetch('https://store/lobby-check', { method: 'POST', body: JSON.stringify({ game: String(game), token: String(token ?? '') }) });
-    return res.json();
-  }
+  lobby(game, token) { return this.api().lobby(game, token); }
 
-  /** The room the game made for a lobby; the first one stored wins (F-059). */
-  async lobbyRoom(game, id, room) {
-    const res = await this.store().fetch('https://store/lobby-room', { method: 'POST', body: JSON.stringify({ game: String(game), id: String(id), room }) });
-    return res.json();
-  }
+  lobbyRoom(game, id, room) { return this.api().lobbyRoom(game, id, room); }
 
-  /** An anonymous connection-quality summary from one of the game's pages (F-052). */
-  async measure(game, summary) {
-    await this.store().fetch('https://store/measure', { method: 'POST', body: JSON.stringify({ game: String(game), summary }) });
-  }
+  measure(game, summary) { return this.api().measure(game, summary); }
 }

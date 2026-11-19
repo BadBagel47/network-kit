@@ -20,6 +20,14 @@ test('pages from other sites are refused when origins are listed', async () => {
   assert.equal(ok.headers.get('access-control-allow-origin'), 'https://game.example');
   const pre = await server.fetch(new Request('https://rooms.example/rooms', { method: 'OPTIONS', headers: { origin: 'https://game.example' } }), env);
   assert.equal(pre.status, 204);
+  // B-104: the status check with a game link sends x-admin-pass; a page on another address must be let through.
+  assert.match(pre.headers.get('access-control-allow-headers'), /x-admin-pass/);
+});
+
+test('B-097: a path with a doubled slash is not one of ours', async () => {
+  const server = createRoomServer({});
+  assert.equal((await server.fetch(new Request('https://rooms.example/rooms//', { method: 'POST', body: '{}' }), env)).status, 404);
+  assert.equal((await server.fetch(new Request('https://rooms.example/rooms/ABCD//ws'), env)).status, 404);
 });
 
 test('bad room codes and other paths answer 404 without waking a room', async () => {

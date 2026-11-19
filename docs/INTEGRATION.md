@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.15** (0.15.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.15** (0.15.1).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -24,6 +24,27 @@ This writes `client/`, `server/`, `shared/`, `version.js`, `smoke.mjs`, `VERSION
 - A **PATCH** (0.2.0 → 0.2.1) only fixes bugs and never needs changes in the game.
 - While the kit is 0.x, a **MINOR** (0.2 → 0.3) may need changes in the game; the changelog then has a short upgrade guide. From 1.0 a MINOR never breaks games.
 - The client and the server part of one game must be the same version (they are, since both come from the same copy; deploy the game's Worker and its pages together).
+
+**Stability** (from 0.15.1, D-102, after the review D-093). What a game can build on:
+
+| Part | Label |
+| --- | --- |
+| Rooms, codes, joining, roles, places, owner and host, phases, reconnection, close codes | **Stable** |
+| `send` (targets, `reliable`, `latest`), snapshots, large states | **Stable** |
+| Server-run `rules` hooks and the `room` object | **Stable** in shape; expect additions, not changes |
+| Share links, QR codes, `tabSession` | **Stable** |
+| Welcome state, successors, `sendsTo: 'all'`, `rttMs`, `at` on messages | **On trial** |
+| The `admin` option, game links, lobbies, modes, `status()`, notices | **On trial** |
+| `measure` | **On trial** |
+| Playtest and Playtest Remote | **Experimental** |
+| `gate` | **Deprecated** (use `admin`); removed at 1.0 |
+| Client constructor options not in this guide (`minDelayMs`, `maxQueue`, `pongTimeoutMs`, `storage`, `WebSocket`, …) | **Internal**: for tests, not promised |
+
+Stable parts change only with an upgrade guide and a compatibility test while the kit is 0.x (from 1.0 only in a MAJOR). Parts on trial may change in any MINOR, with an upgrade guide. Experimental parts may change in a PATCH. 1.0 comes when Bricks and Buzzy have each run a real session on the kit.
+
+**What every game shares live.** Each game has its own copy, but the admin page is one: its `GameApi` (status, game links, lobbies, measurements) only ever grows. A method or an argument is never removed or renamed, and new arguments are optional (F-103). `tests/compat/gameapi.mjs` runs the game Worker of the newest release of each earlier minor line against the current admin page. The Playtest paths carry a version (`/playtest/v1/…`).
+
+**Live rooms at an update** (D-105). A room stores its state in a shape with a version. When a release changes that shape, it either carries live rooms over (a step in `STATE_MIGRATIONS` in `server/room-core.js`) or closes them; the changelog then says *"closes live rooms"*. Before a game takes such a release, check on the admin page that its card shows no rooms now, and deploy then. A test makes sure every earlier shape is one or the other.
 
 **The smoke test** checks a copy without Cloudflare, in plain Node 22+:
 

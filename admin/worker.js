@@ -250,7 +250,7 @@ async function readSettings(env) {
 }
 
 /** Each game's and mode's status as the games see it, with the settings (F-067). */
-function controlOf({ settings, budget, connected = {}, versions = {} }, names, now) {
+function controlOf({ settings, rev = 0, budget, connected = {}, versions = {} }, names, now) {
   // What each game and each of its modes says now, and when a running timer ends (F-067).
   const one = (n, m) => {
     const entry = m ? settings.games[n]?.modes?.[m] : settings.games[n];
@@ -264,7 +264,7 @@ function controlOf({ settings, budget, connected = {}, versions = {} }, names, n
       modes: Object.fromEntries(Object.keys(settings.games[n]?.modes ?? {}).map((m) => [m, one(n, m)])),
     }]),
   );
-  return { settings, budget, status, connected, versions };
+  return { settings, rev, budget, status, connected, versions };
 }
 
 /**
@@ -343,7 +343,9 @@ export async function handle(request, env, deps = { fetch: (...a) => fetch(...a)
       if (!s) return json({ error: 'no-store' }, 500);
       const body = await request.text();
       if (body.length > 32 * 1024) return json({ error: 'too-large' }, 413);
-      return new Response((await s.fetch('https://store/settings', { method: 'PUT', body })).body, {
+      const res = await s.fetch('https://store/settings', { method: 'PUT', body });
+      return new Response(res.body, {
+        status: res.status, // 409 when the page saved from an older copy (B-109)
         headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
       });
     }

@@ -166,11 +166,21 @@ function showSignIn(body) {
 const settings = () => structuredClone(data.control.settings);
 
 async function save(change) {
-  const next = settings();
-  change(next);
   $('save-state').className = 'save-state';
   $('save-state').textContent = 'Sparar…';
-  const res = await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(next) });
+  // B-109: the change is made on the newest settings. If another device saved
+  // in between, the server refuses this copy; the change is then made again on
+  // what the server has now, so neither device undoes the other.
+  let base = { settings: settings(), rev: data.control.rev ?? 0 };
+  let res;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const next = structuredClone(base.settings);
+    change(next);
+    res = await fetch('/api/settings', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rev: base.rev, settings: next }) });
+    if (res.status !== 409) break;
+    const fresh = await res.json();
+    base = { settings: fresh.settings, rev: fresh.rev };
+  }
   if (!res.ok) {
     $('save-state').className = 'save-state bad';
     $('save-state').textContent = `Sparades inte (${res.status}).`;

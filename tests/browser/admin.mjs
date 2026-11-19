@@ -52,6 +52,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, reducedMotion: 'reduce' });
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  let rev = 0;
   page.on('dialog', (d) => d.accept());
   await page.route('http://admin.test/**', async (route) => {
     const req = route.request();
@@ -63,9 +64,12 @@ try {
       return route.fulfill({ json: usage() });
     }
     if (u.pathname === '/api/settings' && req.method() === 'PUT') {
-      settings = normalizeSettings(JSON.parse(req.postData()), Date.now());
+      // B-109: the page sends the revision it started from with the settings.
+      const body = JSON.parse(req.postData());
+      settings = normalizeSettings(body.settings ?? body, Date.now());
       saved.push(settings);
-      return route.fulfill({ json: { settings } });
+      rev += 1;
+      return route.fulfill({ json: { settings, rev } });
     }
     if (u.pathname === '/api/passes') return route.fulfill({ json: [{ id: 'a', game: 'bricks', label: 'Pixel', created: now, expires: now + 86_400_000, state: 'active' }] });
     if (u.pathname === '/api/log') return route.fulfill({ json: [{ at: now, game: 'bricks', text: 'bricks lades till' }] });

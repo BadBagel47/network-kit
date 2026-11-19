@@ -337,18 +337,26 @@ export class AdminStore {
     }
     if (url.pathname === '/settings' && request.method === 'GET') {
       await this.logEndedTimers(await this.settings());
-      return json({ settings: await this.settings(), budget: await this.budget(), connected: await this.connected(), versions: await this.versions() });
+      return json({ settings: await this.settings(), rev: (await this.storage.get('settings-rev')) ?? 0, budget: await this.budget(), connected: await this.connected(), versions: await this.versions() });
     }
     if (url.pathname === '/settings' && request.method === 'PUT') {
       const before = await this.settings();
       await this.logEndedTimers(before);
-      const settings = normalizeSettings(await request.json(), this.now());
+      const body = await request.json();
+      // B-109: a page sends the revision it started from; a save from an older
+      // copy (another device, a stale tab) is refused, and the page tries again
+      // on the current settings, so nobody undoes another's change.
+      const rev = (await this.storage.get('settings-rev')) ?? 0;
+      const sent = body && typeof body === 'object' && 'rev' in body && 'settings' in body ? body : null;
+      if (sent && Number(sent.rev) !== rev) return json({ error: 'stale', settings: before, rev }, 409);
+      const settings = normalizeSettings(sent ? sent.settings : body, this.now());
       await this.storage.put('settings', settings);
+      await this.storage.put('settings-rev', rev + 1);
       for (const change of describeChanges(before, settings, this.now())) await this.log(change.game, change.text);
       // Automatic closing reads the budget every 5 minutes while it is on.
       if (settings.account.autoClose) await this.storage.setAlarm(this.now() + 1_000);
       else await this.storage.deleteAlarm();
-      return json({ settings, budget: await this.budget() });
+      return json({ settings, rev: rev + 1, budget: await this.budget() });
     }
     if (url.pathname === '/measure' && request.method === 'POST') {
       // One anonymous summary from a game's page (already cleaned by the room server).
