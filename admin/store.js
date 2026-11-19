@@ -3,7 +3,6 @@
 // entrypoint (a service binding), never over the internet.
 
 import { CloudflareAnalytics } from './analytics.js';
-import { Playtest } from './playtest.js';
 import { normalizeSettings, budgetState, gameStatus, gameNotices, describeChanges, when, endedTimers, timerEndedText } from './control.js';
 
 const BUDGET_EVERY_MS = 5 * 60_000;
@@ -63,7 +62,6 @@ export class AdminStore {
     this.env = env;
     this.now = deps.now ?? Date.now;
     this.analytics = deps.analytics ?? null; // tests replace the Cloudflare API
-    this.playtest = new Playtest(this.storage, { now: () => this.now(), log: (g, t, k) => this.log(g, t, k) });
   }
 
   async settings() {
@@ -329,61 +327,13 @@ export class AdminStore {
     return out;
   }
 
-  /** Playtest (F-091): tester links, reports and pictures. */
-  async playtestFetch(request, url) {
-    const pt = this.playtest;
-    const path = url.pathname;
-    const body = async () => (request.method === 'POST' ? request.json().catch(() => ({})) : {});
-    const answer = (r) => json(r, r?.status ?? (r?.error ? 400 : 200));
-    // What a tester's browser asks (through the admin Worker's /playtest/ paths).
-    if (path === '/playtest/check' && request.method === 'POST') {
-      const found = await pt.check((await body()).token);
-      return found ? json(found) : json({ error: 'no-tester' }, 401);
-    }
-    if (path === '/playtest/report' && request.method === 'POST') {
-      const { token, report } = await body();
-      return answer(await pt.addReport(token, report));
-    }
-    if (path === '/playtest/image' && request.method === 'POST') {
-      const bytes = await request.arrayBuffer();
-      return answer(await pt.addImage(url.searchParams.get('token'), request.headers.get('content-type') ?? '', bytes));
-    }
-    // The owner's and the agent's view.
-    if (path === '/testers' && request.method === 'GET') return json(await pt.testers());
-    if (path === '/testers' && request.method === 'POST') {
-      const made = await pt.createTester(await body());
-      return made.error ? json(made, 400) : json(made);
-    }
-    if (path.startsWith('/testers/') && request.method === 'DELETE') {
-      await pt.revokeTester(path.slice('/testers/'.length));
-      return json({ ok: true });
-    }
-    if (path === '/reports' && request.method === 'GET') {
-      return json(await pt.reports({ game: url.searchParams.get('game') || null, since: Number(url.searchParams.get('since')) || 0 }));
-    }
-    const image = path.match(/^\/reports\/image\/([A-Za-z0-9_-]{6,20})$/);
-    if (image && request.method === 'GET') {
-      const img = await pt.image(image[1]);
-      if (!img) return json({ error: 'not-found' }, 404);
-      const raw = atob(img.data);
-      const bytes = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
-      return new Response(bytes, { headers: { 'content-type': img.type } });
-    }
-    const keep = path.match(/^\/reports\/([A-Za-z0-9_-]{6,20})\/keep$/);
-    if (keep && request.method === 'POST') return answer(await pt.setKeep(keep[1], (await body()).keep !== false));
-    const one = path.match(/^\/reports\/([A-Za-z0-9_-]{6,20})$/);
-    if (one && request.method === 'DELETE') {
-      await pt.deleteReport(one[1]);
-      return json({ ok: true });
-    }
-    return json({ error: 'not-found' }, 404);
-  }
-
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname.startsWith('/playtest/') || url.pathname.startsWith('/testers') || url.pathname.startsWith('/reports')) {
-      return this.playtestFetch(request, url);
+    if (url.pathname === '/log-add' && request.method === 'POST') {
+      // Playtest's own store writes to the owner's log (F-095).
+      const { game, text, kind } = await request.json().catch(() => ({}));
+      if (typeof text === 'string' && text) await this.log(typeof game === 'string' ? game : null, text, typeof kind === 'string' ? kind : 'settings');
+      return json({ ok: true });
     }
     if (url.pathname === '/settings' && request.method === 'GET') {
       await this.logEndedTimers(await this.settings());

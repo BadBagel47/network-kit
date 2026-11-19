@@ -4,33 +4,32 @@ import assert from 'node:assert/strict';
 import { AdminStore } from '../../admin/store.js';
 import { handle } from '../../admin/worker.js';
 import { newSession } from '../../admin/auth.js';
-import { cleanReport, KEEP_MAX } from '../../admin/playtest.js';
+import { cleanReport, KEEP_MAX, PlaytestStore } from '../../admin/playtest.js';
 
 const NOW = Date.UTC(2026, 10, 19, 12);
 
-function storeWith(now) {
+function memory() {
   const data = new Map();
-  const storage = {
+  return {
+    data,
     get: async (k) => structuredClone(data.get(k)), put: async (k, v) => void data.set(k, structuredClone(v)),
     delete: async (keys) => { for (const k of [].concat(keys)) data.delete(k); },
     list: async ({ prefix }) => new Map([...data].filter(([k]) => k.startsWith(prefix)).sort().map(([k, v]) => [k, structuredClone(v)])),
     setAlarm: async () => {}, deleteAlarm: async () => {},
   };
-  const store = new AdminStore({ storage }, {}, { now });
-  return { store, data };
 }
 
 function setup() {
   let t = NOW;
-  const { store, data } = storeWith(() => t);
-  const env = {
-    ADMIN_PASSWORD: 'a long enough password',
-    PLAYTEST_READ_KEY: 'read-key',
-    STORE: { idFromName: (n) => n, get: () => ({ fetch: (url, init) => store.fetch(new Request(url, init)) }) },
-  };
-  const deps = { fetch: () => { throw new Error('no network'); }, now: () => t };
+  const now = () => t;
+  const main = new AdminStore({ storage: memory() }, {}, { now });
+  const ns = (obj) => ({ idFromName: (n) => n, get: () => ({ fetch: (url, init) => obj.fetch(new Request(url, init)) }) });
+  const env = { ADMIN_PASSWORD: 'a long enough password', PLAYTEST_READ_KEY: 'read-key', STORE: ns(main) };
+  const pt = new PlaytestStore({ storage: memory() }, env, { now });
+  env.PLAYTEST = ns(pt);
+  const deps = { fetch: () => { throw new Error('no network'); }, now };
   const call = (path, init = {}) => handle(new Request(`https://admin.example${path}`, init), env, deps);
-  return { store, data, env, call, tick: (ms) => { t += ms; } };
+  return { main, store: pt, env, call, tick: (ms) => { t += ms; } };
 }
 
 const post = (body, headers = {}) => ({ method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://badbagel47.github.io', ...headers }, body: JSON.stringify(body) });
@@ -41,6 +40,7 @@ test('F-091: a tester link sends reports with pictures from any site; the owner 
   const made = await (await call('/api/testers', { method: 'POST', headers: { cookie }, body: JSON.stringify({ game: 'critical', label: 'Pixel', hours: 720, page: 'https://badbagel47.github.io/critical/' }) })).json();
   assert.match(made.token, /^pt_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
   assert.equal(made.tester.hash, undefined, 'the secret is never shown again');
+  assert.equal((await (await call('/api/log', { headers: { cookie } })).json())[0].text, 'Testarlänk skapad till Pixel för critical', 'written to the owner\'s log in the main store');
 
   // CORS for a page on another site.
   const pre = await call('/playtest/report', { method: 'OPTIONS', headers: { origin: 'https://badbagel47.github.io' } });
@@ -85,6 +85,16 @@ test('F-091: a tester link sends reports with pictures from any site; the owner 
   assert.equal((await call('/playtest/read?game=critical', { headers: { 'x-playtest-key': 'wrong' } })).status, 403);
   const read = await (await call('/playtest/read?game=critical&since=0', { headers: { 'x-playtest-key': 'read-key' } })).json();
   assert.equal(read[0].pictures[0].data, btoa(String.fromCharCode(...jpeg)));
+
+  // Playtest Remote gets a key that only sends pictures, for a few hours (B-094).
+  const { key } = await (await call('/playtest/upload-key', post({ token: made.token }))).json();
+  assert.match(key, /^pu_/);
+  const photo = await call(`/playtest/image?token=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: jpeg });
+  assert.equal(photo.status, 200, 'the upload key sends a picture');
+  assert.equal((await call('/playtest/report', post({ token: key, report: {} }))).status, 401, 'but no report');
+  assert.equal((await call('/playtest/check', post({ token: key }))).status, 401, 'and does not open the panel');
+  tick(7 * 3_600_000); // the tester link (30 days) still works
+  assert.equal((await call(`/playtest/image?token=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: jpeg })).status, 401, 'it ends after six hours');
 
   // Behåll keeps a report past 30 days.
   const second = await (await call('/playtest/report', post({ token: made.token, report: { testId: 'B-282', result: 'worked' } }))).json();

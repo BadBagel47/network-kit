@@ -751,6 +751,15 @@ export class PlaytestPanel {
       room = await NetworkRoom.create(this.o.admin, { ...opts, adminPass: this.o.token });
     }
     this.remote = room;
+    // The remote may send its own pictures with a key that only does that, for a few hours (B-094).
+    this.uploadKey = null;
+    this.o.fetch(`${this.o.admin}/playtest/upload-key`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: this.o.token }) })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((made) => {
+        this.uploadKey = made?.key ?? null;
+        this.remoteState();
+      })
+      .catch(() => {});
     write(this.session, PAIR_KEY, { code: room.code, ownerKey: room.ownerKey ?? saved?.ownerKey });
     const count = () => {
       const before = this.remotes ?? 0;
@@ -789,7 +798,7 @@ export class PlaytestPanel {
       t: 'state',
       game: this.tester?.game ?? null,
       tester: this.tester?.label ?? null,
-      token: this.o.token, // for pictures taken with the remote's own camera
+      upload: this.uploadKey ?? null, // a short-lived key for the remote's own pictures (B-094); never the tester link
       admin: this.o.admin,
       items: this.items.filter((i) => i.id !== 'note').map((i) => ({
         id: i.id, title: i.title ?? i.id, where: i.where ?? '', steps: (i.steps ?? []).map(String),

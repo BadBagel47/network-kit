@@ -11,14 +11,16 @@
     "bindings": [
       { "name": "GUARD", "class_name": "AdminGuard" },
       { "name": "STORE", "class_name": "AdminStore" },
-      { "name": "PLAYTEST_ROOMS", "class_name": "PlaytestRoom" }
+      { "name": "PLAYTEST_ROOMS", "class_name": "PlaytestRoom" },
+      { "name": "PLAYTEST", "class_name": "PlaytestStore" }
     ]
   },
   // Free plan: SQLite-backed Durable Objects only.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["AdminGuard"] },
     { "tag": "v2", "new_sqlite_classes": ["AdminStore"] },
-    { "tag": "v3", "new_sqlite_classes": ["PlaytestRoom"] }
+    { "tag": "v3", "new_sqlite_classes": ["PlaytestRoom"] },
+    { "tag": "v4", "new_sqlite_classes": ["PlaytestStore"] }
   ],
   // Playtest Remote's rooms stay in the EU, like the games' rooms (F-091).
   "vars": { "ROOM_JURISDICTION": "eu" },

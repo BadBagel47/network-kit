@@ -157,11 +157,15 @@ $('photo').addEventListener('click', () => $('photo-file').click());
 $('photo-file').addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
   e.target.value = '';
-  if (!file || !state?.token) return;
+  if (!file) return;
+  if (!state?.upload) {
+    $('test-note').textContent = 'Spelet har inte gett fjärrkontrollen lov att skicka bilder än. Försök igen om en stund.';
+    return;
+  }
   $('test-note').textContent = 'Skickar bilden …';
   try {
     const blob = await shrinkPicture(file);
-    const res = await fetch(`/playtest/image?token=${encodeURIComponent(state.token)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: blob });
+    const res = await fetch(`/playtest/image?token=${encodeURIComponent(state.upload)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: blob });
     if (!res.ok) throw new Error(String(res.status));
     photos.push((await res.json()).id);
     thumbs.push(URL.createObjectURL(blob));

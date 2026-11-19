@@ -10,6 +10,13 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.14.1 (2026-11-19)
+
+Affects: games that use Playtest Remote; take 0.14.1. The admin page.
+
+- Fixed (B-094): Playtest Remote no longer gets the tester link's token. The game page asks for an upload key that only sends pictures and lasts six hours, and gives the remote that; reports still go through the game page. Before, someone who guessed a pairing room's code while it was open could have got the token.
+- Changed (F-095): Playtest's tester links, reports and pictures live in a Durable Object of their own (`PlaytestStore`), so pictures never slow the games' status checks. Tester links made with 0.14.0 stop working; make new ones (the old reports stay in the main store unused).
+
 ## 0.14.0 (2026-11-19)
 
 Affects: games that want Playtest (new, optional; nothing changes for others) and the admin page.

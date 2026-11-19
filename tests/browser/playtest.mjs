@@ -134,6 +134,11 @@ try {
   assert.match(await game.locator('.nkp .bar').innerText(), /Playtest · T-1 · fjärr/);
   await phone.getByRole('button', { name: 'Skärmbild från spelet' }).click();
   await phone.locator('#thumbs img').waitFor();
+  // A photo from the remote's own camera goes with its upload key, never the tester link (B-094).
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  await phone.waitForFunction(() => document.querySelector('#test') && !document.querySelector('#test').hidden);
+  await phone.locator('#photo-file').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: png });
+  await phone.waitForFunction(() => document.querySelectorAll('#thumbs img').length === 2, null, { timeout: 15_000 });
   await phone.getByRole('button', { name: 'Fungerade', exact: true }).click();
   if (process.env.SHOTS) {
     await phone.screenshot({ path: `${process.env.SHOTS}/remote.png`, fullPage: true });
@@ -148,12 +153,12 @@ try {
   assert.equal(second.via, 'remote');
   assert.equal(second.result, 'worked');
   assert.equal(second.answers[0].a, 'Too dark in the cellar');
-  assert.equal(second.images.length, 1, 'the game page\'s screenshot went with it');
+  assert.equal(second.images.length, 2, 'the game page\'s screenshot and the remote\'s photo went with it');
   assert.equal(second.context.game.at, 'base');
 
   // The agent's reading.
   const read = await (await fetch(`${A}/playtest/read?game=testgame`, { headers: { 'x-playtest-key': 'test-read' } })).json();
-  assert.ok(read.some((r) => r.id === second.id && r.pictures.length === 1));
+  assert.ok(read.some((r) => r.id === second.id && r.pictures.length === 2));
 
   // The admin page lists them under Rapporter.
   const owner = await ctx.newPage();

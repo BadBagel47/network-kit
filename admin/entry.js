@@ -6,8 +6,9 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import worker, { AdminGuard, playtestRooms } from './worker.js';
 import { AdminStore } from './store.js';
+import { PlaytestStore } from './playtest.js';
 
-export { AdminGuard, AdminStore };
+export { AdminGuard, AdminStore, PlaytestStore };
 // Playtest Remote's rooms (F-091).
 export const PlaytestRoom = playtestRooms.RoomObject;
 export default worker;

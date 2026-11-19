@@ -8,8 +8,14 @@
 //   rep:<time>-<id>       a report
 //   img:<id>              a picture (JPEG or PNG, base64), owned by one report
 //   ptn:<tester>:<day>    how many reports and pictures a tester sent that day
+//   ptu:<id>              an upload key for Playtest Remote (B-094): pictures only, a few hours
+//
+// They live in a Durable Object of their own (PlaytestStore, F-095), so pictures
+// never slow the games' status checks in the admin page's main store.
 
 export const TESTER_PREFIX = 'pt_';
+export const UPLOAD_PREFIX = 'pu_';
+export const UPLOAD_KEY_MS = 6 * 60 * 60_000; // an upload key for Playtest Remote lasts six hours
 export const REPORT_KEEP_MS = 30 * 86_400_000; // owner 2026-11-19
 export const KEEP_MAX = 50; // reports marked Behåll per game (owner 2026-11-19)
 export const IMAGE_MAX_BYTES = 400 * 1024; // the panel aims at about 300 kB
@@ -169,8 +175,34 @@ export class Playtest {
     return { game: t.game, label: t.label, expires: t.expires, reported: [...reported] };
   }
 
-  async addImage(token, type, bytes) {
+  /**
+   * A short-lived key that only lets Playtest Remote send pictures for this
+   * tester (B-094): the tester link's own token never leaves the game page.
+   */
+  async createUploadKey(token) {
     const t = await this.testerFor(token);
+    if (!t) return { error: 'no-tester', status: 401 };
+    const id = b64url(crypto.getRandomValues(new Uint8Array(6)));
+    const secret = b64url(crypto.getRandomValues(new Uint8Array(24)));
+    const expires = Math.min(t.expires, this.now() + UPLOAD_KEY_MS);
+    await this.storage.put(`ptu:${id}`, { id, tester: t.id, hash: await hashText(secret), expires });
+    return { key: `${UPLOAD_PREFIX}${id}.${secret}`, expires };
+  }
+
+  /** The tester link behind an upload key, if both still work. */
+  async testerForUpload(key) {
+    const raw = String(key ?? '');
+    if (!raw.startsWith(UPLOAD_PREFIX)) return null;
+    const [id, secret] = raw.slice(UPLOAD_PREFIX.length).split('.');
+    if (!id || !secret || id.length > 20) return null;
+    const u = await this.storage.get(`ptu:${id}`);
+    if (!u || u.expires <= this.now() || (await hashText(secret)) !== u.hash) return null;
+    const t = await this.storage.get(`tst:${u.tester}`);
+    return t && !t.revoked && t.expires > this.now() ? t : null;
+  }
+
+  async addImage(token, type, bytes) {
+    const t = (await this.testerFor(token)) ?? (await this.testerForUpload(token));
     if (!t) return { error: 'no-tester', status: 401 };
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) return { error: 'bad-type', status: 415 };
     if (!bytes?.byteLength || bytes.byteLength > IMAGE_MAX_BYTES) return { error: 'too-large', status: 413 };
@@ -261,9 +293,86 @@ export class Playtest {
     for (const [key, img] of await this.storage.list({ prefix: 'img:' })) {
       if (!img.report && now - img.at > UNUSED_IMAGE_MS) gone.push(key);
     }
+    for (const [key, u] of await this.storage.list({ prefix: 'ptu:' })) {
+      if (u.expires <= now) gone.push(key);
+    }
     for (const key of (await this.storage.list({ prefix: 'ptn:' })).keys()) {
       if (key.slice(-10) < day(now - 2 * 86_400_000)) gone.push(key);
     }
     for (let i = 0; i < gone.length; i += 128) await this.storage.delete(gone.slice(i, i + 128));
+  }
+}
+
+const json = (data, status = 200) =>
+  new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
+
+/**
+ * Playtest's own Durable Object (F-095). The admin Worker sends it the
+ * testers' paths (/playtest/check, /playtest/report, /playtest/image,
+ * /playtest/upload-key) and the owner's (/testers, /reports); it writes the
+ * owner's log through the main store.
+ */
+export class PlaytestStore {
+  constructor(state, env, deps = {}) {
+    const now = deps.now ?? Date.now;
+    const log = async (game, text, kind) => {
+      const main = env?.STORE?.get(env.STORE.idFromName('main'));
+      await main?.fetch('https://store/log-add', { method: 'POST', body: JSON.stringify({ game, text, kind }) });
+    };
+    this.playtest = new Playtest(state.storage, { now, log });
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    const pt = this.playtest;
+    const path = url.pathname;
+    const body = async () => (request.method === 'POST' ? request.json().catch(() => ({})) : {});
+    const answer = (r) => json(r, r?.status ?? (r?.error ? 400 : 200));
+    // What a tester's browser asks (through the admin Worker's /playtest/ paths).
+    if (path === '/playtest/check' && request.method === 'POST') {
+      const found = await pt.check((await body()).token);
+      return found ? json(found) : json({ error: 'no-tester' }, 401);
+    }
+    if (path === '/playtest/upload-key' && request.method === 'POST') {
+      return answer(await pt.createUploadKey((await body()).token));
+    }
+    if (path === '/playtest/report' && request.method === 'POST') {
+      const { token, report } = await body();
+      return answer(await pt.addReport(token, report));
+    }
+    if (path === '/playtest/image' && request.method === 'POST') {
+      const bytes = await request.arrayBuffer();
+      return answer(await pt.addImage(url.searchParams.get('token'), request.headers.get('content-type') ?? '', bytes));
+    }
+    // The owner's and the agent's view.
+    if (path === '/testers' && request.method === 'GET') return json(await pt.testers());
+    if (path === '/testers' && request.method === 'POST') {
+      const made = await pt.createTester(await body());
+      return made.error ? json(made, 400) : json(made);
+    }
+    if (path.startsWith('/testers/') && request.method === 'DELETE') {
+      await pt.revokeTester(path.slice('/testers/'.length));
+      return json({ ok: true });
+    }
+    if (path === '/reports' && request.method === 'GET') {
+      return json(await pt.reports({ game: url.searchParams.get('game') || null, since: Number(url.searchParams.get('since')) || 0 }));
+    }
+    const image = path.match(/^\/reports\/image\/([A-Za-z0-9_-]{6,20})$/);
+    if (image && request.method === 'GET') {
+      const img = await pt.image(image[1]);
+      if (!img) return json({ error: 'not-found' }, 404);
+      const raw = atob(img.data);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
+      return new Response(bytes, { headers: { 'content-type': img.type } });
+    }
+    const keep = path.match(/^\/reports\/([A-Za-z0-9_-]{6,20})\/keep$/);
+    if (keep && request.method === 'POST') return answer(await pt.setKeep(keep[1], (await body()).keep !== false));
+    const one = path.match(/^\/reports\/([A-Za-z0-9_-]{6,20})$/);
+    if (one && request.method === 'DELETE') {
+      await pt.deleteReport(one[1]);
+      return json({ ok: true });
+    }
+    return json({ error: 'not-found' }, 404);
   }
 }
