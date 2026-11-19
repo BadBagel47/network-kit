@@ -3,6 +3,7 @@
 // host sends positions often and gives the room a full snapshot now and then.
 import {
   NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession, VERSION, watchNotices, readLobbyLink, forgetLobbyLink,
+  startPlaytest,
 } from './network-kit/client/index.js';
 import * as diag from './diag.js';
 
@@ -16,6 +17,27 @@ const $ = (id) => document.getElementById(id);
 // Notices from the admin page reach this page whether or not it is in a room:
 // Cloudflare limiting soon or reached, the owner's own messages (F-066).
 watchNotices(SERVER, { onNotice: (n) => diag.event(`notice ${n.kind}`) });
+
+// Playtest (F-091): shows only in a browser that opened a tester link from the
+// admin page. The demo's own tests, to try the panel and Playtest Remote.
+const PLAYTEST_ITEMS = [
+  { id: 'D-PT1', title: 'Skapa ett rum och styr skeppet', where: 'mobil eller padda',
+    steps: ['Skriv ett namn och tryck Create room.', 'Styr skeppet en stund med knapparna eller tangenterna.'],
+    links: [['Öppna demon', './']], ask: ['Går skeppet dit du styr, utan hack?'] },
+  { id: 'D-PT2', title: 'Två enheter i samma rum', where: 'två enheter',
+    steps: ['Skapa ett rum på den ena enheten.', 'Gå med från den andra med koden eller QR-koden.', 'Styr på båda.'],
+    links: [['Öppna demon', './']], ask: ['Syns båda skeppen på båda skärmarna?', 'Hur snabbt följer den andra skärmen med?'] },
+  { id: 'D-PT3', title: 'Fjärrkontrollen', where: 'två enheter',
+    steps: ['Tryck Fjärr i Playtest-rutan.', 'Skanna QR-koden med en annan enhet, eller skriv in koden på fjärrkontrollens sida.', 'Rapportera det här testet från den andra enheten.'],
+    links: [], ask: 'Var det enkelt att koppla ihop?' },
+];
+startPlaytest({
+  admin: 'https://network-kit-admin.l8p1.workers.dev',
+  items: PLAYTEST_ITEMS,
+  version: VERSION,
+  context: () => ({ room: room?.code ?? null, status: room?.status ?? null, players: room?.players?.length ?? 0 }),
+  canvas: () => document.querySelector('canvas'),
+}).catch(() => {});
 
 let room = null;
 let world = { ships: {}, tick: 0 };

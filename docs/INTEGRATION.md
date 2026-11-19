@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.13** (0.13.4).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.14** (0.14.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -361,4 +361,38 @@ What protects a room, and what does not (D-056, from the lessons of an external 
 
 ## 10. Privacy
 
-A room stores: nicknames; a hash of each participant's random identity key (never the key itself), also for the last 100 who left, and for those banned; room settings, invitation keys and the owner key; the latest snapshot from the host (host-run) or the game state (server-run); the room data; today's message count. A room is deleted 24 hours after the last participant left and one hour after it was closed. Cloudflare processes participants' IP addresses to deliver the connection. Each game's privacy notice should say so.
+A room stores: nicknames; a hash of each participant's random identity key (never the key itself), also for the last 100 who left, and for those banned; room settings, invitation keys and the owner key; the latest snapshot from the host (host-run) or the game state (server-run); the room data; today's message count. A room is deleted 24 hours after the last participant left and one hour after it was closed. Cloudflare processes participants' IP addresses to deliver the connection. Each game's privacy notice should say so. Playtest (section 11) stores, only for browsers with a tester link: the tester link's name, the answers, pictures and the page's context (address, device, browser, window, errors, the game's own context) for 30 days, or until a kept report is unmarked.
+
+## 11. Playtest: reports from play tests (from 0.14, F-091)
+
+Playtest lets the owner (and friends given a tester link) report play tests from the game itself, instead of writing in the chat. Names (owner 2026-11-19): **Playtest** for the whole, **Playtest-rutan** for the panel on the game's page, **Playtest Remote** for the same panel on another device (a phone, an iPad or a computer). Its texts are Swedish: it is the owner's tool.
+
+**In the game.** Start it on every page where tests are run, also pages that are not the game (design tests):
+
+```js
+import { startPlaytest } from './vendor/network-kit/client/index.js';
+startPlaytest({
+  admin: 'https://network-kit-admin.l8p1.workers.dev', // the admin page, not the game's Worker
+  items: ITEMS,             // the game's test list (below); one module shared by every page
+  version: '2026-11-19',    // the game's version: a commit or a date
+  context: () => ({ mode: game.mode, system: game.system }), // what the game adds to each report
+  canvas: () => document.querySelector('canvas'), // optional: what a screenshot shows
+});
+```
+
+- It does nothing (returns `null`) unless the browser has opened a **tester link** from the admin page (*Länkar och meddelanden → Testarlänkar*: the game's page with `#nk-tester=…`). The token is kept in localStorage (`nk-playtest:tester`) and taken out of the address. Without a link no request is made.
+- `items`: `[{ id, title, where, steps: [text], links: [[text, address]], ask: text | [text] }]`; `questions: [text]` may replace `ask`. A link starts the test's situation: the panel opens it with `playtest=<id>` added to its query, so the test is still running after the page loads. A page opened with `?playtest=<id>` starts that test.
+- The panel lists the tests (those reported in the last 30 days are marked), shows a test's steps (*Nästa steg*), one answer field per question, *Övrigt*, *Fungerade / Delvis / Fungerade inte*, *Ta skärmbild* (the largest canvas, or `canvas()` / `screenshot()`), *Lägg till bild* (a file or the camera), *Skicka*, *Börja om* (the first link again) and *Avbryt* (sent as cancelled). *Skriv en anteckning utan test* sends a free note.
+- With each report: the address, `version`, network-kit's version, device and browser, window and screen size, devicePixelRatio, fullscreen, language, when the test started and how long it took, the page's errors (window errors, unhandled rejections and `console.error`), frames per second and the slowest frame while the test ran, and `context()`. Pictures are made smaller step by step to about 300 kB as JPEG; none is thrown away.
+- A report that cannot be sent is kept in localStorage (`nk-playtest:queue`, at most 5) and sent when the page is online again. The running test (`nk-playtest:run`, sessionStorage), the panel's place and whether it is folded (`nk-playtest:place`) are kept too. A game that lists what pages store (Critical's tests/outside.mjs) should name these keys.
+- **Keyboard games:** the panel never takes focus by itself; pointer, touch, key and wheel events inside it stop there, so the game does not steer or shoot while the tester types; folding it or sending gives the focus back (to the element that had it, or a canvas with `tabindex`). It sits under `document.documentElement` (visible in fullscreen), starts on the left a third down (away from the corners) and can be dragged and folded to a small tab. `hidden: true` (default: the address has `?still`) keeps it out of screenshot tests.
+- **Content-Security-Policy:** a page with a strict policy must allow the admin page: `connect-src 'self' https://network-kit-admin.l8p1.workers.dev wss://network-kit-admin.l8p1.workers.dev` and `img-src … blob:` (the demo's `_headers` does). Styles are a constructed style sheet, so `style-src 'self'` is enough.
+
+**Playtest Remote.** *Fjärr* in the panel opens a small room on the admin page's Worker (only with a working tester link) and shows a QR code, a six-character code and a link. The other device scans the code, opens the link, or types the code at `https://network-kit-admin.l8p1.workers.dev/remote/`. The remote shows the list; *Starta* loads the test's start address on the game page (which pairs again after loading); the steps, questions, result, *Skärmbild från spelet* (taken on the game page and sent with the report), *Ta foto eller välj bild* (the remote's own camera), *Skicka*, *Börja om* and *Avbryt* work from there, and the game page folds the panel to a small tab while a remote is connected. The report goes through the game page, which adds its context. Rooms stay in the EU and close an hour after every page was hidden.
+
+**What the agent does with the reports.** The owner sees them under *Rapporter* on the admin page (kept 30 days; *Behåll* keeps one until unmarked, at most 50 per game). The developing agent reads them sealed (the repository is public), from its own session with `BadBagel47/network-kit` added:
+
+1. Make a key pair: `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out key.pem` and the public key as base64 SPKI DER: `openssl pkey -in key.pem -pubout -outform DER | base64 -w0`. Keep `key.pem` in the session's scratch directory, never in a repository.
+2. Run the workflow *Playtest reports* (`playtest-reports.yml`) in network-kit with `game`, `public_key`, optionally `since` (ms; only newer reports) and `keep` (report ids to keep past 30 days).
+3. Read `<game>.txt` on the branch `playtest-reports`, and open it: `node scripts/open-reports.mjs key.pem <game>.txt <picture dir>` prints the reports as JSON and writes the pictures as files.
+4. Write what matters into the game's backlog with the test's id, and take reported tests out of the game's list.

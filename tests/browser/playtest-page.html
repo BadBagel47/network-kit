@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Playtest test page</title>
+</head>
+<body>
+  <h1>A game</h1>
+  <canvas id="game" width="640" height="360" tabindex="0"></canvas>
+  <p id="keys">0</p>
+  <script type="module">
+    import { startPlaytest } from '/src/client/index.js';
+    // The game draws something to take a picture of, and counts the keys it gets.
+    const c = document.getElementById('game');
+    const g = c.getContext('2d');
+    g.fillStyle = '#204080';
+    g.fillRect(0, 0, 640, 360);
+    g.fillStyle = '#ffcc33';
+    g.fillRect(100, 100, 200, 120);
+    let keys = 0;
+    window.addEventListener('keydown', () => { keys += 1; document.getElementById('keys').textContent = String(keys); });
+    c.focus();
+    const admin = new URLSearchParams(location.search).get('admin');
+    window.playtest = await startPlaytest({
+      admin,
+      version: 'test-1',
+      items: [
+        { id: 'T-1', title: 'The base inside', where: 'dator', steps: ['Go in', 'Look at the light'], links: [['Start here', './playtest-page.html?admin=' + encodeURIComponent(admin) + '&at=base']], ask: ['Is the light right?', 'How many frames per second?'] },
+        { id: 'T-2', title: 'Music on start', steps: ['Open the game'], links: [], ask: 'Does the music start?' },
+      ],
+      context: () => ({ mode: 'test', at: new URLSearchParams(location.search).get('at') }),
+    });
+    window.ready = true;
+  </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 {
   "name": "network-kit",
-  "version": "0.13.4",
+  "version": "0.14.0",
   "description": "Shared multiplayer room server and browser client for small browser games on Cloudflare.",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
   "scripts": {
     "test": "node --test \"tests/unit/*.test.js\"",
     "test:integration": "node tests/integration/run.mjs",
-    "test:browser": "node tests/browser/run.mjs && npm run admin:assets && node tests/browser/admin.mjs",
+    "test:browser": "node tests/browser/run.mjs && npm run admin:assets && node tests/browser/admin.mjs && node tests/browser/playtest.mjs",
     "test:compat": "node tests/compat/run.mjs",
     "test:all": "npm test && npm run test:compat && npm run test:integration && npm run test:browser",
     "smoke": "node src/smoke.mjs",

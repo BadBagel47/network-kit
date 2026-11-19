@@ -1,7 +1,7 @@
 # Security headers for the demo pages (F-054). The demo may be framed by
 # nobody; its scripts and styles come only from the demo itself.
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://network-kit-admin.l8p1.workers.dev wss://network-kit-admin.l8p1.workers.dev; form-action 'self'; frame-ancestors 'none'; base-uri 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: same-origin
   X-Frame-Options: DENY

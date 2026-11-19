@@ -124,8 +124,10 @@ async function load() {
   render();
   loadPasses().catch(() => {});
   loadLobbies().catch(() => {});
+  loadTesters().catch(() => {});
   loadMessages().catch(() => {});
   if (tab === 'logg') loadLog().catch(() => {});
+  if (tab === 'rapporter') loadReports().catch(() => {});
   loadUsage().catch(() => {});
 }
 
@@ -190,6 +192,7 @@ for (const b of document.querySelectorAll('[data-tab]')) {
     }
     for (const s of document.querySelectorAll('.tab')) s.hidden = s.id !== `tab-${tab}`;
     if (tab === 'logg') loadLog().catch(() => {});
+    if (tab === 'rapporter') loadReports().catch(() => {});
   });
 }
 
@@ -748,6 +751,8 @@ function fillGameSelects() {
   for (const form of [$('new-pass'), $('new-lobby')]) if (!form.page.value) prefillPage(form);
   fill($('new-message').game, [['*', 'Alla spel']]);
   fill($('log-game'), [['', 'Alla spel']], names);
+  // Playtest (F-091): a tester link may be for a game that is not connected (a page on GitHub Pages).
+  $('tester-games').replaceChildren(...names.map((n) => el('option', { value: n })));
 }
 for (const form of ['new-pass', 'new-lobby', 'new-message']) {
   $(form).game.addEventListener('change', (e) => {
@@ -1028,3 +1033,136 @@ $('log-game').addEventListener('change', () => loadLog().catch(() => {}));
 load().catch((e) => {
   $('message').textContent = `Sidan kunde inte laddas: ${e.message}`;
 });
+
+/* ---------- Playtest (F-091): tester links and reports ---------- */
+
+function testerItem(t, old) {
+  const item = el('div', { class: `item${old ? ' old' : ''}` });
+  const info = el('div');
+  info.append(el('span', { class: 'title' }, `${t.game}${t.label ? ` · ${t.label}` : ''}`));
+  const used = t.lastUsed ? ` · senast använd ${dayTime(t.lastUsed)}` : ' · inte använd än';
+  const state = t.state === 'revoked' ? `Återkallad ${dayTime(t.revoked)}` : t.state === 'expired' ? `Gick ut ${dayTime(t.expires)}` : `Gäller till ${dayTime(t.expires)}`;
+  info.append(el('span', { class: 'sub' }, state + used));
+  item.append(info);
+  if (!old) {
+    const revoke = el('button', { type: 'button' }, 'Återkalla');
+    revoke.addEventListener('click', async () => {
+      if (!confirm(`Återkalla testarlänken${t.label ? ` till ${t.label}` : ''}? Playtest försvinner i den webbläsaren.`)) return;
+      await fetch(`/api/testers/${encodeURIComponent(t.id)}`, { method: 'DELETE' });
+      loadTesters();
+    });
+    item.append(revoke);
+  }
+  return item;
+}
+
+async function loadTesters() {
+  const res = await fetch('/api/testers');
+  if (!res.ok) return;
+  const list = await res.json();
+  const active = list.filter((t) => t.state === 'active');
+  const old = list.filter((t) => t.state !== 'active');
+  $('testers').replaceChildren(...(active.length ? active.map((t) => testerItem(t, false)) : [el('p', { class: 'muted small' }, 'Inga aktiva testarlänkar.')]));
+  $('testers-old').replaceChildren(...old.map((t) => testerItem(t, true)));
+  $('old-tester-count').textContent = `(${old.length}, visas i 14 dagar)`;
+  $('old-testers').hidden = !old.length;
+}
+
+$('new-tester').game.addEventListener('change', () => {
+  const page = pageOf($('new-tester').game.value.trim());
+  if (page) $('new-tester').page.value = page;
+});
+$('new-tester').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const game = form.game.value.trim().toLowerCase();
+  const page = form.page.value.trim();
+  const res = await fetch('/api/testers', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ game, label: form.label.value.trim(), hours: Number(form.hours.value), page }) });
+  const out = $('tester-link');
+  if (!res.ok) {
+    out.textContent = `Länken skapades inte (${res.status}).`;
+    return;
+  }
+  const { token, tester } = await res.json();
+  const link = `${page.split('#')[0]}#nk-tester=${token}`;
+  rememberPage(game, page);
+  const copyButton = el('button', { type: 'button' }, 'Kopiera');
+  copyButton.addEventListener('click', () => copy(copyButton, link));
+  const qr = el('button', { type: 'button' }, 'Visa QR-kod');
+  const title = `Testarlänk${tester.label ? ` till ${tester.label}` : ''}`;
+  const hint = `Öppna på enheten som ska testa. Den visas bara nu och gäller till ${dayTime(tester.expires)}.`;
+  qr.addEventListener('click', () => showQr(title, link, hint));
+  out.replaceChildren(el('p', { class: 'muted small' }, hint), el('code', {}, link), copyButton, qr);
+  showQr(title, link, hint);
+  form.label.value = '';
+  loadTesters();
+});
+
+const RESULT_SV = { worked: 'Fungerade', partly: 'Delvis', failed: 'Fungerade inte', cancelled: 'Avbrutet', note: 'Anteckning' };
+
+function reportItem(r) {
+  const item = el('details', { class: `report ${r.result}` });
+  const head = el('summary');
+  head.append(
+    el('span', { class: `badge ${r.result}` }, RESULT_SV[r.result] ?? r.result),
+    el('span', { class: 'title' }, `${r.testId || 'Anteckning'}${r.title ? ` · ${r.title}` : ''}`),
+    el('span', { class: 'sub' }, `${r.game} · ${r.tester} · ${dayTime(r.at)}${r.via === 'remote' ? ' · fjärr' : ''}${r.keep ? ' · behålls' : ''}`),
+  );
+  item.append(head);
+  const body = el('div', { class: 'report-body' });
+  for (const a of r.answers) {
+    if (!a.a) continue;
+    const p = el('p');
+    p.append(el('strong', {}, `${a.q} `), a.a);
+    body.append(p);
+  }
+  if (r.text) body.append(el('p', {}, r.text));
+  const c = r.context ?? {};
+  const facts = [c.device, c.browser, c.window && `fönster ${c.window}`, c.dpr && `dpr ${c.dpr}`, c.fullscreen && 'fullskärm',
+    c.game?.fps && `${c.game.fps} fps`, c.game?.slowestFrameMs && `långsammaste bild ${c.game.slowestFrameMs} ms`,
+    c.durationMs && `${Math.round(c.durationMs / 60000)} min`, c.version && `version ${c.version}`].filter(Boolean);
+  body.append(el('p', { class: 'muted small' }, facts.join(' · ')));
+  if (c.url) body.append(el('p', { class: 'muted small' }, c.url));
+  if (c.errors?.length) body.append(el('p', { class: 'error small' }, `Fel: ${c.errors.join(' | ')}`));
+  if (r.images.length) {
+    const pics = el('div', { class: 'pics' });
+    for (const id of r.images) {
+      const a = el('a', { href: `/api/reports/image/${id}`, target: '_blank', rel: 'noopener' });
+      a.append(el('img', { src: `/api/reports/image/${id}`, alt: 'Bild från testet', loading: 'lazy' }));
+      pics.append(a);
+    }
+    body.append(pics);
+  }
+  const keep = el('button', { type: 'button' }, r.keep ? 'Sluta behålla' : 'Behåll');
+  keep.addEventListener('click', async () => {
+    const res = await fetch(`/api/reports/${r.id}/keep`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ keep: !r.keep }) });
+    if (res.status === 409) alert('Det finns redan 50 behållna rapporter för spelet. Ta bort märkningen på någon först.');
+    loadReports();
+  });
+  const del = el('button', { type: 'button' }, 'Ta bort');
+  del.addEventListener('click', async () => {
+    if (!confirm('Ta bort rapporten?')) return;
+    await fetch(`/api/reports/${r.id}`, { method: 'DELETE' });
+    loadReports();
+  });
+  const actions = el('div', { class: 'actions' });
+  actions.append(keep, del);
+  body.append(actions);
+  item.append(body);
+  return item;
+}
+
+async function loadReports() {
+  const game = $('report-game').value;
+  const res = await fetch(`/api/reports${game ? `?game=${encodeURIComponent(game)}` : ''}`);
+  if (!res.ok) return;
+  const list = await res.json();
+  const games = [...new Set(list.map((r) => r.game))].sort();
+  if (!game) {
+    const keepChoice = $('report-game').value;
+    $('report-game').replaceChildren(el('option', { value: '' }, 'Alla spel'), ...games.map((g) => el('option', { value: g }, g)));
+    $('report-game').value = keepChoice;
+  }
+  $('reports').replaceChildren(...(list.length ? list.map(reportItem) : [el('p', { class: 'muted small' }, 'Inga rapporter än. Skapa en testarlänk under Länkar och meddelanden.')]));
+}
+$('report-game').addEventListener('change', () => loadReports().catch(() => {}));

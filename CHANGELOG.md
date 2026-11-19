@@ -10,6 +10,16 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.14.0 (2026-11-19)
+
+Affects: games that want Playtest (new, optional; nothing changes for others) and the admin page.
+
+- New (F-091): **Playtest**, reports from play tests to the developing agent. `startPlaytest({ admin, items, version, context })` shows **Playtest-rutan**, a movable panel on the game's pages, in a browser that has opened a tester link from the admin page: the game's tests with their steps and questions, *Fungerade / Delvis / Fungerade inte*, screenshots and pictures (made smaller to about 300 kB), *Skicka*, *Börja om* and *Avbryt*. Each report carries the page's context (device, browser, window, errors, frames per second, the game's own context). Reports that cannot be sent wait and go later. The panel never takes the keyboard from the game. See `docs/INTEGRATION.md` section 11.
+- New (F-091): **Playtest Remote**: the same panel on a phone, an iPad or a computer, paired by a QR code, a six-character code or a link (`/remote/` on the admin page), through a small room on the admin page's Worker.
+- New (F-091): the admin page makes tester links (*Länkar och meddelanden*) and lists the reports under the new tab *Rapporter*, kept 30 days; *Behåll* keeps one until unmarked (at most 50 per game).
+- New (F-091): the workflow *Playtest reports* gives a game's agent its reports sealed with the agent's key, pictures included; `scripts/open-reports.mjs` opens them and writes the pictures as files.
+- Changed: the demo shows Playtest with three tests of its own, and its Content-Security-Policy allows the admin page.
+
 ## 0.13.4 (2026-11-19)
 
 Affects: games that show notices or use lobby links; take 0.13.4. Fixes from the owner's device test (D-077).

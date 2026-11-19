@@ -38,6 +38,7 @@
         <button type="button" data-tab="lankar">Länkar och meddelanden</button>
         <button type="button" data-tab="forbrukning">Förbrukning</button>
         <button type="button" data-tab="installningar">Inställningar</button>
+        <button type="button" data-tab="rapporter">Rapporter</button>
         <button type="button" data-tab="logg">Logg</button>
       </nav>
       <p id="save-state" class="save-state" role="status"></p>
@@ -93,6 +94,29 @@
           <details id="old-lobbies" class="fold" hidden>
             <summary>Inte längre aktiva <span id="old-lobby-count"></span></summary>
             <div id="lobbies-old" class="list"></div>
+          </details>
+        </article>
+
+        <article class="panel">
+          <h2>Testarlänkar</h2>
+          <p class="muted">Visar Playtest i spelet i den webbläsare som öppnar länken: testerna, stegen och en knapp för att rapportera. Rapporterna hamnar under Rapporter.</p>
+          <form id="new-tester" class="form">
+            <div class="row2">
+              <label>Spel <input name="game" list="tester-games" placeholder="t.ex. critical" autocomplete="off" required pattern="[a-z0-9][a-z0-9-]{0,62}"></label>
+              <label>Gäller
+                <select name="hours"><option value="24">1 dag</option><option value="168">7 dagar</option><option value="720" selected>30 dagar</option><option value="2160">90 dagar</option></select>
+              </label>
+            </div>
+            <datalist id="tester-games"></datalist>
+            <label>Till vem <input name="label" placeholder="t.ex. Jag på paddan eller en kompis" autocomplete="off" maxlength="40"></label>
+            <label>Spelets adress <input name="page" type="url" placeholder="https://…" autocomplete="off" required></label>
+            <button type="submit" class="primary">Skapa testarlänk</button>
+          </form>
+          <div id="tester-link" class="pass-link" role="status"></div>
+          <div id="testers" class="list"></div>
+          <details id="old-testers" class="fold" hidden>
+            <summary>Inte längre aktiva <span id="old-tester-count"></span></summary>
+            <div id="testers-old" class="list"></div>
           </details>
         </article>
 
@@ -223,6 +247,18 @@
             </div>
             <button type="submit" class="ghost">Lägg till</button>
           </form>
+        </article>
+      </section>
+
+      <!-- Rapporter -->
+      <section id="tab-rapporter" class="tab" aria-label="Rapporter" hidden>
+        <article class="panel">
+          <div class="head-row">
+            <h2>Rapporter</h2>
+            <label class="inline">Visa <select id="report-game"><option value="">Alla spel</option></select></label>
+          </div>
+          <p class="muted small">Från Playtest i spelen. Sparas i 30 dagar; Behåll sparar en rapport tills du tar bort märkningen (högst 50 per spel).</p>
+          <div id="reports" class="list"></div>
         </article>
       </section>
 

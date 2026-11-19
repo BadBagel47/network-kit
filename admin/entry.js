@@ -4,10 +4,12 @@
 // and to hand in their anonymous measurements (F-052). GameApi is not
 // reachable from the internet.
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import worker, { AdminGuard } from './worker.js';
+import worker, { AdminGuard, playtestRooms } from './worker.js';
 import { AdminStore } from './store.js';
 
 export { AdminGuard, AdminStore };
+// Playtest Remote's rooms (F-091).
+export const PlaytestRoom = playtestRooms.RoomObject;
 export default worker;
 
 export class GameApi extends WorkerEntrypoint {

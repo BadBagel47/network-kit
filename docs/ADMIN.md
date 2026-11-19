@@ -11,7 +11,8 @@ The page shows the game cards at once and fills in Cloudflare's figures when the
 - **Förbrukning:** each daily limit as a compact bar with today's use; tap it for a ring, the last seven days and whether today's pace lasts the day. Below: each game against its share today, connection quality, and folded away the figures per game and period (today, yesterday, this month), the last 30 days as a chart or table, and what the figures mean.
 - **Inställningar:** plan, monthly cap, Cloudflare limiting, what a new timer starts with (30 min to 4 h, then no new players or an emergency stop), shares per game, and the games and their modes (add a game or a mode, remove a mode).
 - **QR codes (F-083):** a game link shows its QR code as soon as it is made; each lobby has *QR värd* and *QR gäst*; each game card has *QR* to the game's page (known once a link or a lobby was made with it in that browser). The page vendors network-kit's client (`npm run admin:assets`, also run by the deploy) for the QR codes.
-- **Logg:** the owner's changes, timers that ran out (at the time they ran out; a timer started again reads "timern startades om", B-088), game links (made, revoked, expired) and messages, newest first, for all games or one; kept 90 days (F-074).
+- **Rapporter (F-091, Playtest):** reports from Playtest in the games, newest first, for all games or one: the result, the test, who and when (and *fjärr* when sent from Playtest Remote), the answers, the device, browser, window and frames per second, the address, the page's errors and the pictures. Kept 30 days; *Behåll* keeps a report until unmarked (at most 50 per game); *Ta bort* deletes it. Tester links are made under *Länkar och meddelanden → Testarlänkar* (the game's name, which need not be a connected game; who it is for; 1 to 90 days; the game's page): the link shows Playtest in the browser that opens it. Playtest Remote's page is `/remote/` on the admin page's address and needs no sign-in (it joins with the code the game shows). See `docs/INTEGRATION.md` section 11.
+- **Logg:** the owner's changes, timers that ran out (at the time they ran out; a timer started again reads "timern startades om", B-088), game links and tester links (made, revoked, expired) and messages, newest first, for all games or one; kept 90 days (F-074).
 
 Figures (limits checked 2026-11-17 in Cloudflare's documentation, D-011; `admin/limits.js`):
 
@@ -44,6 +45,8 @@ Cloudflare does not document every field of these datasets, so the page asks the
 | `ADMIN_PASSWORD` | the page's password | signing in |
 | `CLOUDFLARE_ANALYTICS_TOKEN` | a read-only Cloudflare token with *Account Analytics: Read* and *Workers Scripts: Read* | the figures; the second permission names the games when Cloudflare reports rooms per namespace |
 | `CLOUDFLARE_ACCOUNT_ID` | optional | found with the deploy token when missing |
+
+The deploy also gives the Worker `PLAYTEST_READ_KEY`, derived from `CLOUDFLARE_API_TOKEN`; the workflow *Playtest reports* derives the same to read reports (F-091). No new GitHub secret is needed.
 
 ## Games: on, no new players, timer, stop (F-003, F-004, F-008, F-026, F-067)
 
