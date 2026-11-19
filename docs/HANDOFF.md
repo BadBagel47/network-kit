@@ -108,6 +108,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 ## One-time actions
 
+- Done (2026-11-19, owner): the deploy token (`CLOUDFLARE_API_TOKEN`) may also edit DNS records (Zone → DNS → Edit, plus Zone Read) on the account's zones, so agents can add subdomains of trythis.one from a workflow (with the owner's yes per change); Zone Edit was left off on purpose.
 - Pending (2026-11-19, owner, Q6): the GitHub secret `TRYTHIS_COUNTRY_BYPASS` (a long random value the owner makes; never in the chat) and a custom firewall rule for trythis.one (all subdomains) that skips the country rule when the header `x-trythis-country-bypass` carries that value. Steps given in the chat 2026-11-19. Then the deploys check the subdomains.
 - Pending (2026-11-19, F-098, owner): a rate-limiting rule in Cloudflare's firewall for trythis.one, so a flood of requests is stopped before it counts against the Workers quota (the free plan includes one such rule). Steps given in the chat 2026-11-19. If the deploy could not attach nk-admin/nk-demo.trythis.one (a warning in the deploy), the deploy token also needs the zone's Workers Routes and DNS permissions.
 - Done (2026-11-19, owner's Q5): a scheduled task "Månadskoll network-kit" (trig_012yzMUuaPTtTT6vuzY6Tyzq), Mondays 09:37 Swedish time into the network-kit session; it does the check only on the first Monday of the month: reads docs/DEPRECATIONS.md and the games' copies, updates the tables, adds a clean-up item and proposes a run. Documentation only; no code without the owner's Kör.
