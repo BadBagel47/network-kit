@@ -42,6 +42,7 @@
 | B-087 | Bug | The admin page's timer button flickers in colour when the page redraws the cards each minute: the draining colour is set after the button is drawn instead of at once | Low | Owner's device test 2026-11-19 (D-077, E) | Fixed in 0.13.4 (2026-11-19, run H): the colour is drawn with the card; not yet seen by the owner | Standard |
 | B-088 | Bug | The log: a timer running out has no line of its own (only the next change shows it, as "Timer till … → På"), and a change whose before and after read the same is still logged ("Timer till 18 nov. 17:00 … → Timer till 18 nov. 17:00 …") | Low | Owner's device test 2026-11-19 (D-077, G) | Fixed in 0.13.4 (2026-11-19, run H): an own line when a timer runs out (written at its end), "timern startades om" for a restart; unit test | Standard |
 | B-089 | Bug | Joining by a lobby link shows "This lobby has ended" for every refusal; it should show the real reason (wrong game, closed game, revoked, ended) | Low | Owner's device test 2026-11-18 (D-077, C2) | Fixed in 0.13.4 (2026-11-19, run H): the store tells the reason, the client shows LOBBY_REFUSED; unit test | Standard |
+| F-090 | Feature | network-kit usable by others who find the repository: a licence, an up-to-date README with a quick start, the admin page described as optional, documents without references to the owner's games, maybe an npm package; see the F-090 details | Low | Owner 2026-11-19: "Lägg det som en ev framtida utveckling" | Idea; possible future development, not planned | Standard |
 
 ## Done
 
@@ -411,6 +412,16 @@ Read-only pass over Boomers, Bricks and Buzzy against the 0.2.0 shape. Changes i
   - F passed: Nödstopp disconnected both devices with "The game was stopped by the owner"; Create room was refused with the same text; after Häv stoppet a room was made.
   - G passed: the log showed the changes, the lobby, the messages and the game links, newest first; two small faults (B-088). Three lines at 11:24 (Inga nya → Timer → Inga nya → Timer) were asked about.
 - Result: the test is passed. Bricks may start its move once B-084 is fixed (the owner decides).
+
+### F-090 network-kit for others (2026-11-19, idea)
+- Owner asked whether others who find the repository can use network-kit to add multiplayer through Cloudflare. The code is general (roles, modes, codes and rules are set by each game; no dependencies; Workers Free plan; an English guide, three example games, a smoke test), but today:
+  1. No licence: package.json says UNLICENSED and there is no licence file, so nobody else may legally use it although the repository is public. The owner chooses (for example MIT).
+  2. README.md is out of date (it says the admin page is coming).
+  3. The admin page is built for the owner (Swedish, one password, the owner's Cloudflare account); rooms work without it, which the documents should say plainly.
+  4. The documents refer to the owner's games and backlog IDs.
+  5. Delivery is a copy through a GitHub workflow, not an npm package.
+  6. Version 0.x with no promise of stability or support.
+- Owner 2026-11-19: keep as a possible future development; nothing planned.
 
 ### F-066 Notices to players (2026-11-18, owner)
 - Built in 0.10.0: the admin page puts notices in each game's status (`GameApi.status` → `notices`); the game's Worker passes them on, cleaned, in `GET <basePath>/status`; `watchNotices` on each page asks at once, every minute while visible and when the page becomes visible, and shows new ones in a fixed box at the top (yellow for warnings, blue for messages, role "alert"), with a short warning sound made in the browser, until OK; each id once per browser (kept in local storage until the notice ends).
