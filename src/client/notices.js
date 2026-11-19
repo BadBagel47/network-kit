@@ -29,54 +29,95 @@ export function noticeText(notice) {
 // ------------------------------------------------------------------ sound
 
 let audio = null;
+let waiting = null; // the newest sound that waits for the player's next touch
+let armedOn = null;
+// The events after which a page may start sound: lifting the finger (iPad and
+// Android need this, a finger down is not enough), a click, a key (B-084).
+const UNLOCK = ['touchend', 'click', 'keydown'];
+
+function play(ctx, { level, volume }) {
+  const t0 = ctx.currentTime + 0.02;
+  const notes = level === 'warning' ? [988, 740, 988, 740] : [880, 660];
+  const out = ctx.createGain();
+  out.gain.value = volume;
+  out.connect(ctx.destination);
+  notes.forEach((freq, i) => {
+    const start = t0 + i * 0.2;
+    for (const [type, mix] of [['triangle', 1], ['sine', 0.5]]) {
+      const osc = ctx.createOscillator();
+      const env = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq * (type === 'sine' ? 2 : 1);
+      env.gain.setValueAtTime(0.0001, start);
+      env.gain.exponentialRampToValueAtTime(mix, start + 0.012);
+      env.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+      osc.connect(env).connect(out);
+      osc.start(start);
+      osc.stop(start + 0.2);
+    }
+  });
+}
+
+function disarm() {
+  for (const type of UNLOCK) armedOn?.removeEventListener?.(type, unlock, true);
+  armedOn = null;
+}
+
+function arm(win) {
+  if (armedOn === win) return;
+  disarm();
+  armedOn = win;
+  for (const type of UNLOCK) win.addEventListener?.(type, unlock, true);
+}
+
+// Runs inside the player's touch, the only moment a page may start sound.
+// A sound paused while an iPad slept does not come back (B-084), so a paused
+// one is replaced by a new one, made and started in the same touch.
+function unlock() {
+  const win = armedOn;
+  disarm();
+  const sound = waiting;
+  waiting = null;
+  if (!sound || !win) return;
+  const Ctx = win.AudioContext ?? win.webkitAudioContext;
+  if (audio?.state !== 'running') {
+    try {
+      audio?.close?.();
+    } catch {
+      // already closed
+    }
+    audio = new Ctx();
+    audio.resume?.().catch(() => {});
+  }
+  play(audio, sound);
+}
 
 /**
  * A short warning sound made in the browser (no file): two tones twice for a
  * warning, once for a message. Browsers only play sound after the player has
- * touched the page; until then the sound waits for the first touch or key.
+ * touched the page, and an iPad stops a page's sound while it sleeps; then
+ * the sound waits for the next touch or key.
  */
 export function playWarningSound({ level = 'warning', volume = 0.3, window: win = globalThis } = {}) {
   const Ctx = win.AudioContext ?? win.webkitAudioContext;
   if (!Ctx) return false;
-  audio ??= new Ctx();
-  const play = () => {
-    const t0 = audio.currentTime + 0.02;
-    const notes = level === 'warning' ? [988, 740, 988, 740] : [880, 660];
-    const out = audio.createGain();
-    out.gain.value = volume;
-    out.connect(audio.destination);
-    notes.forEach((freq, i) => {
-      const start = t0 + i * 0.2;
-      for (const [type, mix] of [['triangle', 1], ['sine', 0.5]]) {
-        const osc = audio.createOscillator();
-        const env = audio.createGain();
-        osc.type = type;
-        osc.frequency.value = freq * (type === 'sine' ? 2 : 1);
-        env.gain.setValueAtTime(0.0001, start);
-        env.gain.exponentialRampToValueAtTime(mix, start + 0.012);
-        env.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
-        osc.connect(env).connect(out);
-        osc.start(start);
-        osc.stop(start + 0.2);
-      }
-    });
-  };
+  if (!audio || audio.state === 'closed' || !(audio instanceof Ctx)) audio = new Ctx();
+  const sound = { level, volume };
   if (audio.state === 'running') {
-    play();
+    play(audio, sound);
     return true;
   }
-  const later = () => {
-    win.removeEventListener?.('pointerdown', later, true);
-    win.removeEventListener?.('keydown', later, true);
-    audio.resume().then(play, () => {});
-  };
-  audio.resume().then(() => {
-    if (audio.state === 'running') play();
-    else throw new Error('suspended');
-  }).catch(() => {
-    win.addEventListener?.('pointerdown', later, true);
-    win.addEventListener?.('keydown', later, true);
-  });
+  // Not allowed yet, or paused ('suspended', or 'interrupted' on an iPad).
+  waiting = sound;
+  arm(win);
+  const ctx = audio;
+  ctx.resume?.().then(() => {
+    if (ctx.state === 'running' && waiting === sound) {
+      waiting = null;
+      disarm();
+      play(ctx, sound);
+    }
+  }, () => {});
   return true;
 }
 
@@ -92,7 +133,7 @@ const STYLE = `
   animation: nk-notice-in .5s ease-out 1; }
 .nk-notice[data-level="info"] { background: var(--nk-notice-info-bg, #1f5fd6); color: var(--nk-notice-info-ink, #fff);
   border-color: var(--nk-notice-info-edge, #0b2e70); }
-.nk-notice .nk-icon { grid-row: 1 / span 2; font-size: 26px; line-height: 1; font-weight: 800; }
+.nk-notice .nk-icon { grid-row: 1 / span 2; width: 28px; height: 28px; display: block; }
 .nk-notice .nk-title { font-weight: 800; font-size: 17px; }
 .nk-notice .nk-text { grid-column: 2; }
 .nk-notice button { grid-row: 1 / span 2; grid-column: 3; align-self: center; font: inherit; font-weight: 800; cursor: pointer;
@@ -131,6 +172,32 @@ function readSeen(storage) {
   } catch {
     return {};
   }
+}
+
+// The same drawn icon on every device (B-085): a font's ⚠ and ℹ become an
+// emoji on some devices and a text sign on others.
+const SVG = 'http://www.w3.org/2000/svg';
+const ICON = {
+  warning: [['path', { d: 'M12 2.5 1.5 21h21L12 2.5Z', fill: 'none', stroke: 'currentColor', 'stroke-width': '2.2', 'stroke-linejoin': 'round' }],
+    ['path', { d: 'M12 9v5.5', stroke: 'currentColor', 'stroke-width': '2.6', 'stroke-linecap': 'round' }],
+    ['circle', { cx: '12', cy: '17.8', r: '1.5', fill: 'currentColor' }]],
+  info: [['circle', { cx: '12', cy: '12', r: '10', fill: 'none', stroke: 'currentColor', 'stroke-width': '2.2' }],
+    ['path', { d: 'M12 11v6', stroke: 'currentColor', 'stroke-width': '2.6', 'stroke-linecap': 'round' }],
+    ['circle', { cx: '12', cy: '7.3', r: '1.5', fill: 'currentColor' }]],
+};
+
+/** The notice icon as an inline SVG element; `level` is 'warning' or 'info'. */
+export function noticeIcon(doc, level) {
+  const svg = doc.createElementNS(SVG, 'svg');
+  svg.setAttribute('class', 'nk-icon');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const [tag, attrs] of ICON[level]) {
+    const part = doc.createElementNS(SVG, tag);
+    for (const [k, v] of Object.entries(attrs)) part.setAttribute(k, v);
+    svg.append(part);
+  }
+  return svg;
 }
 
 /** The box on the page. Notices stay until OK; each id is shown once per browser. */
@@ -181,10 +248,7 @@ export class NoticeBoard {
     item.dataset.level = level;
     item.dataset.kind = notice.kind ?? 'message';
     item.setAttribute('role', 'alert');
-    const icon = this.doc.createElement('span');
-    icon.className = 'nk-icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = level === 'warning' ? '⚠' : 'ℹ';
+    const icon = noticeIcon(this.doc, level);
     const title = this.doc.createElement('div');
     title.className = 'nk-title';
     title.textContent = notice.title || (level === 'warning' ? 'Warning' : 'Message');

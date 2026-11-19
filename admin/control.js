@@ -271,15 +271,39 @@ export function gameNotices(settings, budget, game, now = Date.now(), messages =
 
 const ZONE = 'Europe/Stockholm';
 export const when = (iso) => new Date(iso).toLocaleString('sv-SE', { timeZone: ZONE, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-const modeText = (e) => {
+const thenText = (e) => (e?.timer?.then === 'stop' ? 'nödstopp' : 'inga nya spelare');
+const timerEnded = (e, now) => e?.mode === 'timer' && Date.parse(e.timer?.until) <= now;
+const modeText = (e, now = Date.now()) => {
   if (!e || e.mode === 'on') return 'På';
   if (e.mode === 'off') return 'Inga nya spelare';
-  return `Timer till ${when(e.timer?.until)}, sedan ${e.timer?.then === 'stop' ? 'nödstopp' : 'inga nya spelare'}`;
+  if (timerEnded(e, now)) return `${thenText(e) === 'nödstopp' ? 'Nödstopp' : 'Inga nya spelare'} (timern gick ut ${when(e.timer.until)})`;
+  return `Timer till ${when(e.timer?.until)}, sedan ${thenText(e)}`;
 };
 const sameMode = (a, b) => (a?.mode ?? 'on') === (b?.mode ?? 'on') && (a?.timer?.until ?? null) === (b?.timer?.until ?? null) && (a?.timer?.then ?? null) === (b?.timer?.then ?? null);
+// One line for a mode change (B-088): a running timer started again reads as such.
+function modeChange(label, a, b, now) {
+  const running = (e) => e?.mode === 'timer' && !timerEnded(e, now);
+  if (running(a) && running(b) && a.timer.then === b.timer.then) return `${label}: timern startades om, till ${when(b.timer.until)}`;
+  return `${label}: ${modeText(a, now)} → ${modeText(b, now)}`;
+}
+
+/** Timers that have run out: [{ game, mode, until, then }] (B-088). */
+export function endedTimers(settings, now = Date.now()) {
+  const out = [];
+  for (const [game, entry] of Object.entries(settings.games ?? {})) {
+    if (timerEnded(entry, now)) out.push({ game, mode: null, until: entry.timer.until, then: entry.timer.then });
+    for (const [mode, m] of Object.entries(entry.modes ?? {})) {
+      if (timerEnded(m, now)) out.push({ game, mode, until: m.timer.until, then: m.timer.then });
+    }
+  }
+  return out;
+}
+
+/** The log line for a timer that has run out. */
+export const timerEndedText = ({ game, mode, then }) => `${game}${mode ? ` ${mode}` : ''}: timern gick ut, nu ${then === 'stop' ? 'nödstopp' : 'inga nya spelare'}`;
 
 /** What changed between two settings, one line per change: [{ game, text }]. */
-export function describeChanges(before, after) {
+export function describeChanges(before, after, now = Date.now()) {
   const out = [];
   const games = [...new Set([...Object.keys(before.games), ...Object.keys(after.games)])].sort();
   for (const name of games) {
@@ -289,14 +313,14 @@ export function describeChanges(before, after) {
     if (a && !b) { out.push({ game: name, text: `${name} togs bort` }); continue; }
     if (!a.stopped && b.stopped) out.push({ game: name, text: `Nödstopp för ${name}` });
     if (a.stopped && !b.stopped) out.push({ game: name, text: `Nödstoppet för ${name} hävdes` });
-    if (!sameMode(a, b)) out.push({ game: name, text: `${name}: ${modeText(a)} → ${modeText(b)}` });
+    if (!sameMode(a, b)) out.push({ game: name, text: modeChange(name, a, b, now) });
     if (a.share !== b.share) out.push({ game: name, text: `${name}: andel ${a.share ?? 'lika'} → ${b.share ?? 'lika'}${b.share === null ? '' : ' %'}` });
     for (const m of [...new Set([...Object.keys(a.modes ?? {}), ...Object.keys(b.modes ?? {})])].sort()) {
       const x = a.modes?.[m];
       const y = b.modes?.[m];
       if (!x && y) out.push({ game: name, text: `${name}: läget ${m} lades till` });
       else if (x && !y) out.push({ game: name, text: `${name}: läget ${m} togs bort` });
-      else if (!sameMode(x, y)) out.push({ game: name, text: `${name} ${m}: ${modeText(x)} → ${modeText(y)}` });
+      else if (!sameMode(x, y)) out.push({ game: name, text: modeChange(`${name} ${m}`, x, y, now) });
     }
   }
   const A = before.account;

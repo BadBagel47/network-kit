@@ -10,6 +10,18 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.13.4 (2026-11-19)
+
+Affects: games that show notices or use lobby links; take 0.13.4. Fixes from the owner's device test (D-077).
+
+- Fixed (B-084): the warning sound stayed silent on an iPad that had slept, even after the player touched the page. The waiting sound now starts when the finger lifts (or on a click or key), which is when iPad and Android allow sound, and a sound paused by sleep is replaced by a new one in that touch.
+- Fixed (B-085): the notice box's icon is drawn (inline SVG) and looks the same on every device; it was an emoji on the iPad and a text sign on Android. The admin page's preview uses the same icon.
+- Fixed (B-089): a lobby link that does not work says why: ended, closed by its owner, for another game, or not a lobby link (`LOBBY_REFUSED`), instead of always "This lobby has ended."
+- Fixed (B-081): the admin page's lists for game links, lobbies and messages offer the connected games only and keep the last choice in that browser.
+- Fixed (B-087): the admin page's timer button no longer flashes its plain colour when the cards are redrawn each minute.
+- Fixed (B-088): a timer that runs out gets its own line in the log, at the time it ran out ("timern gick ut, nu inga nya spelare"); a running timer started again reads "timern startades om" instead of two equal halves.
+- Fixed (B-082): the demo's deploy check accepts a demo that is closed on the admin page.
+
 ## 0.13.3 (2026-11-18)
 
 Affects: the admin page only.

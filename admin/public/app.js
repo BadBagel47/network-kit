@@ -4,6 +4,7 @@
 // style attribute (the page's Content-Security-Policy allows no inline styles).
 
 import { qrSvg } from './network-kit/client/share.js';
+import { noticeIcon } from './network-kit/client/notices.js';
 
 const $ = (id) => document.getElementById(id);
 const SVG = 'http://www.w3.org/2000/svg';
@@ -341,7 +342,9 @@ function modeRow(game, mode, title, entry) {
     if (value === 'timer' && timerOn) {
       const t = el('span', { class: 'time' });
       b.append(t);
-      timers.push({ button: b, time: t, from: Date.parse(entry.timer.from ?? entry.timer.until), until: Date.parse(entry.timer.until) });
+      const timer = { button: b, time: t, from: Date.parse(entry.timer.from ?? entry.timer.until), until: Date.parse(entry.timer.until) };
+      drawTimer(timer, now); // at once, so a redrawn card does not flash its plain colour (B-087)
+      timers.push(timer);
     }
     b.addEventListener('click', () => { if (current !== value || value === 'timer') pick(value); });
     seg.append(b);
@@ -362,17 +365,20 @@ function modeRow(game, mode, title, entry) {
 }
 
 // The timers count down every second; the button drains as time passes.
+function drawTimer(t, now) {
+  const rest = t.until - now;
+  t.time.textContent = left(rest);
+  const total = t.until - t.from;
+  const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((rest / total) * 100))) : 100;
+  t.button.style.background = `linear-gradient(90deg, rgba(76, 194, 255, 0.42) ${pct}%, #243245 ${pct}%)`;
+  t.button.setAttribute('aria-label', `Timer, ${left(rest)} kvar`);
+}
 setInterval(() => {
   const now = Date.now();
   let ended = false;
   for (const t of timers) {
-    const rest = t.until - now;
-    if (rest <= 0) ended = true;
-    t.time.textContent = left(rest);
-    const total = t.until - t.from;
-    const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((rest / total) * 100))) : 100;
-    t.button.style.background = `linear-gradient(90deg, rgba(76, 194, 255, 0.42) ${pct}%, #243245 ${pct}%)`;
-    t.button.setAttribute('aria-label', `Timer, ${left(rest)} kvar`);
+    if (t.until - now <= 0) ended = true;
+    drawTimer(t, now);
   }
   if (ended && data) load().catch(() => {});
 }, 1000);
@@ -719,18 +725,38 @@ async function loadQuality() {
 
 /* ---------- Länkar och meddelanden ---------- */
 
+// Links, lobbies and messages offer the connected games only, and keep the
+// last choice per list in this browser (B-081).
+const CHOICE_KEY = 'nk-admin:game:';
+function rememberedGame(id) {
+  try {
+    return localStorage.getItem(CHOICE_KEY + id);
+  } catch {
+    return null;
+  }
+}
 function fillGameSelects() {
   const names = gameNames();
-  const fill = (select, extra) => {
-    const keep = select.value;
-    select.replaceChildren(...extra.map(([v, t]) => el('option', { value: v }, t)), ...names.map((n) => el('option', { value: n }, n)));
+  const live = names.filter(connected);
+  const fill = (select, extra, list = live.length ? live : names) => {
+    const keep = select.value || rememberedGame(select.form?.id ?? select.id);
+    select.replaceChildren(...extra.map(([v, t]) => el('option', { value: v }, t)), ...list.map((n) => el('option', { value: n }, n)));
     if ([...select.options].some((o) => o.value === keep)) select.value = keep;
   };
   fill($('new-pass').game, []);
   fill($('new-lobby').game, []);
   for (const form of [$('new-pass'), $('new-lobby')]) if (!form.page.value) prefillPage(form);
   fill($('new-message').game, [['*', 'Alla spel']]);
-  fill($('log-game'), [['', 'Alla spel']]);
+  fill($('log-game'), [['', 'Alla spel']], names);
+}
+for (const form of ['new-pass', 'new-lobby', 'new-message']) {
+  $(form).game.addEventListener('change', (e) => {
+    try {
+      localStorage.setItem(CHOICE_KEY + form, e.target.value);
+    } catch {
+      // private mode: not kept
+    }
+  });
 }
 
 function passItem(p, old) {
@@ -876,7 +902,9 @@ for (const b of document.querySelectorAll('[data-level]')) {
 function preview() {
   const box = $('notice-preview');
   box.className = `notice-preview ${level === 'warning' ? '' : 'info'}`;
-  box.querySelector('.icon').textContent = level === 'warning' ? '⚠' : 'i';
+  const icon = noticeIcon(document, level === 'warning' ? 'warning' : 'info');
+  icon.classList.add('icon');
+  box.querySelector('.icon').replaceWith(icon);
   $('preview-title').textContent = level === 'warning' ? 'Warning' : 'Message';
   $('preview-text').textContent = $('new-message').text.value.trim() || '…';
 }

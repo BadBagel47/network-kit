@@ -3,7 +3,7 @@
 // entrypoint (a service binding), never over the internet.
 
 import { CloudflareAnalytics } from './analytics.js';
-import { normalizeSettings, budgetState, gameStatus, gameNotices, describeChanges, when } from './control.js';
+import { normalizeSettings, budgetState, gameStatus, gameNotices, describeChanges, when, endedTimers, timerEndedText } from './control.js';
 
 const BUDGET_EVERY_MS = 5 * 60_000;
 // Game links (F-058, F-068): valid as long as the owner chooses (7 days unless
@@ -83,8 +83,19 @@ export class AdminStore {
     return budget;
   }
 
+  /** A timer that has run out gets one log line, at the time it ran out (B-088). */
+  async logEndedTimers(settings) {
+    for (const t of endedTimers(settings, this.now())) {
+      const key = `timerlog:${t.game}:${t.mode ?? ''}`;
+      if ((await this.storage.get(key)) === t.until) continue;
+      await this.storage.put(key, t.until);
+      await this.log(t.game, timerEndedText(t), 'settings', Date.parse(t.until));
+    }
+  }
+
   async status(game, mode = null) {
     const settings = await this.settings();
+    await this.logEndedTimers(settings);
     const budget = await this.budget();
     const now = this.now();
     return { ...gameStatus(settings, budget, game, now, mode), notices: gameNotices(settings, budget, game, now, await this.messages(), mode) };
@@ -119,8 +130,7 @@ export class AdminStore {
 
   // ---- the owner's log (F-074): kept 90 days
 
-  async log(game, text, kind = 'settings') {
-    const at = this.now();
+  async log(game, text, kind = 'settings', at = this.now()) {
     this.logSeq = ((this.logSeq ?? 0) + 1) % 1_000_000; // keeps the order of entries written in the same millisecond
     const id = `${String(at).padStart(15, '0')}-${String(this.logSeq).padStart(6, '0')}`;
     await this.storage.put(`log:${id}`, { at, game: game ?? null, text: String(text).slice(0, 300), kind });
@@ -202,6 +212,16 @@ export class AdminStore {
     if (!lobby || lobby.game !== game || lobby.revoked || lobby.expires <= this.now()) return null;
     const role = t === lobby.hostToken ? 'host' : t === lobby.guestToken ? 'guest' : null;
     return role ? { lobby, role } : null;
+  }
+
+  /** Why a lobby link does not work (B-089): not-a-lobby, lobby-other-game, lobby-revoked or lobby-ended. */
+  async lobbyProblem(game, token) {
+    const t = String(token ?? '');
+    const lobby = t.startsWith(LOBBY_PREFIX) ? await this.storage.get(`lobby:${t.slice(LOBBY_PREFIX.length).split('.')[0]}`) : null;
+    if (!lobby || (t !== lobby.hostToken && t !== lobby.guestToken)) return 'not-a-lobby';
+    if (lobby.game !== game) return 'lobby-other-game';
+    if (lobby.revoked) return 'lobby-revoked';
+    return 'lobby-ended';
   }
 
   // ---- game links (F-058, F-068)
@@ -310,13 +330,15 @@ export class AdminStore {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === '/settings' && request.method === 'GET') {
+      await this.logEndedTimers(await this.settings());
       return json({ settings: await this.settings(), budget: await this.budget(), connected: await this.connected(), versions: await this.versions() });
     }
     if (url.pathname === '/settings' && request.method === 'PUT') {
       const before = await this.settings();
+      await this.logEndedTimers(before);
       const settings = normalizeSettings(await request.json(), this.now());
       await this.storage.put('settings', settings);
-      for (const change of describeChanges(before, settings)) await this.log(change.game, change.text);
+      for (const change of describeChanges(before, settings, this.now())) await this.log(change.game, change.text);
       // Automatic closing reads the budget every 5 minutes while it is on.
       if (settings.account.autoClose) await this.storage.setAlarm(this.now() + 1_000);
       else await this.storage.deleteAlarm();
@@ -364,7 +386,7 @@ export class AdminStore {
       const { game, token } = await request.json().catch(() => ({}));
       await this.seen(game);
       const found = await this.lobbyFor(String(game), token);
-      if (!found) return json({ error: 'lobby-ended' });
+      if (!found) return json({ error: await this.lobbyProblem(String(game), token) });
       return json({ id: found.lobby.id, role: found.role, expires: found.lobby.expires, room: found.lobby.room });
     }
     if (url.pathname === '/lobby-room' && request.method === 'POST') {
@@ -380,6 +402,7 @@ export class AdminStore {
       return json(lobby.room);
     }
     if (url.pathname === '/log' && request.method === 'GET') {
+      await this.logEndedTimers(await this.settings());
       return json(await this.logs(url.searchParams.get('game') || null));
     }
     if (url.pathname === '/status') {

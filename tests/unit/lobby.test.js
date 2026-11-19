@@ -70,7 +70,7 @@ test('F-059: the admin page makes lobbies with a host and a guest link, lists th
   assert.notEqual(lobby.hostToken, lobby.guestToken);
   assert.equal(readLobbyLink(`#nk-lobby=${lobby.guestToken}`), lobby.guestToken, 'the client reads the link');
   assert.deepEqual(await call('/lobby-check', 'POST', { game: 'bricks', token: lobby.hostToken }), { id: lobby.id, role: 'host', expires: lobby.expires, room: null });
-  assert.equal((await call('/lobby-check', 'POST', { game: 'vattigt', token: lobby.hostToken })).error, 'lobby-ended', 'one game only');
+  assert.equal((await call('/lobby-check', 'POST', { game: 'vattigt', token: lobby.hostToken })).error, 'lobby-other-game', 'one game only');
   assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: lobby.guestToken })).valid, true, 'the room checks the token like a game link');
   // The first room stored wins.
   assert.equal((await call('/lobby-room', 'POST', { game: 'bricks', id: lobby.id, room: { code: 'AAAAAA', ownerKey: 'o1', key: 'k1' } })).code, 'AAAAAA');
@@ -78,6 +78,8 @@ test('F-059: the admin page makes lobbies with a host and a guest link, lists th
   assert.equal((await call('/lobbies'))[0].code, 'AAAAAA');
   await call(`/lobbies/${lobby.id}`, 'DELETE');
   assert.equal((await call('/check-pass', 'POST', { game: 'bricks', token: lobby.guestToken })).valid, false, 'revoked');
+  assert.equal((await call('/lobby-check', 'POST', { game: 'bricks', token: lobby.guestToken })).error, 'lobby-revoked', 'the real reason (B-089)');
+  assert.equal((await call('/lobby-check', 'POST', { game: 'bricks', token: 'lb_nothing.here' })).error, 'not-a-lobby');
   assert.deepEqual(await call('/lobbies'), [], 'only active lobbies by default');
   assert.equal((await call('/lobbies?all=1'))[0].state, 'revoked');
   const log = (await call('/log')).map((e) => e.text);

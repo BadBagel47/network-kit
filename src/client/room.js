@@ -14,6 +14,7 @@
 import { readLobbyLink, forgetLobbyLink } from './lobby.js';
 import {
   PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, gameClosedText, normalizeCode, isValidCode, PART_CHARS, splitIntoParts, PartJoiner,
+  LOBBY_REFUSED,
 } from '../shared/protocol.js';
 
 // The largest text a client accepts from the room (joined from parts).
@@ -247,7 +248,7 @@ export class NetworkRoom {
    * `token` defaults to the one in the address bar (`#nk-lobby=…`), which is
    * then taken out of it. The host link joins as the room's owner; the guest
    * link joins with an invitation key and waits for the host. Rejects with a
-   * RoomError whose reason is 'lobby-ended' or 'stopped' when it cannot.
+   * RoomError when it cannot; its reason is one of LOBBY_REFUSED's keys (B-089).
    */
   static async joinLobby(server, options = {}) {
     const token = options.token ?? readLobbyLink(options.window?.location?.hash);
@@ -265,8 +266,7 @@ export class NetworkRoom {
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.code) {
       const reason = body.error ?? 'lobby-ended';
-      const text = reason === 'stopped' ? 'The game is stopped right now.' : reason === 'too-many-requests' ? 'Too many tries. Wait a minute and try again.' : 'This lobby has ended.';
-      throw new RoomError(CLOSE.GAME_CLOSED, reason, text);
+      throw new RoomError(CLOSE.GAME_CLOSED, reason, LOBBY_REFUSED[reason] ?? LOBBY_REFUSED['lobby-ended']);
     }
     if (!options.token) forgetLobbyLink(options.window);
     const { token: _t, ...rest } = options;

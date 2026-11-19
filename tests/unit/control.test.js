@@ -438,6 +438,26 @@ test('F-074: changes are written to the log in Swedish, kept 90 days, and can be
   assert.deepEqual(await call('/log'), [], 'older than 90 days is deleted');
 });
 
+test('B-088: a timer that runs out gets its own log line at its end; a restarted timer says so', async () => {
+  let t = Date.parse('2026-11-19T10:00:00Z');
+  const store = storeWith(() => t);
+  const call = async (path, method = 'GET', body) => (await store.fetch(new Request(`https://store${path}`, { method, body: body && JSON.stringify(body) }))).json();
+  const timer = (min) => ({ mode: 'timer', timer: { from: new Date(t).toISOString(), until: new Date(t + min * 60_000).toISOString(), then: 'off' } });
+  await call('/settings', 'PUT', { games: { demo: timer(30) } });
+  t += 10_000;
+  await call('/settings', 'PUT', { games: { demo: timer(30) } }); // pressed again in the same minute
+  assert.equal((await call('/log'))[0].text, 'demo: timern startades om, till 19 nov. 11:30');
+  t = Date.parse('2026-11-19T10:45:00Z');
+  await call('/status?game=demo');
+  await call('/status?game=demo');
+  const log = await call('/log');
+  assert.equal(log.filter((e) => e.text.includes('gick ut')).length, 1, 'once');
+  assert.equal(log[0].text, 'demo: timern gick ut, nu inga nya spelare');
+  assert.equal(log[0].at, Date.parse('2026-11-19T10:30:10Z'), 'at the time it ran out');
+  await call('/settings', 'PUT', { games: { demo: { mode: 'on' } } });
+  assert.equal((await call('/log'))[0].text, 'demo: Inga nya spelare (timern gick ut 19 nov. 11:30) → På');
+});
+
 test('F-074, owner 2026-11-18: links no longer active stay listed 14 days; revoking and expiry are logged; last use is kept', async () => {
   let t = NOW;
   const store = storeWith(() => t);

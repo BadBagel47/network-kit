@@ -181,3 +181,15 @@ export const NOTICE_TEXT = Object.freeze({
   },
   message: { level: 'info', title: 'Message', text: '' },
 });
+
+// What a player sees when a lobby link does not work (B-089).
+export const LOBBY_REFUSED = {
+  'lobby-ended': 'This lobby has ended.',
+  'lobby-revoked': 'This lobby was closed by its owner.',
+  'lobby-other-game': 'This lobby link is for another game.',
+  'not-a-lobby': 'This lobby link does not work. Ask for a new one.',
+  'no-lobbies': 'This game does not take lobby links.',
+  'no-room': 'The lobby could not open its room. Try again in a minute.',
+  stopped: 'The game is stopped right now.',
+  'too-many-requests': 'Too many tries. Wait a minute and try again.',
+};
