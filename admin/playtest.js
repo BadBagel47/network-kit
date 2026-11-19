@@ -6,7 +6,8 @@
 // Keys in the store's storage:
 //   tst:<id>              a tester link (the secret only as a hash)
 //   rep:<time>-<id>       a report
-//   img:<id>              a picture (JPEG or PNG, base64), owned by one report
+//   img:<id>              a picture's facts (type, size, owner), small, so lists stay light (B-099)
+//   imgd:<id>             the picture itself (base64), read only when one picture is asked for
 //   ptn:<tester>:<day>    how many reports and pictures a tester sent that day
 //   ptu:<id>              an upload key for Playtest Remote (B-094): pictures only, a few hours
 //
@@ -211,7 +212,8 @@ export class Playtest {
     let binary = '';
     const view = new Uint8Array(bytes);
     for (let i = 0; i < view.length; i += 0x8000) binary += String.fromCharCode(...view.subarray(i, i + 0x8000));
-    await this.storage.put(`img:${id}`, { id, game: t.game, tester: t.id, type, size: view.length, data: btoa(binary), at: this.now(), report: null });
+    await this.storage.put(`imgd:${id}`, btoa(binary));
+    await this.storage.put(`img:${id}`, { id, game: t.game, tester: t.id, type, size: view.length, at: this.now(), report: null });
     return { id };
   }
 
@@ -252,8 +254,11 @@ export class Playtest {
     return out.sort((a, b) => b.at - a.at);
   }
 
+  /** One picture with its data, or null. Pictures from 0.14.0–0.14.1 kept the data in img:. */
   async image(id) {
-    return (await this.storage.get(`img:${id}`)) ?? null;
+    const meta = await this.storage.get(`img:${id}`);
+    if (!meta) return null;
+    return { ...meta, data: meta.data ?? (await this.storage.get(`imgd:${id}`)) ?? '' };
   }
 
   async findReport(id) {
@@ -278,7 +283,7 @@ export class Playtest {
   async deleteReport(id) {
     const found = await this.findReport(id);
     if (!found) return;
-    await this.storage.delete([found.key, ...found.r.images.map((i) => `img:${i}`)]);
+    await this.storage.delete([found.key, ...found.r.images.flatMap((i) => [`img:${i}`, `imgd:${i}`])]);
   }
 
   /** Reports older than 30 days (unless kept), their pictures, and stray pictures go. */
@@ -288,10 +293,10 @@ export class Playtest {
     this.cleanedAt = now;
     const gone = [];
     for (const [key, r] of await this.storage.list({ prefix: 'rep:' })) {
-      if (!r.keep && now - r.at > REPORT_KEEP_MS) gone.push(key, ...r.images.map((i) => `img:${i}`));
+      if (!r.keep && now - r.at > REPORT_KEEP_MS) gone.push(key, ...r.images.flatMap((i) => [`img:${i}`, `imgd:${i}`]));
     }
     for (const [key, img] of await this.storage.list({ prefix: 'img:' })) {
-      if (!img.report && now - img.at > UNUSED_IMAGE_MS) gone.push(key);
+      if (!img.report && now - img.at > UNUSED_IMAGE_MS) gone.push(key, `imgd:${img.id}`);
     }
     for (const [key, u] of await this.storage.list({ prefix: 'ptu:' })) {
       if (u.expires <= now) gone.push(key);

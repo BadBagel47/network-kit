@@ -27,7 +27,7 @@ test('F-091: a report that cannot be sent is kept and sent later; a refused link
   const posted = [];
   const fetchStub = async (url, init) => {
     if (!online) throw new TypeError('offline');
-    if (url.includes('/playtest/report')) posted.push(JSON.parse(init.body).report);
+    if (url.includes('/playtest/v1/report')) posted.push(JSON.parse(init.body).report);
     return new Response(JSON.stringify({ id: 'r1' }), { status: 200 });
   };
   const sender = new ReportSender({ admin: 'https://admin.example/', token: 'pt_a.b', storage, fetch: fetchStub });
@@ -41,4 +41,13 @@ test('F-091: a report that cannot be sent is kept and sent later; a refused link
   const refused = new ReportSender({ admin: 'https://admin.example', token: 'pt_x.y', storage, fetch: async () => new Response('{}', { status: 401 }) });
   assert.deepEqual(await refused.send({ testId: 'T-2', result: 'failed' }), { sent: false, error: 401 });
   assert.equal(kept.has('nk-playtest:queue'), false);
+});
+
+test('F-096: the light entry loads nothing without a tester link', async () => {
+  const { hasTesterLink, startPlaytest } = await import('../../src/client/playtest-entry.js');
+  const store = (v) => ({ getItem: () => v });
+  assert.equal(hasTesterLink({ location: { hash: '' }, localStorage: store(null) }), false);
+  assert.equal(hasTesterLink({ location: { hash: '#nk-tester=pt_a.b' }, localStorage: store(null) }), true);
+  assert.equal(hasTesterLink({ location: { hash: '' }, localStorage: store('"pt_a.b"') }), true);
+  assert.equal(await startPlaytest({ admin: 'https://x', window: { location: { hash: '' }, localStorage: store(null) } }), null);
 });

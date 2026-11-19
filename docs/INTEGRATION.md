@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.14** (0.14.1).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.15** (0.15.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -370,7 +370,8 @@ Playtest lets the owner (and friends given a tester link) report play tests from
 **In the game.** Start it on every page where tests are run, also pages that are not the game (design tests):
 
 ```js
-import { startPlaytest } from './vendor/network-kit/client/index.js';
+// The light entry (from 0.15, F-096): without a tester link it loads nothing more.
+import { startPlaytest } from './vendor/network-kit/client/playtest-entry.js';
 startPlaytest({
   admin: 'https://network-kit-admin.l8p1.workers.dev', // the admin page, not the game's Worker
   items: ITEMS,             // the game's test list (below); one module shared by every page
@@ -380,6 +381,7 @@ startPlaytest({
 });
 ```
 
+- Import it from `client/playtest-entry.js` (from 0.15): without a tester link that small module loads nothing more and asks nothing, so ordinary players do not load the panel, the room client or the QR code maker; `hasTesterLink()` tells whether one is there. `client/index.js` exports the same `startPlaytest`.
 - It does nothing (returns `null`) unless the browser has opened a **tester link** from the admin page (*Länkar och meddelanden → Testarlänkar*: the game's page with `#nk-tester=…`). The token is kept in localStorage (`nk-playtest:tester`) and taken out of the address. Without a link no request is made.
 - `items`: `[{ id, title, where, steps: [text], links: [[text, address]], ask: text | [text] }]`; `questions: [text]` may replace `ask`. A link starts the test's situation: the panel opens it with `playtest=<id>` added to its query, so the test is still running after the page loads. A page opened with `?playtest=<id>` starts that test.
 - The panel lists the tests (those reported in the last 30 days are marked), shows a test's steps (*Nästa steg*), one answer field per question, *Övrigt*, *Fungerade / Delvis / Fungerade inte*, *Ta skärmbild* (the largest canvas, or `canvas()` / `screenshot()`), *Lägg till bild* (a file or the camera), *Skicka*, *Börja om* (the first link again) and *Avbryt* (sent as cancelled). *Skriv en anteckning utan test* sends a free note.
@@ -387,6 +389,8 @@ startPlaytest({
 - A report that cannot be sent is kept in localStorage (`nk-playtest:queue`, at most 5) and sent when the page is online again. The running test (`nk-playtest:run`, sessionStorage), the panel's place and whether it is folded (`nk-playtest:place`) are kept too. A game that lists what pages store (Critical's tests/outside.mjs) should name these keys.
 - **Keyboard games:** the panel never takes focus by itself; pointer, touch, key and wheel events inside it stop there, so the game does not steer or shoot while the tester types; folding it or sending gives the focus back (to the element that had it, or a canvas with `tabindex`). It sits under `document.documentElement` (visible in fullscreen), starts on the left a third down (away from the corners) and can be dragged and folded to a small tab. `hidden: true` (default: the address has `?still`) keeps it out of screenshot tests.
 - **Content-Security-Policy:** a page with a strict policy must allow the admin page: `connect-src 'self' https://network-kit-admin.l8p1.workers.dev wss://network-kit-admin.l8p1.workers.dev` and `img-src … blob:` (the demo's `_headers` does). Styles are a constructed style sheet, so `style-src 'self'` is enough.
+
+The panel talks to the admin page's versioned paths (`/playtest/v1/…`, from 0.15, F-103); the unversioned paths of 0.14 still answer.
 
 **Playtest Remote.** *Fjärr* in the panel opens a small room on the admin page's Worker (only with a working tester link) and shows a QR code, a six-character code and a link. The other device scans the code, opens the link, or types the code at `https://network-kit-admin.l8p1.workers.dev/remote/`. The remote shows the list; *Starta* loads the test's start address on the game page (which pairs again after loading); the steps, questions, result, *Skärmbild från spelet* (taken on the game page and sent with the report), *Ta foto eller välj bild* (the remote's own camera; it sends with a key that only sends pictures and lasts six hours, never the tester link, from 0.14.1), *Skicka*, *Börja om* and *Avbryt* work from there, and the game page folds the panel to a small tab while a remote is connected. The report goes through the game page, which adds its context. Rooms stay in the EU and close an hour after every page was hidden.
 

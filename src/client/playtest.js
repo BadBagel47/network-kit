@@ -23,8 +23,10 @@
 // Texts are Swedish: it is the owner's tool (owner 2026-11-19).
 
 import { VERSION } from '../version.js';
-import { qrSvg } from './share.js';
-import { NetworkRoom } from './room.js';
+// The QR code maker and the room client are loaded only when Playtest Remote
+// is opened (F-096): a tester who never pairs a remote does not load them.
+const loadShare = () => import('./share.js');
+const loadRoom = () => import('./room.js');
 
 const TOKEN_KEY = 'nk-playtest:tester';
 const RUN_KEY = 'nk-playtest:run';
@@ -199,7 +201,7 @@ export class ReportSender {
   }
 
   async image(blob) {
-    const res = await this.fetch(`${this.admin}/playtest/image?token=${encodeURIComponent(this.token)}`, {
+    const res = await this.fetch(`${this.admin}/playtest/v1/image?token=${encodeURIComponent(this.token)}`, {
       method: 'POST', headers: { 'content-type': blob.type || 'image/jpeg' }, body: blob,
     });
     if (!res.ok) throw Object.assign(new Error('image'), { status: res.status });
@@ -207,7 +209,7 @@ export class ReportSender {
   }
 
   async post(report) {
-    const res = await this.fetch(`${this.admin}/playtest/report`, {
+    const res = await this.fetch(`${this.admin}/playtest/v1/report`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: this.token, report }),
     });
     if (!res.ok) throw Object.assign(new Error('report'), { status: res.status });
@@ -290,7 +292,7 @@ export async function startPlaytest(options = {}) {
   const admin = String(options.admin).replace(/\/$/, '');
   let tester = null;
   try {
-    const res = await f(`${admin}/playtest/check`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) });
+    const res = await f(`${admin}/playtest/v1/check`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) });
     if (res.status === 401) {
       write(local, TOKEN_KEY, null); // revoked or expired: the panel goes away
       return null;
@@ -712,7 +714,7 @@ export class PlaytestPanel {
     }
     const link = this.remoteLink();
     const qr = this.el('div', { class: 'qr' });
-    qr.innerHTML = qrSvg(link, { title: 'QR-kod till fjärrkontrollen' }); // qrSvg makes plain SVG from the link
+    if (this.qrSvg) qr.innerHTML = this.qrSvg(link, { title: 'QR-kod till fjärrkontrollen' }); // plain SVG made from the link
     const copy = this.el('button', { type: 'button', on: { click: async () => {
       try {
         await this.win.navigator.clipboard.writeText(link);
@@ -740,6 +742,8 @@ export class PlaytestPanel {
   async pair(again = false) {
     const saved = read(this.session, PAIR_KEY);
     const opts = { basePath: '/playtest/rooms', name: 'Spelet', window: this.win, document: this.doc, slot: 'playtest' };
+    const [{ NetworkRoom }, { qrSvg }] = await Promise.all([loadRoom(), loadShare()]);
+    this.qrSvg = qrSvg;
     let room;
     if (again && saved?.code && saved?.ownerKey) {
       room = await NetworkRoom.join(this.o.admin, { ...opts, code: saved.code, ownerKey: saved.ownerKey }).catch(() => null);
@@ -753,7 +757,7 @@ export class PlaytestPanel {
     this.remote = room;
     // The remote may send its own pictures with a key that only does that, for a few hours (B-094).
     this.uploadKey = null;
-    this.o.fetch(`${this.o.admin}/playtest/upload-key`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: this.o.token }) })
+    this.o.fetch(`${this.o.admin}/playtest/v1/upload-key`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: this.o.token }) })
       .then((res) => (res.ok ? res.json() : null))
       .then((made) => {
         this.uploadKey = made?.key ?? null;

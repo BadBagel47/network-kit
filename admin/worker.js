@@ -107,7 +107,13 @@ const sameKey = async (a, b) => {
 async function playtestRoom(request, env) {
   if (!env.PLAYTEST_ROOMS) return json({ error: 'no-rooms' }, 404);
   const url = new URL(request.url);
-  if (request.method === 'POST' && url.pathname.replace(/\/$/, '') === '/playtest/rooms') {
+  // Only the checked path may make a room (B-097): a doubled slash or any
+  // other POST under the rooms' path is refused, never passed on.
+  if (url.pathname.includes('//')) return json({ error: 'not-found' }, 404, PLAYTEST_CORS);
+  if (request.method === 'POST' && url.pathname !== '/playtest/rooms') {
+    return json({ error: 'not-found' }, 404, PLAYTEST_CORS);
+  }
+  if (request.method === 'POST') {
     const text = await request.text();
     if (text.length > 4096) return json({ error: 'too-large' }, 413, PLAYTEST_CORS);
     let token = '';
@@ -136,8 +142,9 @@ async function playtestPublic(request, env, deps) {
   };
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: PLAYTEST_CORS });
   if (!s) return cors(json({ error: 'no-store' }, 500));
-  const path = url.pathname;
-  if (path === '/playtest/read' || path === '/playtest/keep') {
+  // The paths carry a version (F-103); the unversioned ones of 0.14 stay as aliases.
+  const path = url.pathname.replace(/^\/playtest\/v1\//, '/playtest/');
+  if (path === '/playtest/read' || path === '/playtest/keep' || path === '/playtest/read-image') {
     // The agent's workflow (playtest-reports.yml), with the key the deploy derives.
     if (!(await sameKey(request.headers.get('x-playtest-key'), env.PLAYTEST_READ_KEY))) return json({ error: 'forbidden' }, 403);
     if (path === '/playtest/keep' && request.method === 'POST') {
@@ -148,19 +155,15 @@ async function playtestPublic(request, env, deps) {
       }
       return json(out);
     }
+    if (path === '/playtest/read-image') {
+      // One picture at a time (B-099): the reading never holds them all.
+      const id = url.searchParams.get('id') ?? '';
+      if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) return json({ error: 'bad-id' }, 400);
+      const res = await s.fetch(`https://store/reports/image/${id}`);
+      return new Response(res.body, { status: res.status, headers: { 'content-type': res.headers.get('content-type') ?? 'application/octet-stream', 'cache-control': 'no-store' } });
+    }
     const q = new URLSearchParams({ game: url.searchParams.get('game') ?? '', since: url.searchParams.get('since') ?? '0' });
     const reports = await (await s.fetch(`https://store/reports?${q}`)).json();
-    for (const r of reports) {
-      r.pictures = [];
-      for (const id of r.images) {
-        const res = await s.fetch(`https://store/reports/image/${id}`);
-        if (!res.ok) continue;
-        const bytes = new Uint8Array(await res.arrayBuffer());
-        let binary = '';
-        for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-        r.pictures.push({ id, type: res.headers.get('content-type'), data: btoa(binary) });
-      }
-    }
     return json(reports);
   }
   if (request.method !== 'POST') return cors(json({ error: 'method' }, 405));

@@ -81,10 +81,13 @@ test('F-091: a tester link sends reports with pictures from any site; the owner 
 
   assert.deepEqual((await (await call('/playtest/check', post({ token: made.token }))).json()).reported, ['F-208'], 'the panel marks it done');
 
-  // The agent's workflow reads with its key, pictures included.
+  // The agent's workflow reads with its key; pictures one at a time.
   assert.equal((await call('/playtest/read?game=critical', { headers: { 'x-playtest-key': 'wrong' } })).status, 403);
   const read = await (await call('/playtest/read?game=critical&since=0', { headers: { 'x-playtest-key': 'read-key' } })).json();
-  assert.equal(read[0].pictures[0].data, btoa(String.fromCharCode(...jpeg)));
+  assert.deepEqual(read[0].images, [img.id], 'the list names the pictures');
+  assert.equal(read[0].pictures, undefined, 'but does not carry them (B-099)');
+  const one = await call(`/playtest/v1/read-image?id=${img.id}`, { headers: { 'x-playtest-key': 'read-key' } });
+  assert.deepEqual(new Uint8Array(await one.arrayBuffer()), jpeg, 'each picture is read on its own');
 
   // Playtest Remote gets a key that only sends pictures, for a few hours (B-094).
   const { key } = await (await call('/playtest/upload-key', post({ token: made.token }))).json();
@@ -130,4 +133,49 @@ test('F-091: a report keeps known fields only, with short texts', () => {
   assert.equal(r.answers.length, 12);
   assert.equal(r.extra, undefined);
   assert.deepEqual(r.context.game, { deep: { deeper: { deepest: null } } });
+});
+
+test('F-110, B-097: every open path refuses a stranger; no room is made without a tester link', async () => {
+  const { env, call } = setup();
+  let made = 0;
+  env.PLAYTEST_ROOMS = { idFromName: (n) => n, get: () => ({ fetch: async () => { made += 1; return Response.json({ code: 'ABCDEF', ownerKey: 'k', keys: {} }); } }) };
+  const cases = [
+    ['POST', '/playtest/rooms', 401],
+    ['POST', '/playtest/rooms//', 404],
+    ['POST', '/playtest/rooms/', 404],
+    ['POST', '/playtest//rooms', 404],
+    ['POST', '/playtest/rooms/ABCDEF', 404],
+    ['POST', '/playtest/rooms/ABCDEF/ws', 404],
+    ['POST', '/playtest/rooms/lobby', 404],
+    ['POST', '/playtest/v1/check', 401],
+    ['POST', '/playtest/v1/report', 401],
+    ['POST', '/playtest/v1/upload-key', 401],
+    ['POST', '/playtest/v1/image?token=pt_x.y', 401],
+    ['GET', '/playtest/v1/report', 405],
+    ['GET', '/playtest/v1/read', 403],
+    ['GET', '/playtest/read', 403],
+    ['GET', '/playtest/v1/read-image?id=abcdefgh', 403],
+    ['POST', '/playtest/v1/keep', 403],
+    ['GET', '/api/testers', 401], ['GET', '/api/reports', 401], ['GET', '/api/reports/image/abcdefgh', 401],
+    ['GET', '/api/passes', 401], ['GET', '/api/lobbies', 401], ['GET', '/api/messages', 401], ['GET', '/api/log', 401],
+    ['GET', '/api/settings', 401], ['GET', '/api/control', 401], ['GET', '/api/quality', 401], ['GET', '/api/usage', 401],
+  ];
+  for (const [method, path, status] of cases) {
+    const res = await call(path, { method, headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: method === 'POST' ? JSON.stringify({ token: 'pt_x.y', adminPass: 'pt_x.y' }) : undefined });
+    assert.equal(res.status, status, `${method} ${path}`);
+  }
+  assert.equal(made, 0, 'no room was made');
+});
+
+test('B-099: pictures are kept apart from their facts, so cleaning reads no picture data', async () => {
+  const { store } = setup();
+  const pt = store.playtest;
+  const { token } = await pt.createTester({ game: 'critical', hours: 1 });
+  const ids = [];
+  for (let i = 0; i < 300; i += 1) ids.push((await pt.addImage(token, 'image/jpeg', new Uint8Array(1000).fill(i % 255))).id);
+  assert.equal(ids.filter(Boolean).length, 100, 'at most 100 pictures a day per tester');
+  const metas = [...(await pt.storage.list({ prefix: 'img:' })).values()];
+  assert.ok(metas.every((m) => m.data === undefined), 'the list holds no picture data');
+  assert.equal((await pt.image(ids[0])).data.length > 1000, true, 'one picture comes with its data');
+  await pt.clean();
 });

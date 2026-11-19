@@ -10,6 +10,16 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.15.0 (2026-11-19)
+
+Affects: games that use Playtest; take 0.15.0 and import `startPlaytest` from `client/playtest-entry.js`. The admin page. From the review D-093.
+
+- Fixed (B-097): a doubled slash (`POST /playtest/rooms//`) or any other POST under Playtest Remote's rooms could make a room without a tester link; only the checked path makes one now. The room server answers 404 to paths with an empty part.
+- Fixed (B-099): Playtest keeps each picture apart from its facts, so the cleaning and the lists never read picture data, and the agent's workflow fetches pictures one at a time; before, about 200 pictures would not fit in memory.
+- New (F-096): `client/playtest-entry.js`, a light entry: without a tester link it loads nothing more. Playtest loads the room client and the QR code maker only when Playtest Remote is opened.
+- Changed (F-103, part): the Playtest paths carry a version (`/playtest/v1/…`); the unversioned paths of 0.14 stay as aliases.
+- Tests (F-110, part): a table test that every open path of the admin page refuses a stranger and that no room is made without a tester link.
+
 ## 0.14.1 (2026-11-19)
 
 Affects: games that use Playtest Remote; take 0.14.1. The admin page.

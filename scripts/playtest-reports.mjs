@@ -17,17 +17,26 @@ const headers = { 'x-playtest-key': READ_KEY };
 // Behåll: reports the agent wants kept past 30 days.
 const keep = KEEP.split(/[\s,]+/).filter(Boolean);
 if (keep.length) {
-  const res = await fetch(`${ADMIN_URL}/playtest/keep`, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ ids: keep }) });
+  const res = await fetch(`${ADMIN_URL}/playtest/v1/keep`, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify({ ids: keep }) });
   console.log(`Behåll: ${res.status} ${JSON.stringify(await res.json().catch(() => ({})))}`);
 }
 const q = new URLSearchParams({ game: GAME, since: SINCE });
-const res = await fetch(`${ADMIN_URL}/playtest/read?${q}`, { headers });
+const res = await fetch(`${ADMIN_URL}/playtest/v1/read?${q}`, { headers });
 if (!res.ok) {
   console.error(`The admin page answered ${res.status}`);
   process.exit(1);
 }
-const text = await res.text();
-const count = JSON.parse(text).length;
+// Pictures one at a time (B-099), put into the sealed reports.
+const reports = await res.json();
+for (const r of reports) {
+  r.pictures = [];
+  for (const id of r.images ?? []) {
+    const pic = await fetch(`${ADMIN_URL}/playtest/v1/read-image?id=${encodeURIComponent(id)}`, { headers });
+    if (pic.ok) r.pictures.push({ id, type: pic.headers.get('content-type'), data: Buffer.from(await pic.arrayBuffer()).toString('base64') });
+  }
+}
+const text = JSON.stringify(reports);
+const count = reports.length;
 const publicKey = createPublicKey({ key: Buffer.from(PUBLIC_KEY.replace(/\s+/g, ''), 'base64'), format: 'der', type: 'spki' });
 const key = randomBytes(32);
 const iv = randomBytes(12);

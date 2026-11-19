@@ -52,10 +52,15 @@ try {
   if (process.env.DEBUG) game.on('requestfailed', (r) => console.log('failed:', r.url(), r.failure()?.errorText));
   const url = `${pageBase}/tests/browser/playtest-page.html?admin=${encodeURIComponent(A)}`;
 
-  // Without a tester link nothing shows.
+  // Without a tester link nothing shows, and nothing more is loaded or asked (F-096).
+  const loaded = [];
+  const listen = (r) => loaded.push(r.url());
+  game.on('request', listen);
   await game.goto(url);
   await game.waitForFunction(() => window.ready);
   assert.equal(await game.locator('.nkp').count(), 0, 'no panel without a tester link');
+  game.off('request', listen);
+  assert.ok(!loaded.some((u) => u.includes('/client/playtest.js') || u.includes('/client/room.js') || u.startsWith(A)), `only the light entry: ${loaded.join(' ')}`);
 
   // With one, the panel shows, and the link leaves the address.
   await game.goto('about:blank'); // a hash change alone would not load the page again
@@ -158,7 +163,7 @@ try {
 
   // The agent's reading.
   const read = await (await fetch(`${A}/playtest/read?game=testgame`, { headers: { 'x-playtest-key': 'test-read' } })).json();
-  assert.ok(read.some((r) => r.id === second.id && r.pictures.length === 2));
+  assert.ok(read.some((r) => r.id === second.id && r.images.length === 2));
 
   // The admin page lists them under Rapporter.
   const owner = await ctx.newPage();
