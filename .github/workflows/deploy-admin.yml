@@ -34,6 +34,9 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
       CLOUDFLARE_ANALYTICS_TOKEN: ${{ secrets.CLOUDFLARE_ANALYTICS_TOKEN }}
+      # A secret the firewall rule for trythis.one lets through, so this check
+      # reaches the owner's subdomain from outside Sweden (owner 2026-11-19, Q6).
+      NK_EDGE_CHECK: ${{ secrets.NK_EDGE_CHECK }}
     steps:
       - name: Check for the Cloudflare token
         id: token
@@ -101,8 +104,12 @@ jobs:
           [ "$code" = "401" ] || { echo "::error::$url/playtest/check answered $code, expected 401"; exit 1; }
           curl -fsS "$url/remote/" | grep -q 'Playtest Remote' || { echo "::error::$url/remote/ did not serve Playtest Remote"; exit 1; }
           echo "The page answers and asks for sign-in." >> "$GITHUB_STEP_SUMMARY"
-          code=$(curl -s -o /dev/null -w '%{http_code}' https://nk-admin.trythis.one/remote/ || true)
-          if [ "$code" = "200" ]; then echo "Also at https://nk-admin.trythis.one" >> "$GITHUB_STEP_SUMMARY"; else echo "::warning::https://nk-admin.trythis.one answered $code"; fi
+          edge=()
+          if [ -n "$NK_EDGE_CHECK" ]; then echo "::add-mask::$NK_EDGE_CHECK"; edge=(-H "x-nk-check: $NK_EDGE_CHECK"); fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' "${edge[@]}" https://nk-admin.trythis.one/remote/ || true)
+          if [ "$code" = "200" ]; then echo "Also at https://nk-admin.trythis.one" >> "$GITHUB_STEP_SUMMARY"
+          elif [ -z "$NK_EDGE_CHECK" ]; then echo "::notice::https://nk-admin.trythis.one answered $code; NK_EDGE_CHECK is not set, so the country rule stops this check"
+          else echo "::warning::https://nk-admin.trythis.one answered $code with NK_EDGE_CHECK"; fi
       - name: Check Cloudflare's usage figures
         if: steps.token.outputs.skip != 'true' && env.CLOUDFLARE_ANALYTICS_TOKEN != ''
         continue-on-error: true
