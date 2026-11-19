@@ -1,0 +1,102 @@
+# The preview (owner 2026-11-19, Q10–Q12): every push to `develop` deploys the
+# admin page and the demo as separate Workers with storage of their own, at
+# nk-admin-preview.trythis.one and nk-demo-preview.trythis.one, so changes can
+# be tried before they are published. "Publicera" brings `develop` into `main`,
+# which deploys the real ones (deploy-admin.yml, deploy-demo.yml) and releases.
+# Repository secrets:
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ANALYTICS_TOKEN, CLOUDFLARE_ACCOUNT_ID  as for the real ones
+#   ADMIN_PASSWORD_PREVIEW   the preview admin page's own password; without it nobody can sign in there
+#   TRYTHIS_COUNTRY_BYPASS   lets the checks past the country rule on trythis.one
+name: Preview
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ANALYTICS_TOKEN: ${{ secrets.CLOUDFLARE_ANALYTICS_TOKEN }}
+      ADMIN_PASSWORD_PREVIEW: ${{ secrets.ADMIN_PASSWORD_PREVIEW }}
+      TRYTHIS_COUNTRY_BYPASS: ${{ secrets.TRYTHIS_COUNTRY_BYPASS }}
+    steps:
+      - name: Check for the Cloudflare token
+        id: token
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN is not set; skipping the preview."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.skip != 'true'
+      - uses: actions/setup-node@v4
+        if: steps.token.outputs.skip != 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - name: Deploy the preview
+        if: steps.token.outputs.skip != 'true'
+        run: |
+          npm ci
+          node scripts/preview-config.mjs
+          npm run admin:assets
+          npm run demo:assets
+          # A brand-new Worker can fail with Cloudflare's 10007 right after its upload;
+          # trying once more works (F-112). The step's shell has no pipefail.
+          deploy() {
+            for attempt in 1 2; do
+              npx wrangler deploy "$@" 2>&1 | tee deploy.log
+              [ "${PIPESTATUS[0]}" = 0 ] && return 0
+              grep -q 'code: 10007' deploy.log || return 1
+              echo "::notice::Cloudflare did not know the new Worker yet (10007); trying once more"
+              sleep 15
+            done
+            return 1
+          }
+          vars=()
+          if [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then vars=(--var "CF_ACCOUNT_ID:$CLOUDFLARE_ACCOUNT_ID"); fi
+          # The admin page first: the demo is bound to it.
+          deploy --config admin/wrangler.preview.jsonc "${vars[@]}" --domain nk-admin-preview.trythis.one
+          if [ -n "$ADMIN_PASSWORD_PREVIEW" ]; then
+            printf '%s' "$ADMIN_PASSWORD_PREVIEW" | npx wrangler secret put ADMIN_PASSWORD --config admin/wrangler.preview.jsonc
+          else
+            echo "::warning::ADMIN_PASSWORD_PREVIEW is not set; nobody can sign in on the preview admin page."
+          fi
+          if [ -n "$CLOUDFLARE_ANALYTICS_TOKEN" ]; then
+            printf '%s' "$CLOUDFLARE_ANALYTICS_TOKEN" | npx wrangler secret put CF_ANALYTICS_TOKEN --config admin/wrangler.preview.jsonc
+          fi
+          READ_KEY=$(printf 'network-kit playtest read preview\n%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)
+          echo "::add-mask::$READ_KEY"
+          printf '%s' "$READ_KEY" | npx wrangler secret put PLAYTEST_READ_KEY --config admin/wrangler.preview.jsonc
+          deploy --config wrangler.preview.jsonc --domain nk-demo-preview.trythis.one
+          DIAG_KEY=$(printf 'network-kit demo diag preview\n%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)
+          echo "::add-mask::$DIAG_KEY"
+          printf '%s' "$DIAG_KEY" | npx wrangler secret put DIAG_KEY --config wrangler.preview.jsonc
+      - name: Check the preview
+        if: steps.token.outputs.skip != 'true'
+        run: |
+          edge=()
+          if [ -n "$TRYTHIS_COUNTRY_BYPASS" ]; then echo "::add-mask::$TRYTHIS_COUNTRY_BYPASS"; edge=(-H "x-trythis-country-bypass: $TRYTHIS_COUNTRY_BYPASS"); fi
+          ok=true
+          for i in 1 2 3 4 5 6; do
+            a=$(curl -s -o /dev/null -w '%{http_code}' "${edge[@]}" https://nk-admin-preview.trythis.one/remote/ || true)
+            d=$(curl -s -o /dev/null -w '%{http_code}' "${edge[@]}" https://nk-demo-preview.trythis.one/rooms || true)
+            [ "$a" = 200 ] && [ "$d" = 200 ] && break
+            sleep 10
+          done
+          echo "Admin preview: https://nk-admin-preview.trythis.one ($a)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Demo preview: https://nk-demo-preview.trythis.one ($d)" >> "$GITHUB_STEP_SUMMARY"
+          [ "$a" = 200 ] || { echo "::warning::the admin preview answered $a"; ok=false; }
+          [ "$d" = 200 ] || { echo "::warning::the demo preview answered $d"; ok=false; }
+          $ok

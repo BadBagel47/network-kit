@@ -70,6 +70,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 - **Removing what no game uses (2026-11-19, owner, Q4):** something is removed only when no game still uses it: first marked as on its way out, then the versions in use are checked (admin page cards and the games' copies), then removed in a release that says so. `docs/DEPRECATIONS.md` lists what is on its way out and the versions in use, and is checked at every MINOR release and monthly, so clean-ups happen regularly.
 - **Domain (2026-11-19, owner):** most of the owner's projects are, or will be, subdomains of trythis.one, which the owner has on Cloudflare (Bricks: bricks.trythis.one).
 - **Country rule and checks (2026-11-19, owner, Q6):** trythis.one only lets connections from Sweden through, which stops the agents and GitHub (both connect from the US). A firewall rule ("Undantag för automatiska kontroller") lets requests with a secret header (`x-trythis-country-bypass`, the GitHub secret `TRYTHIS_COUNTRY_BYPASS`) past it on trythis.one and all its subdomains, now and later (owner 2026-11-19), so deploys and other repos' checks reach their pages; friends abroad do not reach the pages while the country rule stands.
+- **Development branch and preview (2026-11-19, owner, Q10–Q12, "rek"):** code to `develop`, which deploys a preview at nk-admin-preview.trythis.one and nk-demo-preview.trythis.one (own Workers and storage, own admin password `ADMIN_PASSWORD_PREVIEW`); "Publicera" brings `develop` into `main` (real deploy and release); documentation still straight to `main`. The project rule is in AGENTS.md. This is the agent rules' *test builds* (rules section 4, item 7).
 
 ## Current state (2026-11-15)
 
@@ -109,6 +110,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 
 ## One-time actions
 
+- Pending (2026-11-19, owner): the GitHub secret `ADMIN_PASSWORD_PREVIEW` (at least 12 characters, not the real admin password) for the preview admin page.
 - Done (2026-11-19, owner): the deploy token (`CLOUDFLARE_API_TOKEN`) may also edit DNS records (Zone → DNS → Edit, plus Zone Read) on the account's zones, so agents can add subdomains of trythis.one from a workflow (with the owner's yes per change); Zone Edit was left off on purpose.
 - Done (2026-11-19, owner, Q6): the GitHub secret `TRYTHIS_COUNTRY_BYPASS` and the custom rule "Släpp in GitHub genom anslutning utanför Sverige" on trythis.one (all subdomains, before "Sweden only"); the admin deploy's check reached nk-admin.trythis.one with it on 2026-11-19 (19:11 UTC).
 - Pending (2026-11-19, F-098, owner): a rate-limiting rule in Cloudflare's firewall for trythis.one, so a flood of requests is stopped before it counts against the Workers quota (the free plan includes one such rule). Steps given in the chat 2026-11-19. If the deploy could not attach nk-admin/nk-demo.trythis.one (a warning in the deploy), the deploy token also needs the zone's Workers Routes and DNS permissions.

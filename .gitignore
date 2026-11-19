@@ -5,3 +5,5 @@ node_modules/
 examples/demo/public/network-kit/
 admin/public/network-kit/
 test-results/
+wrangler.preview.jsonc
+admin/wrangler.preview.jsonc

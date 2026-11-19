@@ -32,7 +32,8 @@ const PLAYTEST_ITEMS = [
     links: [], ask: 'Var det enkelt att koppla ihop?' },
 ];
 startPlaytest({
-  admin: 'https://network-kit-admin.l8p1.workers.dev',
+  // The preview demo talks to the preview admin page (owner 2026-11-19, Q11).
+  admin: location.hostname.includes('-preview') ? 'https://nk-admin-preview.trythis.one' : 'https://network-kit-admin.l8p1.workers.dev',
   items: PLAYTEST_ITEMS,
   version: VERSION,
   context: () => ({ room: room?.code ?? null, status: room?.status ?? null, players: room?.players?.length ?? 0 }),
