@@ -25,7 +25,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      NK_EDGE_CHECK: ${{ secrets.NK_EDGE_CHECK }} # lets the check past the country rule on trythis.one (Q6)
+      TRYTHIS_COUNTRY_BYPASS: ${{ secrets.TRYTHIS_COUNTRY_BYPASS }} # lets the check past the country rule on trythis.one (Q6)
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
@@ -85,8 +85,8 @@ jobs:
         continue-on-error: true
         run: |
           edge=()
-          if [ -n "$NK_EDGE_CHECK" ]; then echo "::add-mask::$NK_EDGE_CHECK"; edge=(-H "x-nk-check: $NK_EDGE_CHECK"); fi
+          if [ -n "$TRYTHIS_COUNTRY_BYPASS" ]; then echo "::add-mask::$TRYTHIS_COUNTRY_BYPASS"; edge=(-H "x-trythis-country-bypass: $TRYTHIS_COUNTRY_BYPASS"); fi
           code=$(curl -s -o /dev/null -w '%{http_code}' "${edge[@]}" https://nk-demo.trythis.one/rooms || true)
           if [ "$code" = "200" ]; then echo "Also at https://nk-demo.trythis.one" >> "$GITHUB_STEP_SUMMARY"
-          elif [ -z "$NK_EDGE_CHECK" ]; then echo "::notice::https://nk-demo.trythis.one answered $code; NK_EDGE_CHECK is not set, so the country rule stops this check"
-          else echo "::warning::https://nk-demo.trythis.one answered $code with NK_EDGE_CHECK"; fi
+          elif [ -z "$TRYTHIS_COUNTRY_BYPASS" ]; then echo "::notice::https://nk-demo.trythis.one answered $code; TRYTHIS_COUNTRY_BYPASS is not set, so the country rule stops this check"
+          else echo "::warning::https://nk-demo.trythis.one answered $code with TRYTHIS_COUNTRY_BYPASS"; fi
