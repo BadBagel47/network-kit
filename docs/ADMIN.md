@@ -35,7 +35,8 @@ Cloudflare does not document every field of these datasets, so the page asks the
 - One password, chosen by the owner, stored as the GitHub secret `ADMIN_PASSWORD` (at least 12 characters) and copied to the Worker by the deploy. Changing the secret and deploying again signs everyone out.
 - The sign-in form is a normal form, so password managers offer to save and fill the password.
 - A signed-in browser stays signed in for 30 days (a signed, HttpOnly cookie).
-- After 5 wrong passwords from one address, that address must wait 1 minute, then 2, 4 … up to a day; a right password clears it.
+- After 5 wrong passwords from one address (IPv6: per /64), that address must wait 1 minute, then 2, 4 … up to a day; a right password clears it.
+- After 30 wrong passwords within an hour from all addresses together, every new address waits too (F-101), so a flood from many addresses slows down and makes no new guard per address meanwhile. A device that has signed in before carries a mark (an HttpOnly cookie for a year) and is never held up by that; changing the password makes old marks invalid.
 - E-mail sign-in can be added later in front of the page (Cloudflare Access) or as an e-mail link like Bricks', without rebuilding the page.
 
 ## Secrets

@@ -30,7 +30,7 @@ import { createRoomServer } from '../src/server/worker.js';
 import { visitorKey } from '../src/shared/visitor.js';
 import {
   LoginGuard, checkPassword, passwordConfigured, newSession, validSession,
-  readCookie, sessionCookie, clearCookie,
+  readCookie, sessionCookie, clearCookie, DEVICE_COOKIE, newDeviceMark, knownDevice, deviceCookie,
 } from './auth.js';
 
 const CACHE_MS = 60_000;
@@ -50,7 +50,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PLAYTEST_CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'POST, OPTIONS',
-  'access-control-allow-headers': 'content-type',
+  'access-control-allow-headers': 'content-type, x-playtest-token',
   'access-control-max-age': '86400',
 };
 const REPORT_MAX_BYTES = 64 * 1024;
@@ -143,7 +143,9 @@ async function playtestPublic(request, env, deps) {
   };
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: PLAYTEST_CORS });
   if (!s) return cors(json({ error: 'no-store' }, 500));
-  // The paths carry a version (F-103); the unversioned ones of 0.14 stay as aliases.
+  // The paths carry a version (F-103). The unversioned ones of 0.14 were removed
+  // in 0.17 (F-114): no game took 0.14 (docs/DEPRECATIONS.md).
+  if (!url.pathname.startsWith('/playtest/v1/')) return cors(json({ error: 'not-found' }, 404));
   const path = url.pathname.replace(/^\/playtest\/v1\//, '/playtest/');
   if (path === '/playtest/read' || path === '/playtest/keep' || path === '/playtest/read-image') {
     // The agent's workflow (playtest-reports.yml), with the key the deploy derives.
@@ -174,7 +176,9 @@ async function playtestPublic(request, env, deps) {
     if (length > IMAGE_MAX_BYTES) return cors(json({ error: 'too-large' }, 413));
     const bytes = await request.arrayBuffer();
     if (bytes.byteLength > IMAGE_MAX_BYTES) return cors(json({ error: 'too-large' }, 413));
-    return cors(await s.fetch(`https://store/playtest/image?token=${encodeURIComponent(url.searchParams.get('token') ?? '')}`, {
+    // The token in a header keeps it out of logs of addresses (D-111); copies up to 0.16 send it in the query.
+    const token = request.headers.get('x-playtest-token') ?? url.searchParams.get('token') ?? '';
+    return cors(await s.fetch(`https://store/playtest/image?token=${encodeURIComponent(token)}`, {
       method: 'POST', headers: { 'content-type': request.headers.get('content-type') ?? '' }, body: bytes,
     }));
   }
@@ -192,11 +196,15 @@ function sameOrigin(request) {
   return !origin || origin === new URL(request.url).origin;
 }
 
-function guardFor(env, request) {
-  const address = request.headers.get('cf-connecting-ip') || 'unknown';
+// All wrong passwords together, from every address (F-101): a flood from many
+// addresses slows down, and makes no new guard per address while it lasts.
+export const ALL_ADDRESSES = 'all-addresses';
+
+function guardFor(env, request, name = null) {
+  const address = name ?? visitorKey(request.headers.get('cf-connecting-ip'));
   const stub = env.GUARD.get(env.GUARD.idFromName(address));
   const call = async (action) => {
-    const res = await stub.fetch(`https://guard/${action}`, { method: 'POST' });
+    const res = await stub.fetch(`https://guard/${action}${name === ALL_ADDRESSES ? '?all=1' : ''}`, { method: 'POST' });
     return Number(await res.text()) || 0;
   };
   return { waitMs: () => call('wait'), failed: () => call('failed'), succeeded: () => call('succeeded') };
@@ -204,15 +212,26 @@ function guardFor(env, request) {
 
 async function login(request, env) {
   if (!passwordConfigured(env)) return back('/?error=notset');
+  // A device that signed in before is not held up by the brake for all addresses (F-101).
+  const known = await knownDevice(env, readCookie(request, DEVICE_COOKIE));
+  const all = guardFor(env, request, ALL_ADDRESSES);
+  if (!known) {
+    const waitAll = await all.waitMs();
+    if (waitAll > 0) return back(`/?error=wait&s=${Math.ceil(waitAll / 1000)}`);
+  }
   const guard = guardFor(env, request);
   const wait = await guard.waitMs();
   if (wait > 0) return back(`/?error=wait&s=${Math.ceil(wait / 1000)}`);
   const form = await request.formData().catch(() => null);
   if (await checkPassword(env, form?.get('password'))) {
     await guard.succeeded();
-    return back('/', { 'set-cookie': sessionCookie(await newSession(env)) });
+    const headers = new Headers({ location: '/' });
+    headers.append('set-cookie', sessionCookie(await newSession(env)));
+    if (!known) headers.append('set-cookie', deviceCookie(await newDeviceMark(env)));
+    return new Response(null, { status: 303, headers });
   }
   const next = await guard.failed();
+  await all.failed();
   await sleep(500);
   return back(next > 0 ? `/?error=wait&s=${Math.ceil(next / 1000)}` : '/?error=wrong');
 }
@@ -372,18 +391,22 @@ export class AdminGuard {
   constructor(state) {
     this.storage = state.storage;
     this.guard = new LoginGuard(state.storage);
+    // The guard for all addresses together allows more before it brakes (F-101).
+    this.all = new LoginGuard(state.storage, { freeTries: 30, firstWaitMs: 60_000, maxWaitMs: 60 * 60_000, forgetMs: 60 * 60_000 });
   }
 
   async fetch(request) {
-    const action = new URL(request.url).pathname.slice(1);
+    const url = new URL(request.url);
+    const action = url.pathname.slice(1);
+    const guard = url.searchParams.get('all') === '1' ? this.all : this.guard;
     let result = 0;
-    if (action === 'wait') result = await this.guard.waitMs();
+    if (action === 'wait') result = await guard.waitMs();
     else if (action === 'failed') {
-      result = await this.guard.failed();
+      result = await guard.failed();
       // The record about this address is deleted a day after the last wrong password (B-055).
       await this.storage.setAlarm(Date.now() + 86_400_000 + 60_000);
     } else if (action === 'succeeded') {
-      await this.guard.succeeded();
+      await guard.succeeded();
       await this.storage.deleteAlarm?.();
     } else return new Response('Not found', { status: 404 });
     return new Response(String(result));

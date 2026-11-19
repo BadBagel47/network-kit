@@ -71,6 +71,26 @@ export function sessionCookie(value) {
 
 export const clearCookie = () => `${COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict`;
 
+// A known device (F-101): a browser that has signed in once gets a long-lived
+// mark, so a flood of wrong passwords from elsewhere (the brake for all
+// addresses together) never locks the owner out on their own devices.
+export const DEVICE_COOKIE = 'nk_device';
+export const DEVICE_DAYS = 365;
+
+export async function newDeviceMark(env) {
+  const id = hex(crypto.getRandomValues(new Uint8Array(12)));
+  return `${id}.${await sign(env, `device:${id}`)}`;
+}
+
+export async function knownDevice(env, value) {
+  if (!passwordConfigured(env) || typeof value !== 'string') return false;
+  const [id, sig] = value.split('.');
+  if (!/^[0-9a-f]{24}$/.test(id ?? '')) return false;
+  return sameText(sig ?? '', await sign(env, `device:${id}`));
+}
+
+export const deviceCookie = (value) => `${DEVICE_COOKIE}=${value}; Max-Age=${DEVICE_DAYS * 86_400}; Path=/; HttpOnly; Secure; SameSite=Strict`;
+
 /**
  * The brake on wrong passwords, for one address. After `freeTries` wrong
  * passwords the address must wait, and the wait doubles with every further

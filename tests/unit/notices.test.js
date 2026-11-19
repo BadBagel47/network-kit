@@ -58,3 +58,29 @@ test('B-084: a context that resumes by itself plays without a touch', async () =
   assert.ok(playing.tones >= 4, 'the message plays');
   assert.deepEqual(win.listening(), []);
 });
+
+test('F-107: a page nobody touches asks seldom; a touch makes it ask at once and often again', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { watchNotices } = await import('../../src/client/notices.js');
+  let asked = 0;
+  const listeners = new Map();
+  const win = { addEventListener: (type, fn) => listeners.set(type, fn), removeEventListener: () => {} };
+  const doc = { hidden: false, addEventListener: () => {}, removeEventListener: () => {} };
+  const board = { show: () => false, keepOnly: () => {} };
+  const w = watchNotices('https://x', { fetchStatus: async () => { asked += 1; return { notices: [] }; }, document: doc, window: win, board });
+  const settle = () => new Promise((r) => setImmediate(r));
+  await settle();
+  assert.equal(asked, 1, 'at once');
+  for (let i = 0; i < 30; i += 1) { t.mock.timers.tick(60_000); await settle(); }
+  assert.equal(asked, 31, 'every minute for the first half hour');
+  for (let i = 0; i < 60; i += 1) { t.mock.timers.tick(60_000); await settle(); }
+  assert.ok(asked <= 31 + 7, `then about every ten minutes (asked ${asked})`);
+  const before = asked;
+  listeners.get('pointerdown')();
+  await settle();
+  assert.equal(asked, before + 1, 'a touch asks at once');
+  t.mock.timers.tick(60_000);
+  await settle();
+  assert.equal(asked, before + 2, 'and every minute again');
+  w.stop();
+});

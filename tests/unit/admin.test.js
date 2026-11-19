@@ -303,3 +303,25 @@ test('F-078: with keep, the datasets\' fields are asked once a day, and the figu
   assert.ok(asked() > first, 'asked again after a day');
   forgetShapes();
 });
+
+test('F-101: wrong passwords from many addresses slow everyone down, except a device that signed in before', async () => {
+  const env = { ...env0, GUARD: guardNamespace() };
+  const ok = await handle(post('/login', { password: PASSWORD }, { 'cf-connecting-ip': '9.9.9.9' }), env);
+  const cookies = ok.headers.getSetCookie();
+  const device = cookies.find((c) => c.startsWith('nk_device='));
+  assert.match(device, /HttpOnly; Secure; SameSite=Strict/, 'a known-device mark after the first sign-in');
+  const mark = device.split(';')[0];
+  for (let i = 0; i < 31; i += 1) {
+    await handle(post('/login', { password: 'wrong wrong wrong' }, { 'cf-connecting-ip': `10.0.${i}.1` }), env);
+  }
+  const stranger = await handle(post('/login', { password: PASSWORD }, { 'cf-connecting-ip': '11.1.1.1' }), env);
+  assert.match(stranger.headers.get('location'), /error=wait/, 'a new address waits while the flood lasts');
+  const owner = await handle(post('/login', { password: PASSWORD }, { 'cf-connecting-ip': '12.2.2.2', cookie: mark }), env);
+  assert.equal(owner.headers.get('location'), '/', 'the owner\'s known device signs in');
+  assert.equal(owner.headers.getSetCookie().some((c) => c.startsWith('nk_device=')), false, 'no new mark needed');
+  assert.equal(env.GUARD.objects.has('11.1.1.1'), false, 'and no guard is made for it meanwhile');
+  // IPv6 addresses count per /64 (F-100).
+  const fresh = { ...env0, GUARD: guardNamespace() };
+  await handle(post('/login', { password: 'wrong' }, { 'cf-connecting-ip': '2001:db8:1:2::99' }), fresh);
+  assert.ok(fresh.GUARD.objects.has('2001:db8:1:2::/64'));
+});

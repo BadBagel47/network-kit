@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.16** (0.16.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.17** (0.17.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -195,6 +195,23 @@ roles: {
 
 Every role has its own invitation key, so a viewer link can never play. In an open room someone without a key gets the first playing role that needs no key, or the role they ask for if it needs no key.
 
+### Deploying the Worker
+
+Deploy from GitHub Actions with the account's deploy token (`CLOUDFLARE_API_TOKEN` as a repository secret). The very first deploy of a brand-new Worker with Durable Objects and a service binding can upload it and then fail with *"This Worker does not exist on your account. [code: 10007]"*; running it again works (seen by Bricks, F-112). Try once more on exactly that error. The step's shell may not stop on a failing command inside a pipe, so check the deploy's own status:
+
+```sh
+deploy() {
+  for attempt in 1 2; do
+    npx wrangler deploy "$@" 2>&1 | tee deploy.log
+    [ "${PIPESTATUS[0]}" = 0 ] && return 0
+    grep -q 'code: 10007' deploy.log || return 1
+    sleep 15
+  done
+  return 1
+}
+deploy --domain mygame.trythis.one
+```
+
 ## 3. Concepts
 
 - **Owner**: whoever created the room. Kicks and bans, renews links, changes settings, closes the room, and may also do everything the host may. Ownership never moves by itself (unless the game sets `passOwnerAfterMs` or `ownerLeave: 'pass'`; it then goes to the host, else to whoever has been in the room longest in a role that may host).
@@ -281,7 +298,7 @@ Identities and owner keys are stored per game server, so games on the same site 
 
 - `NetworkRoom.status(server, { basePath, mode })` (static, from 0.9, F-057): is the game, or one of its modes, open now? `{ open, reason, until, text, notices }`, asked without waking a room; for a mode played alone in the browser. Open when the admin page cannot be reached.
 - **Lobbies (from 0.13, F-059):** the admin page makes a lobby for a game: a room made ahead with a host link and a guest link (`…#nk-lobby=…`). `NetworkRoom.joinLobby(SERVER, { name, …options })` reads the link from the address bar (or `token`), asks the game's Worker (`POST <basePath>/lobby`) and joins the lobby's room: the host link as its owner (and host), the guest link with an invitation key (role `lobbyRole`), waiting for the host. It works while the game takes no new players, not after an emergency stop; the room closes when the lobby ends or is revoked. `room.lobby` is `{ role, ends }`. `readLobbyLink(hash)` tells whether a page was opened from one, `forgetLobbyLink()` takes it out of the address bar (`joinLobby` does when it read it there). Rejects with a `RoomError` whose `reason` says why (from 0.13.4, B-089): `lobby-ended`, `lobby-revoked`, `lobby-other-game`, `not-a-lobby`, `no-lobbies`, `no-room`, `stopped` or `too-many-requests`; its `message` is the English text for the player (`LOBBY_REFUSED`).
-- **Notices (from 0.10, F-066):** `watchNotices(SERVER, { basePath, mode })` asks the game's status at once, every minute while the page is visible and when it becomes visible again, and shows each new notice from the admin page (Cloudflare limiting soon or reached, a message from the owner, later a timer running out) in a box at the top of the screen with a strong background and a warning sound, until the player presses OK. Each notice is shown once per browser. Start it on every page of the game, also outside rooms (a game played alone in the browser too). Returns `{ stop, check, board }`. The box is made with a constructed style sheet, so it works under a strict Content-Security-Policy; colours can be changed with the CSS variables `--nk-notice-warning-bg`, `--nk-notice-warning-ink`, `--nk-notice-info-bg`, `--nk-notice-info-ink` and `--nk-notice-edge`. `new NoticeBoard().show({ id, level, title, text, until })` shows a game's own notice the same way; `playWarningSound({ level })` plays only the sound (browsers allow sound only after the player has touched the page, and an iPad pauses a page's sound while it sleeps; until then the sound waits for the next lifted finger, click or key, and from 0.13.4 a paused sound is replaced by a new one at that touch, B-084). The icon is drawn (inline SVG, `noticeIcon(document, level)`), the same on every device (B-085). The texts are English (`NOTICE_TEXT`); `{until}` becomes the local time. `NetworkRoom.status()` also returns `notices`. Costs one Worker request a minute per visible page.
+- **Notices (from 0.10, F-066):** `watchNotices(SERVER, { basePath, mode })` asks the game's status at once, every minute while the page is visible and when it becomes visible again, and shows each new notice from the admin page (Cloudflare limiting soon or reached, a message from the owner, later a timer running out) in a box at the top of the screen with a strong background and a warning sound, until the player presses OK. Each notice is shown once per browser. Start it on every page of the game, also outside rooms (a game played alone in the browser too). Returns `{ stop, check, board }`. The box is made with a constructed style sheet, so it works under a strict Content-Security-Policy; colours can be changed with the CSS variables `--nk-notice-warning-bg`, `--nk-notice-warning-ink`, `--nk-notice-info-bg`, `--nk-notice-info-ink` and `--nk-notice-edge`. `new NoticeBoard().show({ id, level, title, text, until })` shows a game's own notice the same way; `playWarningSound({ level })` plays only the sound (browsers allow sound only after the player has touched the page, and an iPad pauses a page's sound while it sleeps; until then the sound waits for the next lifted finger, click or key, and from 0.13.4 a paused sound is replaced by a new one at that touch, B-084). The icon is drawn (inline SVG, `noticeIcon(document, level)`), the same on every device (B-085). The texts are English (`NOTICE_TEXT`); `{until}` becomes the local time. `NetworkRoom.status()` also returns `notices`. Costs one Worker request a minute per visible page; from 0.17 (F-107) a page nobody has touched (pointer or key) for 30 minutes asks every 10 minutes instead, and at once again when touched (`idleAfterMs`, `idleEveryMs`).
 - **Game link (admin pass, from 0.9, F-058; from 0.11 for anyone, F-068):** a link from the admin page (`…#nk-admin=…`) lets the browser that opens it create, join and start games while the game takes no new players or is closed by Cloudflare limiting (not after an emergency stop). A room whose owner has a valid game link lets in those who have one of the room's invitation keys too, while the link is valid. The client takes the link from the address bar into storage by itself and sends it with `create`, `join` and `status`; `forgetAdminPass()` removes it from the browser.
 - `send(data, { to, reliable })`. `to`: `'all'` (default: everyone else who is admitted), `[ids]`, `{ role }` or `{ place }`. The sender never gets its own message. Messages are numbered and resent after a reconnect, and the room counts each once. `reliable: false` is for data the next message replaces anyway (positions). Returns `false` when nothing was sent: nobody is there to get it (a host alone in the room, or the host is away), this participant may not send (a role that does not send, or still waiting), or it is too large.
 - `send(data, { latest: kind })`: for values that change faster than they can be sent, where only the newest counts (an aim, a position, a slider). The client keeps the newest value of each `kind` and sends it as soon as the pace allows, also after a reconnect; older values of the same kind are never sent.
@@ -412,7 +429,7 @@ startPlaytest({
 - **Keyboard games:** the panel never takes focus by itself; pointer, touch, key and wheel events inside it stop there, so the game does not steer or shoot while the tester types; folding it or sending gives the focus back (to the element that had it, or a canvas with `tabindex`). It sits under `document.documentElement` (visible in fullscreen), starts on the left a third down (away from the corners) and can be dragged and folded to a small tab. `hidden: true` (default: the address has `?still`) keeps it out of screenshot tests.
 - **Content-Security-Policy:** a page with a strict policy must allow the admin page: `connect-src 'self' https://network-kit-admin.l8p1.workers.dev wss://network-kit-admin.l8p1.workers.dev` and `img-src … blob:` (the demo's `_headers` does). Styles are a constructed style sheet, so `style-src 'self'` is enough.
 
-The panel talks to the admin page's versioned paths (`/playtest/v1/…`, from 0.15, F-103); the unversioned paths of 0.14 still answer.
+The panel talks to the admin page's versioned paths (`/playtest/v1/…`, from 0.15, F-103); the unversioned paths of 0.14 were removed in 0.17 (F-114). A tester's token goes in the header `x-playtest-token`, not in the address (from 0.17, D-111).
 
 **Playtest Remote.** *Fjärr* in the panel opens a small room on the admin page's Worker (only with a working tester link) and shows a QR code, a six-character code and a link. The other device scans the code, opens the link, or types the code at `https://network-kit-admin.l8p1.workers.dev/remote/`. The remote shows the list; *Starta* loads the test's start address on the game page (which pairs again after loading); the steps, questions, result, *Skärmbild från spelet* (taken on the game page and sent with the report), *Ta foto eller välj bild* (the remote's own camera; it sends with a key that only sends pictures and lasts six hours, never the tester link, from 0.14.1), *Skicka*, *Börja om* and *Avbryt* work from there, and the game page folds the panel to a small tab while a remote is connected. The report goes through the game page, which adds its context. Rooms stay in the EU and close an hour after every page was hidden.
 
@@ -422,3 +439,13 @@ The panel talks to the admin page's versioned paths (`/playtest/v1/…`, from 0.
 2. Run the workflow *Playtest reports* (`playtest-reports.yml`) in network-kit with `game`, `public_key`, optionally `since` (ms; only newer reports) and `keep` (report ids to keep past 30 days).
 3. Read `<game>.txt` on the branch `playtest-reports`, and open it: `node scripts/open-reports.mjs key.pem <game>.txt <picture dir>` prints the reports as JSON and writes the pictures as files.
 4. Write what matters into the game's backlog with the test's id, and take reported tests out of the game's list.
+
+## 12. Continuing after a page reload (host-run games where each browser runs its own game)
+
+From Bricks on 0.13.4 (F-113); needs nothing new in the kit. When every browser runs its own copy of the game from the room's seed (Bricks' Score Duel and Battle) and a player reloads the page mid-round:
+
+- **Same participant:** `identity: 'device'`, so the reloaded page is the same participant and gets its seat back (and a second tab takes over from the first).
+- **Straight back into the room:** keep the room code in the address while in the room (`#room=CODE`, without a key) and join that code when the page loads; take it out when the player leaves.
+- **The game's own state:** save it in the tab's sessionStorage a few times a second and on `pagehide`, with the room code and the round; restore it only for the same room and round, and let the game catch up at most about 3 seconds of play.
+- **What was lost during the reload:** on `peer` with `back` or `join` from the other player, both send their current state again (board, totals, final result), so whatever the other missed arrives.
+- **Who is who:** each player sends its own local player id again when a round starts, since a hello can arrive after the start.

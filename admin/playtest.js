@@ -14,6 +14,7 @@
 // They live in a Durable Object of their own (PlaytestStore, F-095), so pictures
 // never slow the games' status checks in the admin page's main store.
 
+import { b64url, hashText, day } from './util.js';
 export const TESTER_PREFIX = 'pt_';
 export const UPLOAD_PREFIX = 'pu_';
 export const UPLOAD_KEY_MS = 6 * 60 * 60_000; // an upload key for Playtest Remote lasts six hours
@@ -27,9 +28,6 @@ const UNUSED_IMAGE_MS = 86_400_000; // a picture no report points to is deleted 
 const PER_DAY = { report: 200, image: 100 }; // per tester link and UTC day
 const RESULTS = new Set(['worked', 'partly', 'failed', 'cancelled', 'note']);
 
-const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const hashText = async (text) => b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
-const day = (ms) => new Date(ms).toISOString().slice(0, 10);
 export const validGame = (g) => typeof g === 'string' && /^[a-z0-9][a-z0-9-]{0,62}$/.test(g);
 
 const text = (v, max) => (typeof v === 'string' ? v.replace(/\u0000/g, '').slice(0, max) : '');

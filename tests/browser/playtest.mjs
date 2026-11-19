@@ -162,7 +162,7 @@ try {
   assert.equal(second.context.game.at, 'base');
 
   // The agent's reading.
-  const read = await (await fetch(`${A}/playtest/read?game=testgame`, { headers: { 'x-playtest-key': 'test-read' } })).json();
+  const read = await (await fetch(`${A}/playtest/v1/read?game=testgame`, { headers: { 'x-playtest-key': 'test-read' } })).json();
   assert.ok(read.some((r) => r.id === second.id && r.images.length === 2));
 
   // The admin page lists them under Rapporter.

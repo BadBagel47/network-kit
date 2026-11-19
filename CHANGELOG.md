@@ -10,6 +10,19 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.17.0 (2026-11-19)
+
+Affects: games that use notices or Playtest (take 0.17.0; nothing to change in the game), and the admin page. The rest of the review D-093, the clean-up and Bricks' suggestions; does not close live rooms.
+
+- Changed (F-107): `watchNotices` asks every 10 minutes instead of every minute on a page nobody has touched for 30 minutes, and at once again when touched.
+- New (F-101): the admin sign-in also brakes when many addresses together give wrong passwords; a device that signed in before is never held up by that.
+- Removed (F-114): the Playtest paths without a version (only 0.14 used them) and Playtest's 0.14.0 data in the admin page's main store (deleted once).
+- Changed (D-111): Playtest sends a tester's token in a header (`x-playtest-token`), not in the address; the demo's `/invite` and `/diag` are limited per visitor and minute; the admin page's stores share their helpers.
+- Changed (D-108): the room's admission (the admin page's word, game links, lobbies) and its commands live in files of their own (`server/room-admission.js`, `server/room-commands.js`); no behaviour changed.
+- New (F-112): the deploy workflows try once more when a brand-new Worker gets Cloudflare's error 10007, and the guide shows how (section 2, *Deploying the Worker*); they now also notice a failed deploy inside a pipe.
+- New (F-113): the guide's section 12 on continuing after a page reload in host-run games where each browser runs its own game (Bricks' pattern).
+- Tests (F-110): an evening of play stays within a small storage write budget. WebKit (Safari) could not be run here.
+
 ## 0.16.0 (2026-11-19)
 
 Affects: every game with rooms; take 0.16.0 (does not close live rooms). From the review D-093, against a stranger using up the account's daily free quota.

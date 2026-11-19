@@ -67,9 +67,21 @@ jobs:
           # The admin page also answers at nk-admin.trythis.one, the owner's domain on
           # Cloudflare, so its firewall can protect it (F-098, owner 2026-11-19). The
           # workers.dev address stays until no game uses it (docs/DEPRECATIONS.md).
-          if ! npx wrangler deploy --config admin/wrangler.jsonc "${vars[@]}" --domain nk-admin.trythis.one 2>&1 | tee deploy.log; then
+          # A brand-new Worker can fail with "This Worker does not exist on your account.
+          # [code: 10007]" right after its upload; trying once more works (F-112, from Bricks).
+          deploy() {
+            for attempt in 1 2; do
+              npx wrangler deploy "$@" 2>&1 | tee deploy.log
+              [ "${PIPESTATUS[0]}" = 0 ] && return 0 # the step's shell has no pipefail
+              grep -q 'code: 10007' deploy.log || return 1
+              echo "::notice::Cloudflare did not know the new Worker yet (10007); trying once more"
+              sleep 15
+            done
+            return 1
+          }
+          if ! deploy --config admin/wrangler.jsonc "${vars[@]}" --domain nk-admin.trythis.one; then
             echo "::warning::Could not attach nk-admin.trythis.one (the deploy token may lack the zone's Workers Routes and DNS permissions); deployed on workers.dev only"
-            npx wrangler deploy --config admin/wrangler.jsonc "${vars[@]}" 2>&1 | tee deploy.log
+            deploy --config admin/wrangler.jsonc "${vars[@]}"
           fi
           if [ -n "$ADMIN_PASSWORD" ]; then
             if [ ${#ADMIN_PASSWORD} -lt 12 ]; then echo "::warning::ADMIN_PASSWORD is shorter than 12 characters; the page will not accept it."; fi
@@ -98,9 +110,9 @@ jobs:
           [ "$code" = "401" ] || { echo "::error::$url/api/usage answered $code, expected 401 (signed out)"; exit 1; }
           curl -fsS "$url/" | grep -q 'Delar av adminsidan' || { echo "::error::$url did not serve the page"; exit 1; }
           # Playtest (F-091): a tester's browser on another site is let in, and a wrong tester link is refused.
-          curl -s -o /dev/null -w '%{http_code}' -X OPTIONS "$url/playtest/report" -H 'origin: https://example.org' | grep -q 204 \
+          curl -s -o /dev/null -w '%{http_code}' -X OPTIONS "$url/playtest/v1/report" -H 'origin: https://example.org' | grep -q 204 \
             || { echo "::error::$url/playtest/report did not answer a tester's browser"; exit 1; }
-          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$url/playtest/check" -H 'content-type: application/json' -d '{"token":"pt_x.y"}')
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$url/playtest/v1/check" -H 'content-type: application/json' -d '{"token":"pt_x.y"}')
           [ "$code" = "401" ] || { echo "::error::$url/playtest/check answered $code, expected 401"; exit 1; }
           curl -fsS "$url/remote/" | grep -q 'Playtest Remote' || { echo "::error::$url/remote/ did not serve Playtest Remote"; exit 1; }
           echo "The page answers and asks for sign-in." >> "$GITHUB_STEP_SUMMARY"

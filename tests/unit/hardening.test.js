@@ -520,3 +520,29 @@ test('F-051: without heartbeatMs nobody is dropped for being quiet', async () =>
   assert.equal(a.closedWith, null);
   assert.equal(owner.room.settings.heartbeatMs, null);
 });
+
+test('F-110: an evening of play stays within a small write budget', async () => {
+  // Two players, half an hour of messages at the pace of a lively game, snapshots
+  // from the host, a pause, a reload and a rematch: the room's storage writes
+  // (rows written on the Free plan, 100,000 a day for the account) stay few.
+  const { world, core, owner } = await setup();
+  const a = await connect(world, core, { name: 'A' });
+  await cmd(core, owner, 'start');
+  await core.flush();
+  world.puts = [];
+  for (let s = 0; s < 30 * 60; s += 1) {
+    world.time += 1000;
+    for (let i = 0; i < 4; i += 1) {
+      await send(core, a, { t: 'msg', d: { s, i } });
+      await send(core, owner, { t: 'msg', d: { s, i } });
+    }
+    if (s % 10 === 0) await send(core, owner, { t: 'snap', d: { s } });
+    if (s === 600) await cmd(core, owner, 'pause');
+    if (s === 660) await cmd(core, owner, 'resume');
+  }
+  await cmd(core, owner, 'end');
+  await cmd(core, owner, 'start');
+  await core.flush();
+  const writes = world.puts.length;
+  assert.ok(writes <= 400, `${writes} writes for 14,400 messages and 180 snapshots`);
+});

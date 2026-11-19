@@ -43,27 +43,28 @@ test('F-091: a tester link sends reports with pictures from any site; the owner 
   assert.equal((await (await call('/api/log', { headers: { cookie } })).json())[0].text, 'Testarlänk skapad till Pixel för critical', 'written to the owner\'s log in the main store');
 
   // CORS for a page on another site.
-  const pre = await call('/playtest/report', { method: 'OPTIONS', headers: { origin: 'https://badbagel47.github.io' } });
+  const pre = await call('/playtest/v1/report', { method: 'OPTIONS', headers: { origin: 'https://badbagel47.github.io' } });
   assert.equal(pre.status, 204);
   assert.equal(pre.headers.get('access-control-allow-origin'), '*');
 
-  const check = await call('/playtest/check', post({ token: made.token }));
+  const check = await call('/playtest/v1/check', post({ token: made.token }));
   assert.equal(check.headers.get('access-control-allow-origin'), '*');
   assert.deepEqual(await check.json(), { game: 'critical', label: 'Pixel', expires: made.tester.expires, reported: [] });
-  assert.equal((await call('/playtest/check', post({ token: 'pt_nope.nope' }))).status, 401);
+  assert.equal((await call('/playtest/v1/check', post({ token: 'pt_nope.nope' }))).status, 401);
 
   const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 1, 2, 3]);
-  const img = await (await call(`/playtest/image?token=${encodeURIComponent(made.token)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: jpeg })).json();
+  // The token goes in a header (D-111); the query of copies up to 0.16 still works (below).
+  const img = await (await call('/playtest/v1/image', { method: 'POST', headers: { 'content-type': 'image/jpeg', 'x-playtest-token': made.token }, body: jpeg })).json();
   assert.ok(img.id);
-  assert.equal((await call('/playtest/image?token=pt_x.y', { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: jpeg })).status, 401);
-  assert.equal((await call(`/playtest/image?token=${encodeURIComponent(made.token)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: new Uint8Array(401 * 1024) })).status, 413);
+  assert.equal((await call('/playtest/v1/image?token=pt_x.y', { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: jpeg })).status, 401);
+  assert.equal((await call(`/playtest/v1/image?token=${encodeURIComponent(made.token)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: new Uint8Array(401 * 1024) })).status, 413);
 
   const report = {
     testId: 'F-208', title: 'Standardbasens insida', result: 'partly',
     answers: [{ q: 'Syns ljuset?', a: 'Ja, men för mörkt i källaren' }], text: 'Bra överlag', images: [img.id, 'someoneelse1'],
     context: { url: 'https://badbagel47.github.io/critical/?test&playtest=F-208', device: 'iPad', browser: 'Brave', dpr: 2, errors: ['TypeError: x'], game: { mode: 'base', fps: 58 } },
   };
-  const sent = await call('/playtest/report', post({ token: made.token, report }));
+  const sent = await call('/playtest/v1/report', post({ token: made.token, report }));
   assert.equal(sent.status, 200);
   const { id } = await sent.json();
 
@@ -79,29 +80,29 @@ test('F-091: a tester link sends reports with pictures from any site; the owner 
   assert.deepEqual(new Uint8Array(await picture.arrayBuffer()), jpeg);
   assert.equal((await call('/api/reports', {})).status, 401, 'the list needs the sign-in');
 
-  assert.deepEqual((await (await call('/playtest/check', post({ token: made.token }))).json()).reported, ['F-208'], 'the panel marks it done');
+  assert.deepEqual((await (await call('/playtest/v1/check', post({ token: made.token }))).json()).reported, ['F-208'], 'the panel marks it done');
 
   // The agent's workflow reads with its key; pictures one at a time.
-  assert.equal((await call('/playtest/read?game=critical', { headers: { 'x-playtest-key': 'wrong' } })).status, 403);
-  const read = await (await call('/playtest/read?game=critical&since=0', { headers: { 'x-playtest-key': 'read-key' } })).json();
+  assert.equal((await call('/playtest/v1/read?game=critical', { headers: { 'x-playtest-key': 'wrong' } })).status, 403);
+  const read = await (await call('/playtest/v1/read?game=critical&since=0', { headers: { 'x-playtest-key': 'read-key' } })).json();
   assert.deepEqual(read[0].images, [img.id], 'the list names the pictures');
   assert.equal(read[0].pictures, undefined, 'but does not carry them (B-099)');
   const one = await call(`/playtest/v1/read-image?id=${img.id}`, { headers: { 'x-playtest-key': 'read-key' } });
   assert.deepEqual(new Uint8Array(await one.arrayBuffer()), jpeg, 'each picture is read on its own');
 
   // Playtest Remote gets a key that only sends pictures, for a few hours (B-094).
-  const { key } = await (await call('/playtest/upload-key', post({ token: made.token }))).json();
+  const { key } = await (await call('/playtest/v1/upload-key', post({ token: made.token }))).json();
   assert.match(key, /^pu_/);
-  const photo = await call(`/playtest/image?token=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: jpeg });
+  const photo = await call(`/playtest/v1/image?token=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: jpeg });
   assert.equal(photo.status, 200, 'the upload key sends a picture');
-  assert.equal((await call('/playtest/report', post({ token: key, report: {} }))).status, 401, 'but no report');
-  assert.equal((await call('/playtest/check', post({ token: key }))).status, 401, 'and does not open the panel');
+  assert.equal((await call('/playtest/v1/report', post({ token: key, report: {} }))).status, 401, 'but no report');
+  assert.equal((await call('/playtest/v1/check', post({ token: key }))).status, 401, 'and does not open the panel');
   tick(7 * 3_600_000); // the tester link (30 days) still works
-  assert.equal((await call(`/playtest/image?token=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: jpeg })).status, 401, 'it ends after six hours');
+  assert.equal((await call(`/playtest/v1/image?token=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'content-type': 'image/jpeg' }, body: jpeg })).status, 401, 'it ends after six hours');
 
   // Behåll keeps a report past 30 days.
-  const second = await (await call('/playtest/report', post({ token: made.token, report: { testId: 'B-282', result: 'worked' } }))).json();
-  const kept = await (await call('/playtest/keep', { method: 'POST', headers: { 'x-playtest-key': 'read-key' }, body: JSON.stringify({ ids: [id] }) })).json();
+  const second = await (await call('/playtest/v1/report', post({ token: made.token, report: { testId: 'B-282', result: 'worked' } }))).json();
+  const kept = await (await call('/playtest/v1/keep', { method: 'POST', headers: { 'x-playtest-key': 'read-key' }, body: JSON.stringify({ ids: [id] }) })).json();
   assert.equal(kept[id].keep, true, 'the agent can keep a report');
   tick(31 * 86_400_000);
   const later = await (await call('/api/reports', { headers: { cookie } })).json();
@@ -111,7 +112,7 @@ test('F-091: a tester link sends reports with pictures from any site; the owner 
 
   // The link is gone when revoked.
   await call(`/api/testers/${made.tester.id}`, { method: 'DELETE', headers: { cookie } });
-  assert.equal((await call('/playtest/report', post({ token: made.token, report: {} }))).status, 401);
+  assert.equal((await call('/playtest/v1/report', post({ token: made.token, report: {} }))).status, 401);
 });
 
 test('F-091: at most 50 kept reports per game', async () => {
@@ -153,7 +154,8 @@ test('F-110, B-097: every open path refuses a stranger; no room is made without 
     ['POST', '/playtest/v1/image?token=pt_x.y', 401],
     ['GET', '/playtest/v1/report', 405],
     ['GET', '/playtest/v1/read', 403],
-    ['GET', '/playtest/read', 403],
+    ['GET', '/playtest/read', 404], // the unversioned path is gone (F-114)
+    ['POST', '/playtest/check', 404],
     ['GET', '/playtest/v1/read-image?id=abcdefgh', 403],
     ['POST', '/playtest/v1/keep', 403],
     ['GET', '/api/testers', 401], ['GET', '/api/reports', 401], ['GET', '/api/reports/image/abcdefgh', 401],
@@ -178,4 +180,12 @@ test('B-099: pictures are kept apart from their facts, so cleaning reads no pict
   assert.ok(metas.every((m) => m.data === undefined), 'the list holds no picture data');
   assert.equal((await pt.image(ids[0])).data.length > 1000, true, 'one picture comes with its data');
   await pt.clean();
+});
+
+test('F-114: Playtest data left in the main store by 0.14.0 is deleted once', async () => {
+  const storage = memory();
+  for (const k of ['tst:a', 'rep:1', 'img:x', 'ptn:a:2026-11-19', 'settings']) await storage.put(k, { old: true });
+  const main = new AdminStore({ storage }, {}, { now: () => NOW });
+  await main.fetch(new Request('https://store/settings'));
+  assert.deepEqual([...storage.data.keys()].sort(), ['dropped:playtest-0.14', 'settings']);
 });

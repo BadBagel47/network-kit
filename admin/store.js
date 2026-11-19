@@ -2,6 +2,7 @@
 // (SQLite, Free plan). Games ask it through the admin Worker's GameApi
 // entrypoint (a service binding), never over the internet.
 
+import { b64url, hashText, day } from './util.js';
 import { CloudflareAnalytics } from './analytics.js';
 import { normalizeSettings, budgetState, gameStatus, gameNotices, describeChanges, when, endedTimers, timerEndedText } from './control.js';
 
@@ -15,8 +16,6 @@ const PASS_USED_EVERY_MS = 60 * 60_000; // when a link was last used is stored a
 const LOG_KEEP_MS = 90 * 86_400_000; // the owner's log is kept 90 days (owner 2026-11-18)
 const LOG_MAX = 2_000;
 const LOBBY_PREFIX = 'lb_'; // lobby tokens (F-059); the room server knows the same prefix
-const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-const hashText = async (text) => b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
 const MESSAGE_MAX = 20; // the owner's messages to players (F-066) kept at once
 const MESSAGE_MIN_MS = 5 * 60_000;
 const MESSAGE_MAX_MS = 7 * 86_400_000;
@@ -27,7 +26,6 @@ const KEEP_DAYS = 7; // measurement summaries are kept a week (F-052)
 export const ROOMS_PER_HOUR = 60;
 export const ROOMS_PER_VISITOR_DAY = 40;
 const PER_DAY_MAX = 3_000;
-const day = (ms) => new Date(ms).toISOString().slice(0, 10);
 const median = (list) => {
   const s = list.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
   return s.length ? s[Math.floor(s.length / 2)] : null;
@@ -85,6 +83,23 @@ export class AdminStore {
     const budget = budgetState(await this.settings(), usage);
     await this.storage.put('budget', budget);
     return budget;
+  }
+
+  /**
+   * Playtest kept its data here in 0.14.0 before it got a store of its own
+   * (F-095); those keys are deleted once (F-114).
+   */
+  async dropOldPlaytest() {
+    if (this.oldPlaytestDropped || (await this.storage.get('dropped:playtest-0.14'))) {
+      this.oldPlaytestDropped = true;
+      return;
+    }
+    for (const prefix of ['tst:', 'rep:', 'img:', 'ptn:']) {
+      const keys = [...(await this.storage.list({ prefix })).keys()];
+      for (let i = 0; i < keys.length; i += 128) await this.storage.delete(keys.slice(i, i + 128));
+    }
+    await this.storage.put('dropped:playtest-0.14', this.now());
+    this.oldPlaytestDropped = true;
   }
 
   /** Counts a new room for the game (F-098); refuses past the hour's or the visitor's day's limit. */
@@ -378,6 +393,7 @@ export class AdminStore {
       return json({ ok: true });
     }
     if (url.pathname === '/settings' && request.method === 'GET') {
+      await this.dropOldPlaytest();
       await this.logEndedTimers(await this.settings());
       return json({ settings: await this.settings(), rev: (await this.storage.get('settings-rev')) ?? 0, budget: await this.budget(), connected: await this.connected(), versions: await this.versions() });
     }

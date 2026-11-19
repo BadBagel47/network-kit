@@ -22,8 +22,6 @@ Owner's decision 2026-11-19: something is removed only when no game still uses i
 
 | What | Marked | Still used by | Remove when | Item |
 | --- | --- | --- | --- | --- |
-| Playtest paths without a version (`/playtest/check`, `/report`, `/image`, `/upload-key`, `/read`, `/keep`) | 0.15.0 | nothing (only 0.14.x copies used them; no game took 0.14) | now | F-114 |
-| Playtest data from 0.14.0 in the admin page's main store (`tst:`, `rep:`, `img:`, `ptn:` keys from before the own store) | 0.14.1 | nothing | now | F-114 |
 | The workers.dev addresses of the admin page and the demo (`network-kit-admin.l8p1.workers.dev`, `network-kit-demo.l8p1.workers.dev`); use nk-admin.trythis.one and nk-demo.trythis.one | 0.16.0 | the demo's and Playtest's admin address in games' copies up to 0.16, Critical's instructions, the docs | when no game's copy or page uses them; then set `workers_dev: false` so the firewall cannot be gone around | – |
 | The `gate` option of `createRoomServer` (use `admin`) | 0.15.1 | no game known; check before removing | 1.0, or earlier when no copy uses it | – |
 | Stored rooms of shape 1 (`STATE_DROPPED`) | 0.2.0 | nothing | already closed; keep the entry | – |
@@ -32,4 +30,5 @@ Owner's decision 2026-11-19: something is removed only when no game still uses i
 
 | What | Removed in | Note |
 | --- | --- | --- |
-| – | | |
+| Playtest paths without a version (`/playtest/check`, `/report`, `/image`, `/upload-key`, `/read`, `/keep`) | 0.17.0 | F-114; no game had taken 0.14 |
+| Playtest data from 0.14.0 in the admin page's main store | 0.17.0 (deleted once at the first settings read) | F-114 |
