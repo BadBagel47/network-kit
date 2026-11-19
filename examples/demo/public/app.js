@@ -43,6 +43,11 @@ startPlaytest({
   // Playtest Recorder (F-092), also only with a tester link: records the demo's
   // rooms without disturbing anyone; the others in the room are told.
   recorder = await startRecorder({ admin: ADMIN, version: VERSION });
+  // Stopped with the badge or "Sluta testa på den här enheten": the others are told.
+  recorder?.onStop(() => {
+    recorder = null;
+    room?.send({ type: 'recording', on: false });
+  });
   if (recorder && room) {
     recorder.attach(room);
     room.send({ type: 'recording' });
@@ -198,6 +203,10 @@ function showGame() {
   room.on('message', ({ from, data }) => {
     diag.messageIn();
     if (data?.type === 'recording') {
+      if (data.on === false) {
+        $('recording-note')?.remove();
+        return;
+      }
       if (!recorder && !$('recording-note')) {
         const note = document.createElement('p');
         note.id = 'recording-note';

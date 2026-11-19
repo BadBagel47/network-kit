@@ -18,6 +18,7 @@ import { RECORDER_NOTICE } from './playtest-entry.js';
 
 export { RECORDER_NOTICE };
 const TOKEN_KEY = 'nk-playtest:tester';
+const OFF_KEY = 'nk-playtest:recording-off'; // this tab stopped recording (sessionStorage)
 const BATCH_MS = 60_000;
 const EVENTS_MAX = 500; // per batch, as the admin page takes them
 const CHUNKS_MAX = 240; // per session (four hours); then a new session starts
@@ -41,6 +42,7 @@ export class Recorder {
     this.frames = { count: 0, slowest: 0, last: 0 };
     this.rooms = new Set();
     this.stopped = false;
+    this.stopListeners = [];
     this.watch();
     this.timer = win.setInterval?.(() => this.flush(), everyMs);
     if (badge && !new URLSearchParams(win.location?.search ?? '').has('still')) this.showBadge();
@@ -85,6 +87,8 @@ export class Recorder {
     w.addEventListener?.('error', (e) => this.record('error', { message: String(e.message ?? 'error').slice(0, 300), at: e.filename ? `${String(e.filename).split('/').pop()}:${e.lineno}` : null }));
     w.addEventListener?.('unhandledrejection', (e) => this.record('error', { message: `Unhandled: ${String(e.reason?.message ?? e.reason).slice(0, 300)}` }));
     w.addEventListener?.('pagehide', () => this.flush(true));
+    // Playtest-rutan's "Sluta testa på den här enheten" (F-117).
+    w.addEventListener?.('nk-playtest-forget', () => this.stop());
     this.doc?.addEventListener?.('visibilitychange', () => {
       this.record('visibility', { hidden: Boolean(this.doc.hidden) });
       if (this.doc.hidden) this.flush(true);
@@ -147,24 +151,51 @@ export class Recorder {
   showBadge() {
     const doc = this.doc;
     if (!doc?.documentElement) return;
-    const b = doc.createElement('div');
+    // A button (owner Q3): a tap asks, then stops recording in this tab.
+    const b = doc.createElement('button');
+    b.type = 'button';
     b.textContent = '● Inspelning';
-    b.setAttribute('role', 'status');
-    b.setAttribute('aria-label', 'Playtest Recorder spelar in');
+    b.setAttribute('aria-label', 'Playtest Recorder spelar in. Tryck för att sluta.');
     // Styles through the CSSOM, so a strict Content-Security-Policy allows them.
     Object.assign(b.style, {
-      position: 'fixed', right: '8px', bottom: '8px', zIndex: '2147481999', pointerEvents: 'none',
-      font: '600 12px system-ui, sans-serif', color: '#fff', background: 'rgba(170, 20, 20, .8)', padding: '3px 8px', borderRadius: '999px',
+      position: 'fixed', right: '8px', bottom: '8px', zIndex: '2147481999', cursor: 'pointer', border: '0', margin: '0',
+      font: '600 12px system-ui, sans-serif', color: '#fff', background: 'rgba(170, 20, 20, .85)', padding: '4px 9px', borderRadius: '999px',
+      touchAction: 'manipulation', webkitTapHighlightColor: 'transparent',
+    });
+    // The game never gets the tap.
+    for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown']) b.addEventListener(type, (e) => e.stopPropagation());
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!this.win.confirm?.('Sluta spela in? Inspelningen stannar i den här fliken. Det som redan spelats in sparas.')) return;
+      try {
+        this.win.sessionStorage?.setItem(OFF_KEY, '1');
+      } catch {
+        // stops for this page anyway
+      }
+      this.stop();
     });
     doc.documentElement.append(b);
     this.badge = b;
   }
 
+  /** Called once when recording stops, for example so the game can tell the others. */
+  onStop(fn) {
+    this.stopListeners.push(fn);
+  }
+
   async stop() {
+    if (this.stopped) return;
     await this.flush();
     this.stopped = true;
     this.win.clearInterval?.(this.timer);
     this.badge?.remove();
+    for (const fn of this.stopListeners) {
+      try {
+        fn();
+      } catch {
+        // a game's listener never stops the stop
+      }
+    }
   }
 }
 
@@ -180,6 +211,11 @@ export async function startRecorder(options = {}) {
     token = null;
   }
   if (!token) return null;
+  try {
+    if (win.sessionStorage?.getItem(OFF_KEY)) return null; // stopped in this tab (owner Q3)
+  } catch {
+    // no session storage: record
+  }
   const recorder = new Recorder({ ...options, token, window: win, document: doc });
   if (options.room) recorder.attach(options.room);
   return recorder;
