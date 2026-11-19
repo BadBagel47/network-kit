@@ -43,7 +43,10 @@ startPlaytest({
   // Playtest Recorder (F-092), also only with a tester link: records the demo's
   // rooms without disturbing anyone; the others in the room are told.
   recorder = await startRecorder({ admin: ADMIN, version: VERSION });
-  if (recorder && room) recorder.attach(room);
+  if (recorder && room) {
+    recorder.attach(room);
+    room.send({ type: 'recording' });
+  }
 }).catch(() => {});
 let recorder = null;
 
@@ -171,6 +174,8 @@ function showGame() {
     const words = { join: 'joined', back: 'is back', drop: 'lost the connection', gone: 'left', host: 'runs the game', waiting: 'is waiting', owner: 'owns the room' };
     log(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}.`);
     diag.event(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}`);
+    // Whoever comes in or back is told that this browser records (F-092, owner Q8).
+    if (recorder && (event === 'join' || event === 'back')) room.send({ type: 'recording' }, { to: [id] });
     if (room.isHost) {
       if (event === 'join' || event === 'back') {
         ensureShips();
@@ -187,12 +192,12 @@ function showGame() {
     }
   });
 
-  // Tell the others when this browser records (F-092, owner Q8): the host passes it on.
+  // Tell the others when this browser records (F-092, owner Q8); the recording
+  // browser tells each who joins later itself (the peer handler above).
   if (recorder) room.send({ type: 'recording' });
   room.on('message', ({ from, data }) => {
     diag.messageIn();
     if (data?.type === 'recording') {
-      if (room.isHost) room.send({ type: 'recording' });
       if (!recorder && !$('recording-note')) {
         const note = document.createElement('p');
         note.id = 'recording-note';
