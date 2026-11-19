@@ -2,7 +2,7 @@
 /* B-116: no text on the demo's pages can be selected, so quick taps on the
    steering buttons do not open the iPad's text menu; fields to type in still can
    (Safari will not type in a field whose ancestors forbid selection). */
-body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
 input, textarea, [contenteditable] { user-select: text; -webkit-user-select: text; }
 a[href] { -webkit-touch-callout: default; }
 main { max-width: 640px; margin: 0 auto; padding: 16px; }

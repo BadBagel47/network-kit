@@ -389,6 +389,12 @@ for (const button of document.querySelectorAll('#pad button')) {
   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) button.addEventListener(type, up);
   button.addEventListener('contextmenu', (e) => e.preventDefault());
 }
+// B-116: Safari on an iPad starts its own gestures (text menu, magnifier, zoom)
+// from a double tap held on the pad; only a stopped touchstart prevents them.
+// Pointer events still arrive, so steering is unchanged.
+for (const type of ['touchstart', 'touchend']) $('pad').addEventListener(type, (e) => e.preventDefault(), { passive: false });
+// No text menu anywhere on the page, except in fields and on links.
+addEventListener('contextmenu', (e) => { if (!e.target.closest?.('input, textarea, a[href]')) e.preventDefault(); });
 // Let go of everything when the page is left, so no direction stays held.
 addEventListener('blur', () => { for (const k of Object.keys(myKeys)) press(k, false); });
 
