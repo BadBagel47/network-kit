@@ -68,6 +68,7 @@ Read this first, then `AGENTS.md` (shared rules reference and project rules) and
 - **Room cleanup (proposal 2026-11-13, built 2026-11-15):** a room is deleted 24 hours after the last player left (not 24 hours after it was created, so a long evening's game is never cut off), and an hour after it was closed. The server keeps nicknames and a hash of each player's random key, never the key itself. The owner may still change the 24 hours.
 - **Host-run rooms first (2026-11-15, run A):** network-kit supports both host-run rooms (F-006, Critical's choice) and server-run rooms; the demo has one of each. A player's identity is kept per browser tab by default, so a reload keeps the seat and several tabs on one computer are separate players.
 - **Removing what no game uses (2026-11-19, owner, Q4):** something is removed only when no game still uses it: first marked as on its way out, then the versions in use are checked (admin page cards and the games' copies), then removed in a release that says so. `docs/DEPRECATIONS.md` lists what is on its way out and the versions in use, and is checked at every MINOR release and monthly, so clean-ups happen regularly.
+- **Domain (2026-11-19, owner):** most of the owner's projects are, or will be, subdomains of trythis.one, which the owner has on Cloudflare (Bricks: bricks.trythis.one).
 
 ## Current state (2026-11-15)
 

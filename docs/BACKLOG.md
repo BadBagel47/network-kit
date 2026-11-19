@@ -136,7 +136,7 @@
 Prioritised for: the quota against strangers before a game is spread outside the owner's circle, then the rest.
 
 - **A** – strong model, high level – The quota against strangers
-  - F-098 – hard limiting also closes running rooms, a count of rooms per game, rooms without receivers close. Question: a domain of the owner's own for Cloudflare's firewall? Recommendation: not now; when a game is spread outside the circle.
+  - F-098 – hard limiting also closes running rooms, a count of rooms per game, rooms without receivers close. Question: put the Workers (the games' rooms, the admin page, Playtest) on subdomains of trythis.one, which the owner has on Cloudflare (owner 2026-11-19: most projects are or will be subdomains there), turn off their workers.dev addresses and add a rate-limiting rule in Cloudflare's firewall? Recommendation: yes, it costs nothing extra; do it in this run.
   - F-100 – limits per IPv6 /64
   - F-106 – lower default caps per room
 - **B** – standard model, medium level – When the code is next touched
