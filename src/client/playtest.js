@@ -314,6 +314,25 @@ export async function startPlaytest(options = {}) {
   return panel;
 }
 
+/**
+ * A second tap within four seconds confirms (owner Q11): the first changes the
+ * button's text. Used instead of confirm(), which Safari offers to suppress.
+ */
+export function confirmTap(win, button, ask, ms = 4000) {
+  if (button.dataset.confirming) {
+    win.clearTimeout?.(Number(button.dataset.confirming));
+    delete button.dataset.confirming;
+    return true;
+  }
+  const before = button.textContent;
+  button.textContent = ask;
+  button.dataset.confirming = String(win.setTimeout?.(() => {
+    delete button.dataset.confirming;
+    button.textContent = before;
+  }, ms) ?? 1);
+  return false;
+}
+
 const SVG = 'http://www.w3.org/2000/svg';
 /** The folded panel's flask (F-117), drawn so it looks the same on every device. */
 function flaskIcon(doc) {
@@ -585,7 +604,9 @@ export class PlaytestPanel {
         this.el('span', {}, item.title ?? item.id)));
     }
     body.append(this.el('button', { type: 'button', on: { click: () => this.note() } }, 'Skriv en anteckning utan test'));
-    body.append(this.el('button', { type: 'button', class: 'quiet', on: { click: () => this.forget() } }, 'Sluta testa på den här enheten'));
+    // Confirmed in the page, not with confirm(): Safari offers to suppress a page's dialogs (owner Q11).
+    const stop = this.el('button', { type: 'button', class: 'quiet', on: { click: () => this.forget(stop) } }, 'Sluta testa på den här enheten');
+    body.append(stop);
   }
 
   /**
@@ -593,8 +614,8 @@ export class PlaytestPanel {
    * Remote and the Recorder stop here; other devices and the link itself are
    * untouched, and opening the link again starts over.
    */
-  async forget() {
-    if (!this.win.confirm?.('Sluta testa på den här enheten? Playtest och inspelningen försvinner här. Öppna testarlänken igen för att börja om.')) return;
+  async forget(button) {
+    if (button && !confirmTap(this.win, button, 'Tryck igen för att sluta testa här')) return;
     await this.sender.flush().catch(() => {}); // what waits to be sent goes first
     try {
       this.remote?.leave();

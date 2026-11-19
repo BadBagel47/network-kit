@@ -199,8 +199,10 @@ try {
   }, A);
   assert.deepEqual(recorded, { started: true, sent: true, badge: '● Inspelning' });
   // Owner Q3: a tap on the badge asks, then stops recording in this tab, also after a reload.
-  game.once('dialog', (d) => d.accept());
-  await game.locator('button[aria-label^="Playtest Recorder spelar in"]').click();
+  const badgeButton = game.locator('button[aria-label^="Playtest Recorder spelar in"]');
+  await badgeButton.click();
+  assert.equal(await badgeButton.innerText(), '● Tryck igen för att sluta spela in', 'the first tap asks (owner Q11)');
+  await badgeButton.click();
   await game.waitForFunction(() => window.recorderStopped === true);
   assert.equal(await game.locator('button[aria-label^="Playtest Recorder spelar in"]').count(), 0, 'the badge goes');
   assert.equal(await game.evaluate(async (admin) => (await import('/src/client/playtest-entry.js')).startRecorder({ admin }).then((r) => r === null), A), true, 'not again in this tab');
@@ -226,8 +228,8 @@ try {
 
   // Owner Q3: "Sluta testa på den här enheten" makes this browser forget the tester link.
   if (await game.locator('.nkp button.fab').count()) await game.locator('.nkp button.fab').click();
-  game.once('dialog', (d) => d.accept());
   await game.locator('.nkp').getByRole('button', { name: 'Sluta testa på den här enheten' }).click();
+  await game.locator('.nkp').getByRole('button', { name: 'Tryck igen för att sluta testa här' }).click();
   await game.locator('.nkp').waitFor({ state: 'detached' });
   assert.equal(await game.evaluate(() => localStorage.getItem('nk-playtest:tester')), null, 'the link is forgotten here');
 

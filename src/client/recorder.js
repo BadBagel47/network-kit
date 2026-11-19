@@ -13,7 +13,7 @@
 //   recorder?.attach(room);   // a room joined later
 
 import { VERSION } from '../version.js';
-import { describeDevice } from './playtest.js';
+import { describeDevice, confirmTap } from './playtest.js';
 import { RECORDER_NOTICE } from './playtest-entry.js';
 
 export { RECORDER_NOTICE };
@@ -166,7 +166,8 @@ export class Recorder {
     for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown']) b.addEventListener(type, (e) => e.stopPropagation());
     b.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!this.win.confirm?.('Sluta spela in? Inspelningen stannar i den här fliken. Det som redan spelats in sparas.')) return;
+      // A second tap confirms (owner Q11; Safari offers to suppress confirm()).
+      if (!confirmTap(this.win, b, '● Tryck igen för att sluta spela in')) return;
       try {
         this.win.sessionStorage?.setItem(OFF_KEY, '1');
       } catch {
