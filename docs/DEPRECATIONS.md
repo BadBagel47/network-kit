@@ -13,10 +13,12 @@ Owner's decision 2026-11-19: something is removed only when no game still uses i
 | Game | network-kit in its copy | Uses the admin page | Uses Playtest |
 | --- | --- | --- | --- |
 | Vättigt | 0.11.2 (F-043 connected it to the admin page 2026-11-18) | yes | no |
-| Bricks | 0.13.4 (0.15.1 recommended) | yes | no |
+| Bricks | 0.17.0 (Bricks T-011, 2026-11-19; its update workflow is installed) | yes | no |
 | Critical ST8 | none yet (0.15.1 planned, its D-288) | not yet | planned |
 | Buzzy | none yet | – | – |
 | The demo (`examples/demo`) | the current version | yes | yes |
+
+Checked at the 0.18.0 release (2026-11-19): nothing removed, nothing new marked. The Recorder's badge became a button and its label changed; no game relied on it.
 
 ## On its way out
 
