@@ -5,6 +5,8 @@
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "network-kit-admin",
   "main": "entry.js",
+  // Kept on while games use the workers.dev address; the owner's subdomain is added at deploy (F-098).
+  "workers_dev": true,
   "compatibility_date": "2026-11-01",
   "assets": { "directory": "public", "binding": "ASSETS" },
   "durable_objects": {

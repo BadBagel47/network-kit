@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.15** (0.15.1).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.16** (0.16.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -141,8 +141,9 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `snapshotSaveMs` | 5 s | The host's snapshot is written to storage at most this often (and when the host drops, pauses, leaves or hands over). |
 | `maxMessageBytes` / `maxSnapshotBytes` / `maxDataBytes` | 256 kB / 1 MB / 4 kB | Larger ones are refused. Messages and snapshots above 16,000 characters travel and are stored in parts, without the game noticing (*Large states* in section 5). |
 | `maxMessagesPerSecond` | 40 | Per connection; short bursts of twice this are fine. Faster connections are closed (4012, final). Refused and ignored messages cost the sender several times as much, and nothing of the room's budget. The kit's client keeps under the pace by itself. 0: no limit. |
-| `maxMessagesPerDay` | 600,000 | Per room and UTC day; the room closes (4013) when it is used up. 0: no limit. |
-| `maxActiveMinutesPerDay` | 720 | Per room and UTC day: minutes in which messages arrived. Stops a forgotten room that trickles messages from staying awake all day. 0: no limit. |
+| `maxMessagesPerDay` | 150,000 (600,000 before 0.16) | Per room and UTC day; the room closes (4013) when it is used up. 0: no limit. The account's whole day is about 2 million incoming messages (100,000 room requests at 20 messages each), shared by every game: 150,000 is a long evening of play and under a tenth of the day. |
+| `maxActiveMinutesPerDay` | 240 (720 before 0.16) | Per room and UTC day: minutes in which messages arrived. Stops a forgotten room that trickles messages from staying awake all day. 0: no limit. |
+| `closeAloneAfterMs` | 5 minutes | Host-run rooms (from 0.16, F-098): a room that keeps getting game messages while nobody else is online to receive them closes after this long (close code 4000, reason `alone`). The kit's client sends nothing when it is alone, so this only stops scripts and faults. `null`: never. |
 | `maxPendingSockets` | 8 | Connections that have not introduced themselves yet. |
 | `nameMaxLength` | 24 | Nicknames are trimmed to this. |
 | `codeLength` | 6 | Characters in this game's room codes, 4 to 12 (the default was 4 before 0.8). See *Room codes* below. |
@@ -150,7 +151,7 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `basePath` | `'/rooms'` | URL prefix of the room API. |
 | `allowedOrigins` | `'*'` | Pages allowed to use the API (the game's site). |
 | `jurisdiction` | `null` | `'eu'` keeps rooms in the EU; may be a function `(env) => 'eu' \| null`. |
-| `limits` | 10 creations, 60 tries a minute | Per visitor address, checked before a room is woken: `{ createsPerMinute, attemptsPerMinute }` (attempts are look-ups and joins at a room code). Over the limit a visitor gets 429 or close code `RATE` for the rest of the minute. Counted per Worker instance, which is enough to make guessing codes or creating rooms in bulk pointless; `null` turns it off; may be a function of `env` (from 0.7, F-053). |
+| `limits` | 10 creations, 60 tries a minute | Per visitor address, checked before a room is woken: `{ createsPerMinute, attemptsPerMinute }` (attempts are look-ups and joins at a room code). Over the limit a visitor gets 429 or close code `RATE` for the rest of the minute. Counted per Worker instance, and IPv6 by its first 64 bits (from 0.16, F-100): a brake on accidents and simple scripts, not a guarantee, since each instance counts on its own. With the `admin` option the admin page also counts the game's new rooms across all instances: at most 60 an hour per game and 40 a day per visitor, the owner's game links not counted (from 0.16, F-098; error `too-many-rooms`, 429). `null` turns the per-instance limit off; may be a function of `env` (from 0.7, F-053). |
 | `admin` | – | Connects the game to the admin page (from 0.7, F-003, F-004): `{ binding, game, mode }` (`mode`, from 0.9: the rooms' mode for a game with several, F-057), a service binding to the admin Worker's `GameApi` entrypoint and the game's name; may be a function of `env`. New rooms, newcomers and new rounds are refused while the game is off or over its budget; participants already in a room come back; an emergency stop closes running rooms. See `docs/ADMIN.md`. |
 | `lobbyRole` | `'player'` | The role a lobby's guest link joins in (lobbies made on the admin page, from 0.13, F-059). |
 | `gate` | – | **Experimental**, replaced by `admin` for on/off (F-003): `async ({ request, env, action }) => true \| { open: false, reason }`, checked before a room is created or a connection is opened. |
@@ -372,7 +373,7 @@ What a game should do: send inputs on change only, choose the host's send rate d
 
 What protects a room, and what does not (D-056, from the lessons of an external review of Buzzy, `docs/reviews/2026-11-18-buzzy-review-lessons.md`):
 
-- **The room code is not a secret.** It is short so people can type it (6 characters by default, about a billion codes; games may choose 4 to 12). In an `open` room the code alone lets anyone in; per-visitor limits (`limits`) make guessing pointless, but a game where strangers must not get in uses `access: 'private'` and invitation links, whose keys are the secret (one per role).
+- **The room code is not a secret.** It is short so people can type it (6 characters by default, about a billion codes; games may choose 4 to 12). In an `open` room the code alone lets anyone in; with 6 characters the number of codes makes guessing pointless, and the per-visitor limits slow it down, but they are a brake, not a guarantee (codes shorter than 6 characters need `access: 'private'`). A game where strangers must not get in uses `access: 'private'` and invitation links, whose keys are the secret (one per role).
 - **The room enforces, the page does not.** Who may send, start, pause, take a place, host or own is decided in the room; a modified page gets no further than the room allows. Hidden game state belongs in server-run rules (`room.game`) or in the host's snapshot, which is only ever sent to whoever runs the game; `setWelcomeState` and messages reach participants.
 - **Identity is per browser.** Each browser keeps a random identity key; there are no accounts. A kick or a ban removes that identity, closes its connection at once, and a ban renews every invitation key and makes the room private, so no old link works. A person with a new browser and a new link is a new participant: a ban is not a ban on the person.
 - **Seats and places are freed by the room** after the grace period, on leaving and on a kick; a page cannot keep them.

@@ -61,7 +61,9 @@ Under *Inställningar* also:
 
 - **Plan:** free or paid. On the paid plan the page shows what this month would cost (5 USD a month plus what goes past the included amounts; prices checked 2026-11-18; Workers CPU time is not counted).
 - **Monthly cap:** on the paid plan, the cost at which games close.
-- **Cloudflare limiting:** off until the owner turns it on. When on, the admin Worker reads the usage every 5 minutes and closes a game that has passed its share (free plan) for new players for the rest of the UTC day, or every game when the cap is reached (paid plan); players are warned at 90 %.
+- **Cloudflare limiting:** off until the owner turns it on. When on, the admin Worker reads the usage every 5 minutes and closes a game that has passed its share (free plan) for the rest of the UTC day, or every game when the cap is reached (paid plan); players are warned at 90 %. From 0.16 (F-098) running rooms close too, within about 30 seconds of their next message, except rooms opened with a game link or a lobby.
+- **New rooms per game (F-098):** the admin page counts each game's new rooms across all its Worker instances: at most 60 an hour per game and 40 a day per visitor (an address; IPv6 by /64), the owner's game links not counted. Past that, new rooms are refused for a while and the log says so once an hour.
+- **Addresses (F-098, owner 2026-11-19):** the admin page also answers at https://nk-admin.trythis.one and the demo at https://nk-demo.trythis.one, on the owner's domain on Cloudflare, so Cloudflare's firewall can protect them. The workers.dev addresses stay until no game uses them (docs/DEPRECATIONS.md).
 
 Players see why in plain words (`not taking new players`, `used up today's free quota … opens again at …`, `stopped by its owner`), in the game's own language if the game translates the kit's reasons.
 

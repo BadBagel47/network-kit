@@ -7,7 +7,7 @@ import { AdminStore } from '../../admin/store.js';
 import { buildUsage, lastDays } from '../../admin/analytics.js';
 import { createRoomServer } from '../../src/server/worker.js';
 import { gameClosedText, CLOSE } from '../../src/shared/protocol.js';
-import { connect, cmd } from './fake-host.js';
+import { connect, cmd, send } from './fake-host.js';
 import { setup, CREW } from './setup.js';
 
 const NOW = Date.UTC(2026, 10, 18, 12);
@@ -550,4 +550,59 @@ test('B-109: a save from an older copy is refused, so one device cannot undo ano
   const now = (await call('/settings')).body.settings.games.bricks;
   assert.equal(now.stopped, true);
   assert.equal(now.share, 30);
+});
+
+test('F-098: Cloudflare limiting closes running rooms too, but not one opened with a game link', async () => {
+  const { world, core, owner, created } = await setup(CREW);
+  await connect(world, core, { name: 'Invited', key: created.keys.player.k });
+  await cmd(core, owner, 'start');
+  world.word = { open: false, reason: 'budget', stopped: false, until: null };
+  core.host = world.host();
+  await world.advance(31_000);
+  await cmd(core, owner, 'pause');
+  assert.equal(core.state.closed?.reason, 'budget');
+
+  const kept = await setup(CREW);
+  kept.core.state.pass = 'pass.token';
+  kept.world.word = { open: false, reason: 'budget', stopped: false, until: null };
+  kept.core.host = { ...kept.world.host(), checkAdminPass: async () => true };
+  await kept.world.advance(31_000);
+  await cmd(kept.core, kept.owner, 'pause');
+  assert.equal(kept.core.state.closed, null, 'a game-link room plays on');
+});
+
+test('F-098: a host-run room that keeps getting messages with nobody to receive them closes', async () => {
+  const { world, core, owner } = await setup(CREW);
+  for (let i = 0; i < 4; i += 1) {
+    await send(core, owner, { t: 'msg', d: { x: i } });
+    await world.advance(2 * 60_000);
+  }
+  await send(core, owner, { t: 'msg', d: { x: 'last' } });
+  assert.equal(core.state.closed?.reason, 'alone');
+});
+
+test('F-098, F-100: the admin page counts a game\'s new rooms across Worker instances; past the limit the Worker refuses', async () => {
+  const { ROOMS_PER_HOUR, ROOMS_PER_VISITOR_DAY } = await import('../../admin/store.js');
+  const store = storeWith();
+  const created = async (visitor) => (await store.fetch(new Request('https://store/room-created', { method: 'POST', body: JSON.stringify({ game: 'bricks', visitor }) }))).json();
+  for (let i = 0; i < ROOMS_PER_VISITOR_DAY; i += 1) assert.equal((await created('1.2.3.4')).ok, true);
+  assert.deepEqual(await created('1.2.3.4'), { ok: false, reason: 'too-many-rooms' }, 'one visitor\'s day');
+  for (let i = ROOMS_PER_VISITOR_DAY; i < ROOMS_PER_HOUR; i += 1) assert.equal((await created(`10.0.0.${i}`)).ok, true);
+  assert.equal((await created('10.9.9.9')).ok, false, 'the game\'s hour');
+
+  // The Worker asks before it makes a room, and passes the visitor by /64.
+  let asked = null;
+  const env = {
+    ADMIN: { status: async () => ({ open: true, notices: [] }), checkPass: async () => false, roomCreated: async (game, visitor) => { asked = visitor; return { ok: false, reason: 'too-many-rooms' }; } },
+    ROOMS: { idFromName: () => { throw new Error('no room may be made'); } },
+  };
+  const server = createRoomServer({ admin: { binding: 'ADMIN', game: 'bricks' } });
+  const res = await server.fetch(new Request('https://bricks.example/rooms', { method: 'POST', body: '{}', headers: { 'cf-connecting-ip': '2001:db8:1:2:aaaa:bbbb:cccc:dddd' } }), env);
+  assert.equal(res.status, 429);
+  assert.equal((await res.json()).error, 'too-many-rooms');
+  assert.equal(asked, '2001:db8:1:2::/64');
+  // An admin page without the count (older) leaves the game as it was.
+  delete env.ADMIN.roomCreated;
+  env.ROOMS = { idFromName: (n) => n, get: () => ({ fetch: async () => Response.json({ code: 'ABCDEF', ownerKey: 'k', keys: {} }) }) };
+  assert.equal((await server.fetch(new Request('https://bricks.example/rooms', { method: 'POST', body: '{}' }), env)).status, 200);
 });

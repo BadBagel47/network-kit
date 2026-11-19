@@ -22,6 +22,10 @@ const MESSAGE_MIN_MS = 5 * 60_000;
 const MESSAGE_MAX_MS = 7 * 86_400_000;
 const SEEN_EVERY_MS = 60 * 60_000; // how often a game's last contact is stored (F-070)
 const KEEP_DAYS = 7; // measurement summaries are kept a week (F-052)
+// New rooms per game (F-098): a game's rooms across all its Worker instances.
+// Friends playing make a few rooms an evening; a script makes hundreds.
+export const ROOMS_PER_HOUR = 60;
+export const ROOMS_PER_VISITOR_DAY = 40;
 const PER_DAY_MAX = 3_000;
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
 const median = (list) => {
@@ -81,6 +85,39 @@ export class AdminStore {
     const budget = budgetState(await this.settings(), usage);
     await this.storage.put('budget', budget);
     return budget;
+  }
+
+  /** Counts a new room for the game (F-098); refuses past the hour's or the visitor's day's limit. */
+  async roomCreated(game, visitor) {
+    const now = this.now();
+    const hour = new Date(now).toISOString().slice(0, 13);
+    const today = day(now);
+    const hourKey = `rc:${game}:${hour}`;
+    const who = visitor ? (await hashText(`${today}:${visitor}`)).slice(0, 16) : 'unknown';
+    const visitorKey = `ra:${game}:${today}:${who}`;
+    const [inHour, byVisitor] = await Promise.all([this.storage.get(hourKey), this.storage.get(visitorKey)]);
+    if ((inHour ?? 0) >= ROOMS_PER_HOUR || (byVisitor ?? 0) >= ROOMS_PER_VISITOR_DAY) {
+      if (!this.warnedRooms?.has(`${game}:${hour}`)) {
+        (this.warnedRooms ??= new Set()).add(`${game}:${hour}`);
+        await this.log(game, `${game}: för många nya rum (${inHour ?? 0} den här timmen); fler nekas en stund`);
+      }
+      return { ok: false, reason: 'too-many-rooms' };
+    }
+    await this.storage.put(hourKey, (inHour ?? 0) + 1);
+    await this.storage.put(visitorKey, (byVisitor ?? 0) + 1);
+    // Counts older than two days go (checked once an hour per store instance).
+    if (this.roomsCleaned !== hour) {
+      this.roomsCleaned = hour;
+      const old = [];
+      for (const prefix of ['rc:', 'ra:']) {
+        for (const key of (await this.storage.list({ prefix })).keys()) {
+          const stamp = prefix === 'rc:' ? key.split(':')[2] : key.split(':')[2];
+          if (stamp < day(now - 2 * 86_400_000)) old.push(key);
+        }
+      }
+      for (let i = 0; i < old.length; i += 128) await this.storage.delete(old.slice(i, i + 128));
+    }
+    return { ok: true };
   }
 
   /** A timer that has run out gets one log line, at the time it ran out (B-088). */
@@ -329,6 +366,11 @@ export class AdminStore {
 
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === '/room-created' && request.method === 'POST') {
+      const { game, visitor } = await request.json().catch(() => ({}));
+      if (typeof game !== 'string' || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(game)) return json({ ok: true });
+      return json(await this.roomCreated(game, String(visitor ?? '')));
+    }
     if (url.pathname === '/log-add' && request.method === 'POST') {
       // Playtest's own store writes to the owner's log (F-095).
       const { game, text, kind } = await request.json().catch(() => ({}));

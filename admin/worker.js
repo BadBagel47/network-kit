@@ -27,6 +27,7 @@ import { CloudflareAnalytics, forgetShapes } from './analytics.js';
 import { METRICS, LIMITS_CHECKED } from './limits.js';
 import { budgetState, gameStatus, normalizeSettings } from './control.js';
 import { createRoomServer } from '../src/server/worker.js';
+import { visitorKey } from '../src/shared/visitor.js';
 import {
   LoginGuard, checkPassword, passwordConfigured, newSession, validSession,
   readCookie, sessionCookie, clearCookie,
@@ -83,7 +84,7 @@ function tooMany(request, now) {
     hits = new Map();
     hitsMinute = minute;
   }
-  const who = request.headers.get('cf-connecting-ip') || 'unknown';
+  const who = visitorKey(request.headers.get('cf-connecting-ip'));
   const n = (hits.get(who) ?? 0) + 1;
   hits.set(who, n);
   return n > PER_MINUTE;

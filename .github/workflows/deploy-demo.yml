@@ -47,7 +47,12 @@ jobs:
         run: |
           npm ci
           npm test
-          npm run deploy:demo 2>&1 | tee deploy.log
+          # Also at nk-demo.trythis.one (F-098); workers.dev stays for now.
+          npm run demo:assets
+          if ! npx wrangler deploy --domain nk-demo.trythis.one 2>&1 | tee deploy.log; then
+            echo "::warning::Could not attach nk-demo.trythis.one (the deploy token may lack the zone's Workers Routes and DNS permissions); deployed on workers.dev only"
+            npx wrangler deploy 2>&1 | tee deploy.log
+          fi
           # The key for reading the measurement reports (F-047), derived from the
           # token so the reading workflow can make the same key.
           DIAG_KEY=$(printf 'network-kit demo diag\n%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)

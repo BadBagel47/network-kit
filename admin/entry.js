@@ -29,4 +29,6 @@ export class GameApi extends WorkerEntrypoint {
   lobbyRoom(game, id, room) { return this.api().lobbyRoom(game, id, room); }
 
   measure(game, summary) { return this.api().measure(game, summary); }
+
+  roomCreated(game, visitor) { return this.api().roomCreated(game, visitor); }
 }

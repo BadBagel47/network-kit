@@ -10,6 +10,17 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.16.0 (2026-11-19)
+
+Affects: every game with rooms; take 0.16.0 (does not close live rooms). From the review D-093, against a stranger using up the account's daily free quota.
+
+**Upgrade guide:** nothing to change in the game unless a room really needs more than the new caps: `maxMessagesPerDay` is 150,000 (was 600,000) and `maxActiveMinutesPerDay` 240 (was 720); set them in the options if a game needs more. A host-run game where one participant sends game messages with nobody else in the room for more than five minutes (unusual) sets `closeAloneAfterMs: null`.
+
+- Changed (F-106): lower caps per room by default, so one room cannot take a third of every game's day.
+- New (F-098): Cloudflare limiting closes running rooms too, not only new ones (rooms opened with a game link or a lobby play on); the admin page counts each game's new rooms across all its Worker instances (60 an hour per game, 40 a day per visitor; `GameApi.roomCreated`, refused with `too-many-rooms`); a host-run room that keeps getting game messages with nobody to receive them closes after five minutes (`closeAloneAfterMs`).
+- Changed (F-100): the per-visitor limits count IPv6 addresses by their first 64 bits; the guide says they are a brake, not a guarantee.
+- New (F-098): the admin page also answers at https://nk-admin.trythis.one and the demo at https://nk-demo.trythis.one (the owner's domain on Cloudflare, so its firewall can protect them); the workers.dev addresses stay for now.
+
 ## 0.15.1 (2026-11-19)
 
 Affects: games whose pages are on another address than their Worker (take 0.15.1), and the admin page. From the review D-093; does not close live rooms.

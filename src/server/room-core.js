@@ -80,8 +80,14 @@ export const DEFAULT_OPTIONS = Object.freeze({
   maxSnapshotBytes: 1024 * 1024,
   maxDataBytes: 4 * 1024, // the room's shared data (see the "data" command)
   maxMessagesPerSecond: 40, // per connection (short bursts of twice this are fine)
-  maxMessagesPerDay: 600_000, // per room and UTC day
-  maxActiveMinutesPerDay: 12 * 60, // per room and UTC day: minutes in which messages arrived
+  // Per room and UTC day (lowered in 0.16, F-106: the old 600,000 and 720 were a
+  // third of the whole account's day). A long evening of play fits well within these.
+  maxMessagesPerDay: 150_000,
+  maxActiveMinutesPerDay: 4 * 60, // minutes in which messages arrived
+  // Host-run rooms: a room that keeps getting game messages while nobody else is
+  // there to receive them is a script or a fault (the kit's client sends nothing
+  // when alone); it closes after this long (F-098). null: never.
+  closeAloneAfterMs: 5 * 60_000,
   maxPendingSockets: 8, // connections that have not said hello yet
   nameMaxLength: 24,
   rttProbeMs: null, // measure each participant's response time this often, for the rules (F-076); null: never
@@ -669,7 +675,11 @@ export class RoomCore {
     }
   }
 
-  /** An emergency stop closes running rooms too; looked at now and then while the room is busy. */
+  /**
+   * An emergency stop closes running rooms too; so does Cloudflare limiting
+   * once the game has used its share (F-098), except a room opened with a game
+   * link or a lobby. Looked at now and then while the room is busy.
+   */
   async checkStopped() {
     if (!this.host.admission || !this.state || this.state.closed) return;
     const now = this.host.now();
@@ -677,7 +687,26 @@ export class RoomCore {
     this.lastStopCheck = now;
     const status = await this.admission();
     if (status?.stopped) await this.closeRoom('stopped', CLOSE.GAME_CLOSED);
-    else await this.checkLobby();
+    else if (status && !status.open && status.reason === 'budget' && !(this.state.pass && (await this.isAdminPass(this.state.pass, { lobby: true })))) {
+      await this.closeRoom('budget', CLOSE.GAME_CLOSED);
+    } else await this.checkLobby();
+  }
+
+  /** F-098: game messages with nobody to receive them, for too long, close a host-run room. */
+  async aloneTooLong(player) {
+    const limit = this.options.closeAloneAfterMs;
+    if (!limit || this.options.mode !== 'host') return false;
+    const others = Object.values(this.state.players).some((p) => p.id !== player.id && p.status === 'online');
+    const now = this.host.now();
+    if (others) {
+      this.aloneSince = null;
+      return false;
+    }
+    this.aloneSince ??= now;
+    if (now - this.aloneSince < limit) return false;
+    await this.closeRoom('alone', CLOSE.ROOM_CLOSED);
+    await this.flush();
+    return true;
   }
 
   /** A lobby room closes when its lobby was revoked on the admin page (F-059). */
@@ -879,6 +908,7 @@ export class RoomCore {
         await this.flush();
         return;
       }
+      if (msg.t === 'msg' && (await this.aloneTooLong(player))) return;
       if (msg.t === 'msg') await this.relay(player, msg);
       else if (isSnap) await this.storeSnapshot(player, msg);
       else if (isWelcomeState) {

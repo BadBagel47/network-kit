@@ -25,7 +25,15 @@ export function gameApi(store) {
     async lobbyRoom(game, id, room) {
       return (await post('/lobby-room', { game: String(game), id: String(id), room })).json();
     },
-    /** An anonymous connection-quality summary from one of the game's pages (F-052). */
+    /**
+     * A room is about to be created (F-098, added in 0.16): { ok } or
+     * { ok: false, reason: 'too-many-rooms' } when the game has made too many
+     * this hour, or this visitor (an address, IPv6 by /64) too many today.
+     */
+    async roomCreated(game, visitor) {
+      return (await post('/room-created', { game: String(game), visitor: String(visitor ?? '') })).json();
+    },
+        /** An anonymous connection-quality summary from one of the game's pages (F-052). */
     async measure(game, summary) {
       await post('/measure', { game: String(game), summary });
     },
