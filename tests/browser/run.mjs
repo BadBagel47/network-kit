@@ -28,6 +28,8 @@ async function page(name) {
 try {
   const a = await page('Ada');
   await a.p.goto(`${server.base}/`);
+  // B-116: no text on the page can be selected (the iPad's text menu), fields can.
+  assert.deepEqual(await a.p.evaluate(() => [getComputedStyle(document.querySelector('h1')).userSelect, getComputedStyle(document.querySelector('#name')).userSelect]), ['none', 'text']);
   // The steering keys can be typed in the name field (B-041).
   await a.p.click('#name');
   await a.p.keyboard.type('Wasd ArrowKeys');

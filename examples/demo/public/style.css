@@ -1,4 +1,10 @@
 :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; }
+/* B-116: no text on the demo's pages can be selected, so quick taps on the
+   steering buttons do not open the iPad's text menu; fields to type in still can
+   (Safari will not type in a field whose ancestors forbid selection). */
+body { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable] { user-select: text; -webkit-user-select: text; }
+a[href] { -webkit-touch-callout: default; }
 main { max-width: 640px; margin: 0 auto; padding: 16px; }
 h1 { font-size: 1.3rem; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
