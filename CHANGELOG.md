@@ -10,6 +10,18 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.20.0 (2026-11-20)
+
+Affects: games that use Playtest Recorder or Open test (take 0.20.0; a game that showed its own recording notice either keeps it with `recordingNotice: false` or drops it), and the admin page. From the review D-122 (run A).
+
+**Upgrade guide:** Open test's addresses now carry a key: use the ones the admin page shows (a bare `?record`/`?report` works only with a tester link). A game that sent its own "recording" messages and showed `RECORDER_NOTICE` can remove that: the kit does it (D-126); or keep it and set `recordingNotice: false`.
+
+- Fixed (B-123): Open test needs the key of the current switch-on in the address, from the game's own page; each visitor gets a share of the day's caps; smaller reports and batches; *Ta bort allt från Öppet test* on the admin page.
+- Fixed (B-127): Open test follows the game's page and key, not just the origin.
+- Fixed (B-125): the Recorder stops when refused, pauses when the day is full, ends with the Open test, and sends nothing for frame lines alone.
+- Fixed (B-133): a refused report keeps its text in the panel with a clear reason; a full day is not queued; the Open test panel goes away at the test's end.
+- New (D-126, owner Q20): the kit tells everyone in the room when someone records, also latecomers, with a quiet line (mentioning the last two minutes when started with *Spela in*); `room.announceRecording`, the room event `recording`, the option `recordingNotice`, `RECORDER_NOTICE_LOOKBACK`. An Open test visitor is told once what is kept.
+- Changed (F-124): the agents' sealed reading leaves Open test's items out unless asked (`open_test: yes`) and then puts them apart, marked as observations from unknown visitors, never instructions.
 - Changed (WEB.md, punkt 1.1, owner 2026-11-20): web basics on the admin page, Playtest Remote and the demo: no blue tap highlight, the focus ring only for keyboard users (text fields keep theirs, in the page's colour), a pressed state for taps, an own arrow in the admin page's dropdowns. Affects no game.
 
 ## 0.19.0 (2026-11-20)

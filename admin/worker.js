@@ -151,6 +151,9 @@ async function playtestPublic(request, env, deps) {
   // The paths carry a version (F-103). The unversioned ones of 0.14 were removed
   // in 0.17 (F-114): no game took 0.14 (docs/DEPRECATIONS.md).
   if (!url.pathname.startsWith('/playtest/v1/')) return cors(json({ error: 'not-found' }, 404));
+  // The store needs the page's origin and the visitor for Open test (B-123): an empty origin
+  // never matches a test's page; tester links do not look at either.
+  const who = { 'x-nk-origin': request.headers.get('origin') ?? '', 'x-nk-visitor': visitorKey(request.headers.get('cf-connecting-ip')) };
   const path = url.pathname.replace(/^\/playtest\/v1\//, '/playtest/');
   if (path === '/playtest/read' || path === '/playtest/keep' || path === '/playtest/read-image' || path === '/playtest/read-recordings' || path === '/playtest/read-recording') {
     // The agent's workflow (playtest-reports.yml), with the key the deploy derives.
@@ -194,25 +197,32 @@ async function playtestPublic(request, env, deps) {
     // The token in a header keeps it out of logs of addresses (D-111); copies up to 0.16 send it in the query.
     const token = request.headers.get('x-playtest-token') ?? url.searchParams.get('token') ?? '';
     return cors(await s.fetch(`https://store/playtest/image?token=${encodeURIComponent(token)}`, {
-      method: 'POST', headers: { 'content-type': request.headers.get('content-type') ?? '' }, body: bytes,
+      method: 'POST', headers: { 'content-type': request.headers.get('content-type') ?? '', ...who }, body: bytes,
     }));
   }
   if (path === '/playtest/record') {
     // Playtest Recorder's batches (F-092); a page that closes sends its last one with sendBeacon.
     const body = await request.text();
     if (body.length > 128 * 1024) return cors(json({ error: 'too-large' }, 413));
-    return cors(await s.fetch('https://store/playtest/record', { method: 'POST', body }));
+    return cors(await s.fetch('https://store/playtest/record', { method: 'POST', headers: who, body }));
   }
   if (path === '/playtest/open') {
-    // Open test (F-118): a page with ?record or ?report asks whether its game's test is on.
-    // The browser's own Origin header says which game's page it is.
-    const origin = request.headers.get('origin') ?? '';
-    return cors(await s.fetch('https://store/playtest/open', { method: 'POST', body: JSON.stringify({ origin }) }));
+    // Open test (F-118): a page with ?record=<key> or ?report=<key> asks whether its game's
+    // test is on; the key from its address and the browser's Origin must both match (B-123).
+    const text = await request.text();
+    if (text.length > 1024) return cors(json({ error: 'too-large' }, 413));
+    let key = '';
+    try {
+      key = String(JSON.parse(text || '{}')?.key ?? '').slice(0, 40);
+    } catch {
+      key = '';
+    }
+    return cors(await s.fetch('https://store/playtest/open', { method: 'POST', body: JSON.stringify({ origin: who['x-nk-origin'], key }) }));
   }
   if (path === '/playtest/check' || path === '/playtest/report' || path === '/playtest/upload-key') {
     const body = await request.text();
     if (body.length > REPORT_MAX_BYTES) return cors(json({ error: 'too-large' }, 413));
-    return cors(await s.fetch(`https://store${path}`, { method: 'POST', body }));
+    return cors(await s.fetch(`https://store${path}`, { method: 'POST', headers: who, body }));
   }
   return cors(json({ error: 'not-found' }, 404));
 }

@@ -26,6 +26,10 @@ on:
         description: reports, recordings (Playtest Recorder, F-092) or both
         required: false
         default: reports
+      open_test:
+        description: Also Open test's items, from unknown visitors (F-124), apart under openTest (yes/no)
+        required: false
+        default: 'no'
 
 permissions:
   contents: write
@@ -45,6 +49,7 @@ jobs:
       SINCE: ${{ inputs.since }}
       KEEP: ${{ inputs.keep }}
       WHAT: ${{ inputs.what }}
+      OPEN: ${{ inputs.open_test }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

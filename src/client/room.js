@@ -11,6 +11,7 @@
 // that cannot reach the server slows down and finally gives up, so a
 // forgotten tab does not keep knocking for ever.
 
+import { RECORDER_NOTICE, RECORDER_NOTICE_LOOKBACK } from './playtest-entry.js';
 import { readLobbyLink, forgetLobbyLink } from './lobby.js';
 import {
   PROTOCOL, CLOSE, CLOSE_TEXT, FINAL_CLOSE_CODES, gameClosedText, normalizeCode, isValidCode, PART_CHARS, splitIntoParts, PartJoiner,
@@ -95,6 +96,10 @@ export class NetworkRoom {
     this.WebSocket = o.WebSocket ?? globalThis.WebSocket;
     this.win = o.window ?? (typeof window !== 'undefined' ? window : null);
     this.doc = o.document ?? (typeof document !== 'undefined' ? document : null);
+    // Playtest Recorder in the room (D-126, owner Q20): who records, and the kit's own
+    // notice to everyone else, unless the game shows its own (recordingNotice: false).
+    this.recorders = new Map(); // participant id → { lookback }
+    this.recordingNotice = o.recordingNotice !== false;
     this.minDelayMs = o.minDelayMs ?? 500;
     this.maxDelayMs = o.maxDelayMs ?? 15_000;
     this.slowDelayMs = o.slowDelayMs ?? 60_000; // retry pace after slowAfterMs or in a hidden tab
@@ -584,6 +589,7 @@ export class NetworkRoom {
   disconnect() {
     if (this.stopped) return;
     this.stopped = true;
+    this.showRecordingNotice?.(null);
     this.stopTimers();
     this.setStatus('closed');
     if (this.firstWelcome && !this.firstWelcome.done) {
@@ -642,6 +648,10 @@ export class NetworkRoom {
         this.applyRoom(msg.room);
         break;
       case 'msg':
+        if (msg.d && typeof msg.d === 'object' && msg.d.__nk === 'recording') {
+          this.recordingHeard(msg.from, msg.d);
+          break; // the kit's own message, never the game's
+        }
         if (msg.from === this.room?.hostId) {
           this.lastHostData = Date.now();
           this.measure?.hostMessage();
@@ -676,6 +686,7 @@ export class NetworkRoom {
           event: msg.e, id: msg.id, why: msg.why, name: msg.name ?? this.player(msg.id)?.name ?? null,
           returning: msg.returning === true, player: this.player(msg.id),
         });
+        this.recordingPeer(msg.e, msg.id);
         break;
       case 'ok':
         this.emit('ok', { command: msg.c, n: msg.n });
@@ -991,7 +1002,73 @@ export class NetworkRoom {
    * Leave on purpose. An owner leaving closes the room unless the game passes
    * ownership on. A host may pass a last `snapshot` for whoever continues.
    */
+  // ---- Playtest Recorder in the room (D-126, owner Q20)
+
+  /**
+   * This browser records (or stops): everyone in the room is told, also those who
+   * join later. A player's message reaches only the host, so the host passes it on.
+   */
+  announceRecording(on, { lookback = false } = {}) {
+    const note = { __nk: 'recording', on: Boolean(on), lookback: Boolean(lookback) };
+    if (this.me) {
+      if (on) this.recorders.set(this.me, { lookback: note.lookback });
+      else this.recorders.delete(this.me);
+    }
+    if (this.isHost) return this.send({ ...note, by: this.me });
+    return this.send(note);
+  }
+
+  recordingHeard(from, d) {
+    const id = typeof d.by === 'string' ? d.by : from;
+    if (d.on) this.recorders.set(id, { lookback: Boolean(d.lookback) });
+    else this.recorders.delete(id);
+    // The host passes a player's word on to the others.
+    if (this.isHost && typeof d.by !== 'string' && from !== this.me) this.send({ __nk: 'recording', on: Boolean(d.on), lookback: Boolean(d.lookback), by: from });
+    this.recordingChanged();
+  }
+
+  recordingPeer(event, id) {
+    if (event === 'gone' && this.recorders.delete(id)) this.recordingChanged();
+    // The host tells whoever comes in or back who records.
+    if (this.isHost && (event === 'join' || event === 'back') && id !== this.me) {
+      for (const [by, r] of this.recorders) this.send({ __nk: 'recording', on: true, lookback: r.lookback, by }, { to: [id] });
+    }
+  }
+
+  /** Who records, other than this browser; the game hears it as the event 'recording'. */
+  recordingChanged() {
+    const others = [...this.recorders].filter(([id]) => id !== this.me);
+    const lookback = others.some(([, r]) => r.lookback);
+    this.emit('recording', { recording: others.length > 0, by: others.map(([id]) => id), lookback });
+    this.showRecordingNotice(others.length > 0 ? (lookback ? RECORDER_NOTICE_LOOKBACK : RECORDER_NOTICE) : null);
+  }
+
+  showRecordingNotice(text) {
+    const doc = this.doc;
+    if (!this.recordingNotice || !doc?.documentElement) return;
+    if (!text) {
+      this.recordingNoticeEl?.remove();
+      this.recordingNoticeEl = null;
+      return;
+    }
+    if (!this.recordingNoticeEl) {
+      const el = doc.createElement('div');
+      el.setAttribute('role', 'status');
+      // A quiet line (owner Q1); styles through the CSSOM for a strict Content-Security-Policy.
+      Object.assign(el.style, {
+        position: 'fixed', left: '50%', bottom: '8px', transform: 'translateX(-50%)', zIndex: '2147481998', pointerEvents: 'none',
+        maxWidth: 'calc(100vw - 24px)', font: '13px/1.35 system-ui, sans-serif', color: '#e6edf3', background: 'rgba(40, 44, 52, .88)',
+        padding: '4px 10px', borderRadius: '8px', textAlign: 'center',
+      });
+      doc.documentElement.append(el);
+      this.recordingNoticeEl = el;
+    }
+    this.recordingNoticeEl.textContent = text;
+  }
+
   leave(snapshot) {
+    this.recorders.clear();
+    this.showRecordingNotice(null);
     if (this.stopped) return;
     if (snapshot !== undefined && this.isHost) this.sendSnapshot(snapshot, { force: true });
     this.command('leave');

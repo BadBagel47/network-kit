@@ -221,38 +221,42 @@ test('F-092: Playtest Recorder keeps a session in batches; the owner and the age
   assert.equal((await (await call('/api/recordings', { headers: { cookie } })).json()).length, 0, 'gone after 30 days');
 });
 
-test('F-118: Open test lets a page of the game report and record without a tester link, only while on, under its own caps', async () => {
+test('F-118, B-123, B-127: Open test needs the key of this switch-on and the game\'s page, gives each visitor a share, and is removed in one go', async () => {
   const { env, call, tick } = setup();
   const cookie = `nk_admin=${await newSession(env)}`;
-  const page = { 'content-type': 'text/plain', origin: 'https://bricks.trythis.one' };
-  const open = () => call('/playtest/v1/open', { method: 'POST', headers: page, body: '{}' });
-  assert.equal((await open()).status, 404, 'off by default');
+  const page = { 'content-type': 'text/plain', origin: 'https://bricks.trythis.one', 'cf-connecting-ip': '198.51.100.7' };
+  const open = (key, headers = page) => call('/playtest/v1/open', { method: 'POST', headers, body: JSON.stringify({ key }) });
+  assert.equal((await open('x')).status, 404, 'off by default');
 
   const set = await (await call('/api/open-tests', { method: 'POST', headers: { cookie }, body: JSON.stringify({ game: 'bricks', page: 'https://bricks.trythis.one/', hours: 24 }) })).json();
   assert.equal(set.until - NOW, 6 * 3_600_000, 'at most six hours (owner Q6)');
-  const listed = await (await call('/api/open-tests', { headers: { cookie } })).json();
-  assert.deepEqual(listed.map((o) => [o.game, o.state]), [['bricks', 'on']]);
-
-  assert.equal((await call('/playtest/v1/open', { method: 'POST', headers: { ...page, origin: 'https://other.example' }, body: '{}' })).status, 404, 'only the game\'s own page');
-  const got = await (await open()).json();
+  assert.match(set.key, /^[A-Za-z0-9_-]{12}$/);
+  assert.equal((await open('')).status, 404, 'no key, no test (B-123)');
+  assert.equal((await open('wrong-key')).status, 404);
+  assert.equal((await open(set.key, { ...page, origin: 'https://other.example' })).status, 404, 'only the game\'s own page (B-127)');
+  const got = await (await open(set.key)).json();
   assert.equal(got.game, 'bricks');
-  assert.equal(got.open, true);
   const { token } = got;
+  assert.equal(token, `pto_bricks.${set.key}`);
+
+  // The game's name alone is not enough any more (B-123).
+  assert.equal((await call('/playtest/v1/report', { method: 'POST', headers: page, body: JSON.stringify({ token: 'pto_bricks', report: { result: 'note', text: 'x' } }) })).status, 401);
+  assert.equal((await call('/playtest/v1/report', { method: 'POST', headers: { ...page, origin: 'https://other.example' }, body: JSON.stringify({ token, report: { result: 'note', text: 'x' } }) })).status, 401, 'another site\'s page is refused');
+  assert.equal((await call('/playtest/v1/report', { method: 'POST', headers: page, body: JSON.stringify({ token, report: { result: 'note', text: 'x'.repeat(17_000) } }) })).status, 413, 'Open test reports are small');
 
   // A report with an optional name (owner Q8), marked as Open test.
   assert.equal((await call('/playtest/v1/report', { method: 'POST', headers: page, body: JSON.stringify({ token, report: { result: 'failed', text: 'Stuck at level 2', name: 'Kim' } }) })).status, 200);
   const reports = await (await call('/api/reports?game=bricks', { headers: { cookie } })).json();
   assert.equal(reports[0].tester, 'Öppet test · Kim');
   assert.equal(reports[0].open, true);
-  // A recording.
+  // A recording; a name typed later comes with the next batch.
   assert.equal((await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 0, events: [{ t: 0, k: 'room', d: null }] }) })).status, 200);
   let recordings = await (await call('/api/recordings?game=bricks', { headers: { cookie } })).json();
   assert.equal(recordings[0].tester, 'Öppet test');
-  // A name typed after the start comes with the next batch.
-  await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 1, events: [], name: 'Mobil' }) });
+  assert.equal(recordings[0].open, true);
+  await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 1, events: [{ t: 1, k: 'x', d: null }], name: 'Mobil' }) });
   recordings = await (await call('/api/recordings?game=bricks', { headers: { cookie } })).json();
   assert.equal(recordings[0].tester, 'Öppet test · Mobil');
-  assert.equal(recordings[0].open, true);
   // No Playtest Remote: no upload key, no room.
   assert.equal((await call('/playtest/v1/upload-key', { method: 'POST', headers: page, body: JSON.stringify({ token }) })).status, 403);
   let made = 0;
@@ -260,16 +264,32 @@ test('F-118: Open test lets a page of the game report and record without a teste
   assert.equal((await call('/playtest/rooms', { method: 'POST', headers: page, body: JSON.stringify({ adminPass: token }) })).status, 401);
   assert.equal(made, 0, 'no Remote room for an Open test token');
 
-  // Caps per game and day (owner Q9): 50 reports.
+  // Each visitor a share (B-123): 10 reports a day, then others still can.
+  const send = (ip) => call('/playtest/v1/report', { method: 'POST', headers: { ...page, 'cf-connecting-ip': ip }, body: JSON.stringify({ token, report: { result: 'note', text: 'n' } }) });
   let last = 200;
-  for (let i = 0; i < 60 && last === 200; i += 1) {
-    last = (await call('/playtest/v1/report', { method: 'POST', headers: page, body: JSON.stringify({ token, report: { result: 'note', text: `n${i}` } }) })).status;
-    if (last === 200) tick(1500); // under the per-minute brake
+  let sent = 1; // Kim's report above came from this visitor
+  while (last === 200 && sent < 30) {
+    last = (await send('198.51.100.7')).status;
+    if (last === 200) sent += 1;
+    tick(1500);
   }
-  assert.equal(last, 429, 'the day\'s cap is reached');
+  assert.equal(last, 429);
+  assert.equal(sent, 10, 'one visitor sends at most 10 reports a day');
+  assert.equal((await send('203.0.113.9')).status, 200, 'another visitor still can');
 
-  // Switched off: the token stops working at once.
+  // Ta bort allt från Öppet test: the test's reports and recordings, not the tester links'.
+  const tester = await (await call('/api/testers', { method: 'POST', headers: { cookie }, body: JSON.stringify({ game: 'bricks', label: 'Ägaren', hours: 24 }) })).json();
+  await call('/playtest/v1/report', { method: 'POST', headers: page, body: JSON.stringify({ token: tester.token, report: { result: 'worked', text: 'mine' } }) });
+  const removed = await (await call('/api/open-tests/bricks/data', { method: 'DELETE', headers: { cookie } })).json();
+  assert.deepEqual(removed, { reports: 11, recordings: 1 });
+  const left = await (await call('/api/reports?game=bricks', { headers: { cookie } })).json();
+  assert.deepEqual(left.map((r) => r.text), ['mine']);
+
+  // Switched off: the token stops working at once; switched on again, the old key is useless.
   await call('/api/open-tests/bricks', { method: 'DELETE', headers: { cookie } });
-  assert.equal((await open()).status, 404);
+  assert.equal((await open(set.key)).status, 404);
   assert.equal((await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 2, events: [] }) })).status, 401);
+  const again = await (await call('/api/open-tests', { method: 'POST', headers: { cookie }, body: JSON.stringify({ game: 'bricks', page: 'https://bricks.trythis.one/', hours: 1 }) })).json();
+  assert.notEqual(again.key, set.key);
+  assert.equal((await open(set.key)).status, 404, 'the old addresses are useless');
 });

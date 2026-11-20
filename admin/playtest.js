@@ -12,7 +12,8 @@
 //   ptu:<id>              an upload key for Playtest Remote (B-094): pictures only, a few hours
 //   rcs:<session>         a Playtest Recorder session's facts (F-092): game, tester, times, counts
 //   rck:<session>:<seq>   one batch of a session's events (about a minute)
-//   ot:<game>             Open test (F-118): the game's page and until when anyone with ?record or ?report takes part
+//   ot:<game>             Open test (F-118): the game's page, its key and until when anyone with the test's addresses takes part
+//   ptv:<game>:<visitor>:<day>  Open test: what one visitor sent that day (B-123)
 //
 // They live in a Durable Object of their own (PlaytestStore, F-095), so pictures
 // never slow the games' status checks in the admin page's main store.
@@ -27,6 +28,9 @@ export const OPEN_PREFIX = 'pto_';
 export const OPEN_MAX_HOURS = 6;
 const OPEN_KEEP_MS = 86_400_000; // an ended open test stays listed a day
 const PER_DAY_OPEN = { report: 50, image: 100, chunk: 300 }; // per game and UTC day
+const PER_VISITOR_OPEN = { report: 10, image: 20, chunk: 90 }; // per visitor, game and UTC day: nobody takes the whole day (B-123)
+const OPEN_REPORT_MAX = 16 * 1024; // Open test reports and batches are smaller than a tester link's (B-123)
+const OPEN_CHUNK_MAX = 32 * 1024;
 export const UPLOAD_KEY_MS = 6 * 60 * 60_000; // an upload key for Playtest Remote lasts six hours
 export const REPORT_KEEP_MS = 30 * 86_400_000; // owner 2026-11-19
 export const KEEP_MAX = 50; // reports marked Behåll per game (owner 2026-11-19)
@@ -177,7 +181,10 @@ export class Playtest {
     }
     const now = this.now();
     const h = Math.min(OPEN_MAX_HOURS, Math.max(0.25, Number(hours) || 2));
-    const open = { game, page: text(page, 500), origin, since: now, until: now + Math.round(h * 3_600_000) };
+    // A new key each time it is switched on (B-123): only the addresses the admin page shows work,
+    // and switching off and on again makes old addresses useless.
+    const key = b64url(crypto.getRandomValues(new Uint8Array(9)));
+    const open = { game, page: text(page, 500), origin, key, since: now, until: now + Math.round(h * 3_600_000) };
     await this.storage.put(`ot:${game}`, open);
     await this.log(game, `Öppet test på för ${game} till ${new Date(open.until).toISOString().slice(11, 16)} UTC`, 'link');
     return { ...open, state: 'on' };
@@ -191,25 +198,50 @@ export class Playtest {
     await this.log(game, `Öppet test avslaget för ${game}`, 'link');
   }
 
-  /** The open test a page of this origin takes part in, as the panel needs it, or null. */
-  async openFor(origin) {
+  /** The open test this page takes part in: its origin and the key in its address must match (B-123, B-127). */
+  async openFor(origin, key) {
     const now = this.now();
+    if (!key || typeof key !== 'string') return null;
     for (const o of (await this.storage.list({ prefix: 'ot:' })).values()) {
-      if (o.until > now && o.origin === origin) {
-        return { game: o.game, label: 'Öppet test', expires: o.until, reported: [], open: true, token: `${OPEN_PREFIX}${o.game}` };
+      if (o.until > now && o.origin === origin && o.key && o.key === key) {
+        return { game: o.game, label: 'Öppet test', expires: o.until, reported: [], open: true, token: `${OPEN_PREFIX}${o.game}.${o.key}` };
       }
     }
     return null;
   }
 
+  /** *Ta bort allt från Öppet test* (B-123): every report and recording an Open test brought in for a game. */
+  async removeOpenData(game) {
+    const gone = [];
+    let reports = 0;
+    let recordings = 0;
+    for (const [key, r] of await this.storage.list({ prefix: 'rep:' })) {
+      if (r.game === game && r.open) {
+        gone.push(key, ...r.images.flatMap((i) => [`img:${i}`, `imgd:${i}`]));
+        reports += 1;
+      }
+    }
+    for (const m of (await this.storage.list({ prefix: 'rcs:' })).values()) {
+      if (m.game === game && m.open) {
+        gone.push(...this.recordingKeys(m));
+        recordings += 1;
+      }
+    }
+    for (let i = 0; i < gone.length; i += 128) await this.storage.delete(gone.slice(i, i + 128));
+    if (reports || recordings) await this.log(game, `Allt från Öppet test borttaget för ${game} (${reports} rapporter, ${recordings} inspelningar)`, 'link');
+    return { reports, recordings };
+  }
+
   /** The tester link behind a token, if it works now; an Open test token while its test is on. */
-  async testerFor(token) {
+  async testerFor(token, { origin = null } = {}) {
     const raw = String(token ?? '');
     if (raw.startsWith(OPEN_PREFIX)) {
-      const game = raw.slice(OPEN_PREFIX.length);
-      if (!validGame(game)) return null;
+      // pto_<game>.<key>: the key of this switch-on, and the page's own origin (B-123).
+      const [game, key] = raw.slice(OPEN_PREFIX.length).split('.');
+      if (!validGame(game) || !key) return null;
       const o = await this.storage.get(`ot:${game}`);
-      if (!o || o.until <= this.now()) return null;
+      if (!o || o.until <= this.now() || !o.key || o.key !== key) return null;
+      if (origin !== null && origin !== o.origin) return null;
       return { id: `open-${game}`, game, label: 'Öppet test', open: true, expires: o.until };
     }
     if (!raw.startsWith(TESTER_PREFIX)) return null;
@@ -221,10 +253,18 @@ export class Playtest {
     return t;
   }
 
-  async count(tester, kind) {
+  async count(tester, kind, visitor = '') {
     const key = `ptn:${tester.id}:${day(this.now())}`;
     const n = { report: 0, image: 0, chunk: 0, ...((await this.storage.get(key)) ?? {}) };
     if (n[kind] >= (tester.open ? PER_DAY_OPEN : PER_DAY)[kind]) return false;
+    if (tester.open) {
+      // Each visitor a share of the game's day (B-123).
+      const vkey = `ptv:${tester.game}:${String(visitor || 'unknown').slice(0, 80)}:${day(this.now())}`;
+      const v = { report: 0, image: 0, chunk: 0, ...((await this.storage.get(vkey)) ?? {}) };
+      if (v[kind] >= PER_VISITOR_OPEN[kind]) return false;
+      v[kind] += 1;
+      await this.storage.put(vkey, v);
+    }
     n[kind] += 1;
     await this.storage.put(key, n);
     if (!tester.open && this.now() - (tester.lastUsed ?? 0) > 3_600_000) {
@@ -237,8 +277,8 @@ export class Playtest {
   // ---- what a tester's browser asks
 
   /** { game, label, expires, reported: [test ids sent in the last 30 days] } or null. */
-  async check(token) {
-    const t = await this.testerFor(token);
+  async check(token, ctx = {}) {
+    const t = await this.testerFor(token, ctx);
     if (!t) return null;
     if (t.open) return { game: t.game, label: t.label, expires: t.expires, reported: [], open: true };
     const reported = new Set();
@@ -252,8 +292,8 @@ export class Playtest {
    * A short-lived key that only lets Playtest Remote send pictures for this
    * tester (B-094): the tester link's own token never leaves the game page.
    */
-  async createUploadKey(token) {
-    const t = await this.testerFor(token);
+  async createUploadKey(token, ctx = {}) {
+    const t = await this.testerFor(token, ctx);
     if (!t) return { error: 'no-tester', status: 401 };
     if (t.open) return { error: 'open-test', status: 403 }; // Playtest Remote needs a tester link
     const id = b64url(crypto.getRandomValues(new Uint8Array(6)));
@@ -275,12 +315,12 @@ export class Playtest {
     return t && !t.revoked && t.expires > this.now() ? t : null;
   }
 
-  async addImage(token, type, bytes) {
-    const t = (await this.testerFor(token)) ?? (await this.testerForUpload(token));
+  async addImage(token, type, bytes, ctx = {}) {
+    const t = (await this.testerFor(token, ctx)) ?? (await this.testerForUpload(token));
     if (!t) return { error: 'no-tester', status: 401 };
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) return { error: 'bad-type', status: 415 };
     if (!bytes?.byteLength || bytes.byteLength > IMAGE_MAX_BYTES) return { error: 'too-large', status: 413 };
-    if (!(await this.count(t, 'image'))) return { error: 'too-many', status: 429 };
+    if (!(await this.count(t, 'image', ctx.visitor))) return { error: 'too-many', status: 429 };
     const id = b64url(crypto.getRandomValues(new Uint8Array(9)));
     let binary = '';
     const view = new Uint8Array(bytes);
@@ -290,10 +330,11 @@ export class Playtest {
     return { id };
   }
 
-  async addReport(token, raw) {
-    const t = await this.testerFor(token);
+  async addReport(token, raw, ctx = {}) {
+    const t = await this.testerFor(token, ctx);
     if (!t) return { error: 'no-tester', status: 401 };
-    if (!(await this.count(t, 'report'))) return { error: 'too-many', status: 429 };
+    if (t.open && JSON.stringify(raw ?? {}).length > OPEN_REPORT_MAX) return { error: 'too-large', status: 413 };
+    if (!(await this.count(t, 'report', ctx.visitor))) return { error: 'too-many', status: 429 };
     const report = cleanReport(raw);
     const now = this.now();
     const id = b64url(crypto.getRandomValues(new Uint8Array(6)));
@@ -363,13 +404,14 @@ export class Playtest {
   // ---- Playtest Recorder (F-092)
 
   /** One batch of a recording session: { session, seq, events: [{ t, k, d }], context }. */
-  async addRecording(token, raw) {
-    const t = await this.testerFor(token);
+  async addRecording(token, raw, ctx = {}) {
+    const t = await this.testerFor(token, ctx);
     if (!t) return { error: 'no-tester', status: 401 };
+    if (t.open && JSON.stringify(raw ?? {}).length > OPEN_CHUNK_MAX) return { error: 'too-large', status: 413 };
     const session = String(raw?.session ?? '');
     const seq = Number(raw?.seq);
     if (!SESSION_ID.test(session) || !Number.isInteger(seq) || seq < 0 || seq >= RECORDING_CHUNKS_MAX) return { error: 'bad-chunk', status: 400 };
-    if (!(await this.count(t, 'chunk'))) return { error: 'too-many', status: 429 };
+    if (!(await this.count(t, 'chunk', ctx.visitor))) return { error: 'too-many', status: 429 };
     const now = this.now();
     const metaKey = `rcs:${session}`;
     const meta = (await this.storage.get(metaKey)) ?? {
@@ -465,8 +507,10 @@ export class Playtest {
     for (const [key, u] of await this.storage.list({ prefix: 'ptu:' })) {
       if (u.expires <= now) gone.push(key);
     }
-    for (const key of (await this.storage.list({ prefix: 'ptn:' })).keys()) {
-      if (key.slice(-10) < day(now - 2 * 86_400_000)) gone.push(key);
+    for (const prefix of ['ptn:', 'ptv:']) {
+      for (const key of (await this.storage.list({ prefix })).keys()) {
+        if (key.slice(-10) < day(now - 2 * 86_400_000)) gone.push(key);
+      }
     }
     for (let i = 0; i < gone.length; i += 128) await this.storage.delete(gone.slice(i, i + 128));
   }
@@ -497,28 +541,33 @@ export class PlaytestStore {
     const path = url.pathname;
     const body = async () => (request.method === 'POST' ? request.json().catch(() => ({})) : {});
     const answer = (r) => json(r, r?.status ?? (r?.error ? 400 : 200));
+    // Who asks, as the admin Worker passes it on (B-123): the page's origin and the visitor.
+    const ctx = { origin: request.headers.get('x-nk-origin'), visitor: request.headers.get('x-nk-visitor') ?? '' };
     // What a tester's browser asks (through the admin Worker's /playtest/ paths).
     if (path === '/playtest/check' && request.method === 'POST') {
-      const found = await pt.check((await body()).token);
+      const found = await pt.check((await body()).token, ctx);
       return found ? json(found) : json({ error: 'no-tester' }, 401);
     }
     if (path === '/playtest/open' && request.method === 'POST') {
-      const found = await pt.openFor(String((await body()).origin ?? ''));
+      const asked = await body();
+      const found = await pt.openFor(String(asked.origin ?? ''), String(asked.key ?? ''));
       return found ? json(found) : json({ error: 'not-open' }, 404);
     }
     if (path === '/open-tests' && request.method === 'GET') return json(await pt.openTests());
     if (path === '/open-tests' && request.method === 'POST') return answer(await pt.setOpenTest(await body()));
+    const otData = path.match(/^\/open-tests\/([a-z0-9][a-z0-9-]{0,62})\/data$/);
+    if (otData && request.method === 'DELETE') return json(await pt.removeOpenData(otData[1]));
     const ot = path.match(/^\/open-tests\/([a-z0-9][a-z0-9-]{0,62})$/);
     if (ot && request.method === 'DELETE') {
       await pt.stopOpenTest(ot[1]);
       return json({ ok: true });
     }
     if (path === '/playtest/upload-key' && request.method === 'POST') {
-      return answer(await pt.createUploadKey((await body()).token));
+      return answer(await pt.createUploadKey((await body()).token, ctx));
     }
     if (path === '/playtest/record' && request.method === 'POST') {
       const { token, ...chunk } = await body();
-      return answer(await pt.addRecording(token, chunk));
+      return answer(await pt.addRecording(token, chunk, ctx));
     }
     if (path === '/recordings' && request.method === 'GET') {
       return json(await pt.recordings({ game: url.searchParams.get('game') || null, since: Number(url.searchParams.get('since')) || 0 }));
@@ -535,11 +584,11 @@ export class PlaytestStore {
     }
     if (path === '/playtest/report' && request.method === 'POST') {
       const { token, report } = await body();
-      return answer(await pt.addReport(token, report));
+      return answer(await pt.addReport(token, report, ctx));
     }
     if (path === '/playtest/image' && request.method === 'POST') {
       const bytes = await request.arrayBuffer();
-      return answer(await pt.addImage(url.searchParams.get('token'), request.headers.get('content-type') ?? '', bytes));
+      return answer(await pt.addImage(url.searchParams.get('token'), request.headers.get('content-type') ?? '', bytes, ctx));
     }
     // The owner's and the agent's view.
     if (path === '/testers' && request.method === 'GET') return json(await pt.testers());

@@ -1111,10 +1111,11 @@ $('new-tester').addEventListener('submit', async (e) => {
 
 /* ---------- Open test (F-118): ready addresses, no tester link ---------- */
 
-/** The page's address with ?record, ?report or both (owner Q10: never typed by hand). */
-function openAddress(page, ask) {
+/** The page's address with ?record, ?report or both and this switch-on's key (owner Q10, B-123: never typed by hand). */
+function openAddress(page, ask, key) {
   const base = String(page).split('#')[0];
-  return `${base}${base.includes('?') ? '&' : '?'}${ask}`;
+  const query = ask.split('&').map((a) => `${a}=${encodeURIComponent(key)}`).join('&');
+  return `${base}${base.includes('?') ? '&' : '?'}${query}`;
 }
 
 function openItem(o) {
@@ -1123,16 +1124,29 @@ function openItem(o) {
   info.append(el('span', { class: 'title' }, o.state === 'on' ? `${o.game} · på till ${clock(o.until)}` : `${o.game} · avslaget ${clock(o.until)}`));
   info.append(el('span', { class: 'sub' }, o.page));
   item.append(info);
-  if (o.state !== 'on') return item;
+  // Everything this game's Open test brought in, in one go (B-123).
+  const wipe = el('button', { type: 'button' }, 'Ta bort allt från Öppet test');
+  wipe.addEventListener('click', async () => {
+    if (!confirm(`Ta bort alla rapporter och inspelningar från Öppet test för ${o.game}? Testarlänkarnas finns kvar.`)) return;
+    const res = await fetch(`/api/open-tests/${encodeURIComponent(o.game)}/data`, { method: 'DELETE' });
+    const done = res.ok ? await res.json() : null;
+    wipe.textContent = done ? `Borttaget: ${done.reports} rapporter, ${done.recordings} inspelningar` : `Gick inte (${res.status})`;
+    loadReports().catch(() => {});
+    loadRecordings().catch(() => {});
+  });
+  if (o.state !== 'on') {
+    item.append(wipe);
+    return item;
+  }
   const stop = el('button', { type: 'button' }, 'Slå av');
   stop.addEventListener('click', async () => {
     await fetch(`/api/open-tests/${encodeURIComponent(o.game)}`, { method: 'DELETE' });
     loadOpenTests();
   });
-  item.append(stop);
+  item.append(stop, wipe);
   const addresses = el('div', { class: 'open-addresses' });
   for (const [ask, what] of [['record', 'Spelar in'], ['report', 'Visar Playtest-rutan för att rapportera'], ['record&report', 'Båda']]) {
-    const link = openAddress(o.page, ask);
+    const link = openAddress(o.page, ask, o.key);
     const copyButton = el('button', { type: 'button' }, 'Kopiera');
     copyButton.addEventListener('click', () => copy(copyButton, link));
     const qr = el('button', { type: 'button' }, 'QR-kod');

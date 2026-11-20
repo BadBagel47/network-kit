@@ -38,6 +38,8 @@ export async function startPlaytest(options = {}) {
 
 /** What a game shows the other players while a browser in the room records (F-092, owner Q8). */
 export const RECORDER_NOTICE = 'This match is being recorded for a playtest.';
+/** The same when the recording was started with *Spela in* and took the last two minutes along (D-126). */
+export const RECORDER_NOTICE_LOOKBACK = 'This match is being recorded for a playtest, including the last two minutes.';
 
 /**
  * Starts Playtest Recorder (F-092) when this browser has a tester link, or the

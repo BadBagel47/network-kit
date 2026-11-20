@@ -233,8 +233,16 @@ try {
   await owner.getByRole('button', { name: 'Länkar och meddelanden' }).click();
   await owner.locator('#open-tests .open-address').nth(2).waitFor();
   const addresses = await owner.locator('#open-tests .open-address code').allInnerTexts();
-  assert.deepEqual(addresses.map((a) => a.split('&').slice(-1)[0]), ['record', 'report', 'report'], `the three addresses: ${addresses.join(' ')}`);
-  assert.ok(addresses[2].endsWith('&record&report'));
+  // Each address carries this switch-on's key (B-123).
+  assert.deepEqual(addresses.map((a) => new URL(a).searchParams.has('record') + '/' + new URL(a).searchParams.has('report')), ['true/false', 'false/true', 'true/true'], `the three addresses: ${addresses.join(' ')}`);
+  assert.match(new URL(addresses[0]).searchParams.get('record'), /^[A-Za-z0-9_-]{12}$/);
+  // Without the key nothing happens.
+  const noKey = await browser.newContext();
+  const noKeyPage = await noKey.newPage();
+  await noKeyPage.goto(`${gamePage}&report&rec`);
+  await noKeyPage.waitForFunction(() => window.ready);
+  assert.equal(await noKeyPage.locator('.nkp').count(), 0, 'a bare ?report without a tester link shows nothing');
+  await noKey.close();
   // A browser without a tester link, with ?report: the panel, a name, and Spela in (F-120).
   const openStart = Date.now() - 1000; // the local store may keep earlier runs
   const friendCtx = await browser.newContext({ viewport: { width: 900, height: 700 } });
