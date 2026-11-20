@@ -144,7 +144,7 @@ Prioritised for: the owner's ideas.
 
 - **A** – strong model, high level – Playtest Recorder
   - F-092 – a silent recording mode for matches with friends (answers to the owner's questions approved 2026-11-19)
-- Adaptation punkt 1.1 – web basics (WEB.md) on the admin page, Playtest Remote and the demo: approved by the owner 2026-11-20 (Q19), Pågår on develop.
+- Adaptation punkt 1.1 – web basics (WEB.md) on the admin page, Playtest Remote and the demo: approved by the owner 2026-11-20 (Q19), built on develop (0e5c628), checked in Chromium (taps, Tab, the dropdown arrow); on the preview, waiting for the owner's try and "Publicera".
 - Not runnable here: F-110's WebKit part (no WebKit in the agent's environment).
 
 ## Details
