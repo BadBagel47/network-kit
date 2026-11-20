@@ -220,3 +220,56 @@ test('F-092: Playtest Recorder keeps a session in batches; the owner and the age
   tick(61_000);
   assert.equal((await (await call('/api/recordings', { headers: { cookie } })).json()).length, 0, 'gone after 30 days');
 });
+
+test('F-118: Open test lets a page of the game report and record without a tester link, only while on, under its own caps', async () => {
+  const { env, call, tick } = setup();
+  const cookie = `nk_admin=${await newSession(env)}`;
+  const page = { 'content-type': 'text/plain', origin: 'https://bricks.trythis.one' };
+  const open = () => call('/playtest/v1/open', { method: 'POST', headers: page, body: '{}' });
+  assert.equal((await open()).status, 404, 'off by default');
+
+  const set = await (await call('/api/open-tests', { method: 'POST', headers: { cookie }, body: JSON.stringify({ game: 'bricks', page: 'https://bricks.trythis.one/', hours: 24 }) })).json();
+  assert.equal(set.until - NOW, 6 * 3_600_000, 'at most six hours (owner Q6)');
+  const listed = await (await call('/api/open-tests', { headers: { cookie } })).json();
+  assert.deepEqual(listed.map((o) => [o.game, o.state]), [['bricks', 'on']]);
+
+  assert.equal((await call('/playtest/v1/open', { method: 'POST', headers: { ...page, origin: 'https://other.example' }, body: '{}' })).status, 404, 'only the game\'s own page');
+  const got = await (await open()).json();
+  assert.equal(got.game, 'bricks');
+  assert.equal(got.open, true);
+  const { token } = got;
+
+  // A report with an optional name (owner Q8), marked as Open test.
+  assert.equal((await call('/playtest/v1/report', { method: 'POST', headers: page, body: JSON.stringify({ token, report: { result: 'failed', text: 'Stuck at level 2', name: 'Kim' } }) })).status, 200);
+  const reports = await (await call('/api/reports?game=bricks', { headers: { cookie } })).json();
+  assert.equal(reports[0].tester, 'Öppet test · Kim');
+  assert.equal(reports[0].open, true);
+  // A recording.
+  assert.equal((await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 0, events: [{ t: 0, k: 'room', d: null }] }) })).status, 200);
+  let recordings = await (await call('/api/recordings?game=bricks', { headers: { cookie } })).json();
+  assert.equal(recordings[0].tester, 'Öppet test');
+  // A name typed after the start comes with the next batch.
+  await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 1, events: [], name: 'Mobil' }) });
+  recordings = await (await call('/api/recordings?game=bricks', { headers: { cookie } })).json();
+  assert.equal(recordings[0].tester, 'Öppet test · Mobil');
+  assert.equal(recordings[0].open, true);
+  // No Playtest Remote: no upload key, no room.
+  assert.equal((await call('/playtest/v1/upload-key', { method: 'POST', headers: page, body: JSON.stringify({ token }) })).status, 403);
+  let made = 0;
+  env.PLAYTEST_ROOMS = { idFromName: (n) => n, get: () => ({ fetch: async () => { made += 1; return Response.json({ code: 'ABCDEF', ownerKey: 'k', keys: {} }); } }) };
+  assert.equal((await call('/playtest/rooms', { method: 'POST', headers: page, body: JSON.stringify({ adminPass: token }) })).status, 401);
+  assert.equal(made, 0, 'no Remote room for an Open test token');
+
+  // Caps per game and day (owner Q9): 50 reports.
+  let last = 200;
+  for (let i = 0; i < 60 && last === 200; i += 1) {
+    last = (await call('/playtest/v1/report', { method: 'POST', headers: page, body: JSON.stringify({ token, report: { result: 'note', text: `n${i}` } }) })).status;
+    if (last === 200) tick(1500); // under the per-minute brake
+  }
+  assert.equal(last, 429, 'the day\'s cap is reached');
+
+  // Switched off: the token stops working at once.
+  await call('/api/open-tests/bricks', { method: 'DELETE', headers: { cookie } });
+  assert.equal((await open()).status, 404);
+  assert.equal((await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 2, events: [] }) })).status, 401);
+});

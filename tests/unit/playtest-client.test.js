@@ -85,3 +85,35 @@ test('F-092: the Recorder sends batches with the game\'s events, the room\'s and
   assert.equal(beacons.length, 1, 'the last batch goes with a beacon');
   assert.equal(JSON.parse(await beacons[0].blob.text()).seq, 1);
 });
+
+test('F-120: not recording, the Recorder keeps only the last two minutes in memory and sends nothing; Spela in sends them with the start', async () => {
+  const { Recorder, LOOKBACK_MS } = await import('../../src/client/recorder.js');
+  const sent = [];
+  const events = new Map();
+  const win = {
+    crypto: globalThis.crypto, location: { href: 'https://game.example/?report', search: '?report' }, navigator: { userAgent: 'test' },
+    innerWidth: 800, innerHeight: 600, screen: { width: 800, height: 600 },
+    addEventListener: (type, fn) => events.set(type, fn), dispatchEvent: () => true, CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+    setInterval: () => 1, clearInterval: () => {}, sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  };
+  const fetchStub = async (url, init) => { sent.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }); };
+  const rec = new Recorder({ admin: 'https://admin.example', token: 'pto_demo', open: true, recording: false, window: win, document: null, fetch: fetchStub, badge: false });
+  assert.equal(rec.recording, false);
+  rec.record('old', { n: 1 });
+  rec.events[0].at = Date.now() - LOOKBACK_MS - 5_000; // older than two minutes
+  rec.record('just-before', { n: 2 });
+  rec.tick();
+  assert.equal(sent.length, 0, 'nothing is sent while not recording');
+  assert.deepEqual(rec.events.map((e) => e.k), ['just-before'], 'only the last two minutes are kept');
+  let told = 0;
+  rec.onStart(() => { told += 1; });
+  rec.start();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(told, 1, 'the game is told it records');
+  assert.equal(sent.length, 1, 'the look-back goes at once');
+  assert.equal(sent[0].seq, 0);
+  assert.equal(sent[0].events[0].k, 'just-before');
+  assert.ok(sent[0].events[0].t <= 0, 'the look-back is before the start');
+  await rec.stop();
+  assert.equal(rec.recording, false);
+});

@@ -121,6 +121,22 @@
         </article>
 
         <article class="panel">
+          <h2>Öppet test</h2>
+          <p class="muted">Vem som helst med en av spelets tre adresser kan spela in eller rapportera, utan testarlänk. Av från början och slås av av sig själv, högst 6 timmar.</p>
+          <form id="new-open" class="form">
+            <div class="row2">
+              <label>Spel <input name="game" list="tester-games" placeholder="t.ex. bricks" autocomplete="off" required pattern="[a-z0-9][a-z0-9-]{0,62}"></label>
+              <label>Hur länge
+                <select name="hours"><option value="1">1 timme</option><option value="2" selected>2 timmar</option><option value="4">4 timmar</option><option value="6">6 timmar</option></select>
+              </label>
+            </div>
+            <label>Spelets adress <input name="page" type="url" placeholder="https://…" autocomplete="off" required></label>
+            <button type="submit" class="primary">Slå på öppet test</button>
+          </form>
+          <div id="open-tests" class="list"></div>
+        </article>
+
+        <article class="panel">
           <h2>Meddelande till spelarna</h2>
           <p class="muted">Visas i en ruta med varningsljud på spelets sidor inom ungefär en minut, tills spelaren trycker OK.</p>
           <form id="new-message" class="form">
@@ -262,7 +278,7 @@
         </article>
         <article class="panel">
           <h2>Inspelningar</h2>
-          <p class="muted small">Från Playtest Recorder: det som hände under en match, inspelat i en webbläsare med testarlänk. Sparas i 30 dagar; Behåll högst 20 per spel.</p>
+          <p class="muted small">Från Playtest Recorder: det som hände under en match, inspelat i en webbläsare med testarlänk eller i Öppet test. Sparas i 30 dagar; Behåll högst 20 per spel.</p>
           <div id="recordings" class="list"></div>
         </article>
       </section>

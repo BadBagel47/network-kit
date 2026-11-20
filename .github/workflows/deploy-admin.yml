@@ -102,6 +102,13 @@ jobs:
           url=$(grep -o 'https://[a-z0-9.-]*workers\.dev' deploy.log | head -1)
           if [ -z "$url" ]; then echo "::warning::Could not find the admin URL in the deploy output"; exit 0; fi
           echo "Admin page: $url" >> "$GITHUB_STEP_SUMMARY"
+          # The previous version may still answer for a while (B-119): wait for this one.
+          want=$(node -p "require('./package.json').version")
+          for i in $(seq 1 36); do
+            curl -fsS "$url/network-kit/version.js" 2>/dev/null | grep -q "'$want'" && break
+            sleep 5
+          done
+          curl -fsS "$url/network-kit/version.js" | grep -q "'$want'" || { echo "::error::$url did not serve version $want within 3 minutes"; exit 1; }
           for i in 1 2 3 4 5 6; do
             code=$(curl -s -o /dev/null -w '%{http_code}' "$url/api/usage" || true)
             [ "$code" = "401" ] && break

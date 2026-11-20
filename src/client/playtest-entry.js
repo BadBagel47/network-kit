@@ -18,10 +18,20 @@ export function hasTesterLink(win = globalThis.window) {
   }
 }
 
-/** Starts Playtest when this browser has a tester link; otherwise resolves to null at once. */
+/** Open test (F-118): does the address ask for `?record` or `?report`? */
+export function asksOpenTest(win = globalThis.window, which = null) {
+  const q = new URLSearchParams(String(win?.location?.search ?? ''));
+  return which ? q.has(which) : q.has('record') || q.has('report');
+}
+
+/**
+ * Starts Playtest when this browser has a tester link, or the address has
+ * ?report and the game's Open test is on (F-118); otherwise resolves to null
+ * at once, without a request.
+ */
 export async function startPlaytest(options = {}) {
   const win = options.window ?? globalThis.window;
-  if (!hasTesterLink(win)) return null;
+  if (!hasTesterLink(win) && !asksOpenTest(win, 'report')) return null;
   const { startPlaytest: start } = await import('./playtest.js');
   return start(options);
 }
@@ -30,13 +40,14 @@ export async function startPlaytest(options = {}) {
 export const RECORDER_NOTICE = 'This match is being recorded for a playtest.';
 
 /**
- * Starts Playtest Recorder (F-092) when this browser has a tester link;
+ * Starts Playtest Recorder (F-092) when this browser has a tester link, or the
+ * address has ?record or ?report and the game's Open test is on (F-118);
  * otherwise resolves to null at once. The tester link's token must already be
  * kept (startPlaytest takes it out of the address, so start that first).
  */
 export async function startRecorder(options = {}) {
   const win = options.window ?? globalThis.window;
-  if (!hasTesterLink(win)) return null;
+  if (!hasTesterLink(win) && !asksOpenTest(win)) return null;
   const { startRecorder: start } = await import('./recorder.js');
   return start(options);
 }

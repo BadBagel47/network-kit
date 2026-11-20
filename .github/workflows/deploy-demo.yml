@@ -74,12 +74,15 @@ jobs:
           url=$(grep -o 'https://[a-z0-9.-]*workers\.dev' deploy.log | head -1)
           if [ -z "$url" ]; then echo "::warning::Could not find the demo URL in the deploy output"; exit 0; fi
           echo "Demo: $url" >> "$GITHUB_STEP_SUMMARY"
-          for i in 1 2 3 4 5 6; do
+          # Right after a deploy the previous version may still answer for a while
+          # (B-119, seen by Bricks): wait until /rooms gives the version just deployed.
+          want=$(node -p "require('./package.json').version")
+          for i in $(seq 1 36); do
             body=$(curl -fsS "$url/rooms" || true)
-            echo "$body" | grep -q '"network-kit"' && break
+            echo "$body" | grep -q "\"version\":\"$want\"" && break
             sleep 5
           done
-          echo "$body" | grep -q '"network-kit"' || { echo "::error::$url/rooms did not answer"; exit 1; }
+          echo "$body" | grep -q "\"version\":\"$want\"" || { echo "::error::$url/rooms did not answer with version $want within 3 minutes (last: $body)"; exit 1; }
           # A room can be created (checks the Durable Objects and the EU setting).
           # A demo closed on the admin page answers 503 with its reason; that is
           # not a failed deploy (B-082).

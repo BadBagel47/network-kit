@@ -89,12 +89,17 @@ jobs:
           edge=()
           if [ -n "$TRYTHIS_COUNTRY_BYPASS" ]; then echo "::add-mask::$TRYTHIS_COUNTRY_BYPASS"; edge=(-H "x-trythis-country-bypass: $TRYTHIS_COUNTRY_BYPASS"); fi
           ok=true
-          for i in 1 2 3 4 5 6; do
+          # Wait until both answer with the version just deployed (B-119), up to 3 minutes.
+          want=$(node -p "require('./package.json').version")
+          for i in $(seq 1 18); do
             a=$(curl -s -o /dev/null -w '%{http_code}' "${edge[@]}" https://nk-admin-preview.trythis.one/remote/ || true)
             d=$(curl -s -o /dev/null -w '%{http_code}' "${edge[@]}" https://nk-demo-preview.trythis.one/rooms || true)
-            [ "$a" = 200 ] && [ "$d" = 200 ] && break
+            av=$(curl -s "${edge[@]}" https://nk-admin-preview.trythis.one/network-kit/version.js | grep -c "'$want'" || true)
+            dv=$(curl -s "${edge[@]}" https://nk-demo-preview.trythis.one/rooms | grep -c "\"version\":\"$want\"" || true)
+            [ "$a" = 200 ] && [ "$d" = 200 ] && [ "$av" = 1 ] && [ "$dv" = 1 ] && break
             sleep 10
           done
+          [ "$av" = 1 ] && [ "$dv" = 1 ] || echo "::warning::the preview did not answer with version $want within 3 minutes"
           echo "Admin preview: https://nk-admin-preview.trythis.one ($a)" >> "$GITHUB_STEP_SUMMARY"
           echo "Demo preview: https://nk-demo-preview.trythis.one ($d)" >> "$GITHUB_STEP_SUMMARY"
           [ "$a" = 200 ] || { echo "::warning::the admin preview answered $a"; ok=false; }

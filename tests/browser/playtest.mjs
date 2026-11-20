@@ -205,7 +205,7 @@ try {
   await badgeButton.click();
   await game.waitForFunction(() => window.recorderStopped === true);
   assert.equal(await game.locator('button[aria-label^="Playtest Recorder spelar in"]').count(), 0, 'the badge goes');
-  assert.equal(await game.evaluate(async (admin) => (await import('/src/client/playtest-entry.js')).startRecorder({ admin }).then((r) => r === null), A), true, 'not again in this tab');
+  assert.equal(await game.evaluate(async (admin) => (await import('/src/client/playtest-entry.js')).startRecorder({ admin }).then((r) => r.recording), A), false, 'not again in this tab, until Spela in');
   const sessions = await (await fetch(`${A}/playtest/v1/read-recordings?game=testgame&since=${before}`, { headers: { 'x-playtest-key': 'test-read' } })).json();
   assert.equal(sessions.length, 1);
   const session = await (await fetch(`${A}/playtest/v1/read-recording?id=${sessions[0].id}`, { headers: { 'x-playtest-key': 'test-read' } })).json();
@@ -225,6 +225,79 @@ try {
     await owner.getByRole('button', { name: 'Länkar och meddelanden' }).click();
     await owner.locator('#new-tester').screenshot({ path: `${process.env.SHOTS}/testers.png` });
   }
+
+  // Open test (F-118): the owner switches it on; the admin page shows the three ready addresses.
+  const gamePage = `${pageBase}/tests/browser/playtest-page.html?admin=${encodeURIComponent(A)}`;
+  assert.equal((await api('/api/open-tests', { method: 'POST', body: JSON.stringify({ game: 'testgame', page: gamePage, hours: 1 }) })).status, 200);
+  await owner.reload();
+  await owner.getByRole('button', { name: 'Länkar och meddelanden' }).click();
+  await owner.locator('#open-tests .open-address').nth(2).waitFor();
+  const addresses = await owner.locator('#open-tests .open-address code').allInnerTexts();
+  assert.deepEqual(addresses.map((a) => a.split('&').slice(-1)[0]), ['record', 'report', 'report'], `the three addresses: ${addresses.join(' ')}`);
+  assert.ok(addresses[2].endsWith('&record&report'));
+  // A browser without a tester link, with ?report: the panel, a name, and Spela in (F-120).
+  const openStart = Date.now() - 1000; // the local store may keep earlier runs
+  const friendCtx = await browser.newContext({ viewport: { width: 900, height: 700 } });
+  const friend = await friendCtx.newPage();
+  friend.on('pageerror', (e) => errors.push(`friend: ${e.message}`));
+  await friend.goto(`${addresses[1]}&rec`);
+  await friend.waitForFunction(() => window.ready);
+  await friend.locator('.nkp').getByText('Öppet test · testgame').waitFor();
+  assert.equal(await friend.locator('.nkp').getByRole('button', { name: 'Fjärr' }).count(), 0, 'no Playtest Remote in Open test');
+  assert.equal(await friend.locator('button[aria-label^="Playtest Recorder spelar in"]').count(), 0, '?report alone does not record');
+  await friend.locator('.nkp').getByPlaceholder('Ditt namn (frivilligt)').fill('Kim');
+  await friend.evaluate(() => window.recorder.record('odd-thing', { where: 'cellar' })); // before recording: kept in memory only
+  await friend.locator('.nkp').getByRole('button', { name: 'Spela in' }).click();
+  await friend.locator('button[aria-label^="Playtest Recorder spelar in"]').waitFor();
+  await friend.locator('.nkp').getByRole('button', { name: 'Sluta spela in' }).waitFor();
+  await friend.locator('.nkp').getByRole('button', { name: 'Skriv en anteckning utan test' }).click();
+  await friend.locator('.nkp textarea').first().fill('The wall flickers');
+  await friend.locator('.nkp').getByRole('button', { name: 'Fungerade inte' }).click();
+  await friend.locator('.nkp').getByRole('button', { name: 'Skicka' }).click();
+  await friend.locator('.nkp').getByText('Skickat. Tack!').waitFor({ timeout: 10_000 }).catch(async (e) => { console.log('panel says:', await friend.locator('.nkp').innerText()); throw e; });
+  const openReports = await (await api('/api/reports?game=testgame')).json();
+  const fromFriend = openReports.find((r) => r.answers?.[0]?.a === 'The wall flickers' && r.at >= openStart);
+  assert.ok(fromFriend, 'the Open test report reached Rapporter');
+  assert.equal(fromFriend.tester, 'Öppet test · Kim');
+  assert.equal(fromFriend.open, true);
+  const openRecordings = (await (await api(`/api/recordings?game=testgame&since=${openStart}`)).json()).filter((r) => r.open);
+  assert.equal(openRecordings.length, 1, 'Spela in started a recording');
+  assert.equal(openRecordings[0].tester, 'Öppet test · Kim');
+  const whole = await (await api(`/api/recordings/${openRecordings[0].id}`)).json();
+  const odd = whole.events.find((e) => e.k === 'odd-thing');
+  assert.ok(odd && odd.t <= 0, 'the last two minutes came with it (F-120)');
+  // ?record alone records from the start, without the panel.
+  const recorderOnly = await friendCtx.newPage();
+  await recorderOnly.goto(`${addresses[0]}&rec`);
+  await recorderOnly.waitForFunction(() => window.ready);
+  await recorderOnly.locator('button[aria-label^="Playtest Recorder spelar in"]').waitFor();
+  assert.equal(await recorderOnly.locator('.nkp').count(), 0, '?record alone shows no panel');
+  // Switched off: the addresses do nothing.
+  await api('/api/open-tests/testgame', { method: 'DELETE' });
+  const late = await browser.newContext();
+  const latePage = await late.newPage();
+  await latePage.goto(`${addresses[2]}&rec`);
+  await latePage.waitForFunction(() => window.ready);
+  assert.equal(await latePage.locator('.nkp').count(), 0, 'nothing after Open test is off');
+  assert.equal(await latePage.evaluate(() => window.recorder), null);
+  await late.close();
+  await friendCtx.close();
+
+  // Owner Q15: with a tester link the address decides what shows; the link says who it is.
+  const withLinkReport = await ctx.newPage(); // a new tab: nothing stopped in it
+  await withLinkReport.goto(`${url}&report&rec`);
+  await withLinkReport.waitForFunction(() => window.ready);
+  await withLinkReport.locator('.nkp').waitFor();
+  assert.equal(await withLinkReport.evaluate(() => window.recorder.recording), false, '?report with a tester link: the panel, no recording');
+  if (await withLinkReport.locator('.nkp button.fab').count()) await withLinkReport.locator('.nkp button.fab').click(); // folded earlier in this browser
+  await withLinkReport.locator('.nkp').getByRole('button', { name: 'Spela in' }).waitFor();
+  await withLinkReport.close();
+  const withLinkRecord = await ctx.newPage();
+  await withLinkRecord.goto(`${url}&record&rec`);
+  await withLinkRecord.waitForFunction(() => window.ready);
+  assert.equal(await withLinkRecord.evaluate(() => window.recorder.recording), true, '?record with a tester link records');
+  assert.equal(await withLinkRecord.locator('.nkp').count(), 0, '?record with a tester link: no panel');
+  await withLinkRecord.close();
 
   // Owner Q3: "Sluta testa på den här enheten" makes this browser forget the tester link.
   if (await game.locator('.nkp button.fab').count()) await game.locator('.nkp button.fab').click();
