@@ -1177,7 +1177,7 @@ function reportItem(r) {
   const head = el('summary');
   head.append(
     el('span', { class: `badge ${r.result}` }, RESULT_SV[r.result] ?? r.result),
-    el('span', { class: 'title' }, `${r.testId || 'Anteckning'}${r.title ? ` · ${r.title}` : ''}`),
+    el('span', { class: 'title' }, `${r.testId || 'Anteckning'}${r.title && r.title !== (r.testId || 'Anteckning') ? ` · ${r.title}` : ''}`),
     el('span', { class: 'sub' }, `${r.game} · ${r.tester} · ${dayTime(r.at)}${r.via === 'remote' ? ' · fjärr' : ''}${r.keep ? ' · behålls' : ''}`),
   );
   item.append(head);

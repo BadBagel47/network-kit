@@ -246,8 +246,12 @@ test('F-118: Open test lets a page of the game report and record without a teste
   assert.equal(reports[0].open, true);
   // A recording.
   assert.equal((await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 0, events: [{ t: 0, k: 'room', d: null }] }) })).status, 200);
-  const recordings = await (await call('/api/recordings?game=bricks', { headers: { cookie } })).json();
+  let recordings = await (await call('/api/recordings?game=bricks', { headers: { cookie } })).json();
   assert.equal(recordings[0].tester, 'Öppet test');
+  // A name typed after the start comes with the next batch.
+  await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 1, events: [], name: 'Mobil' }) });
+  recordings = await (await call('/api/recordings?game=bricks', { headers: { cookie } })).json();
+  assert.equal(recordings[0].tester, 'Öppet test · Mobil');
   assert.equal(recordings[0].open, true);
   // No Playtest Remote: no upload key, no room.
   assert.equal((await call('/playtest/v1/upload-key', { method: 'POST', headers: page, body: JSON.stringify({ token }) })).status, 403);
@@ -267,5 +271,5 @@ test('F-118: Open test lets a page of the game report and record without a teste
   // Switched off: the token stops working at once.
   await call('/api/open-tests/bricks', { method: 'DELETE', headers: { cookie } });
   assert.equal((await open()).status, 404);
-  assert.equal((await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 1, events: [] }) })).status, 401);
+  assert.equal((await call('/playtest/v1/record', { method: 'POST', headers: page, body: JSON.stringify({ token, session: 'open-session-1', seq: 2, events: [] }) })).status, 401);
 });

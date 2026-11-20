@@ -378,6 +378,9 @@ export class Playtest {
       chunks: 0, events: 0, keep: false, context: cleanReport({ context: raw?.context }).context,
     };
     if (meta.testerId !== t.id) return { error: 'not-yours', status: 403 };
+    // Open test: a name typed after recording started still comes with it (owner 2026-11-20).
+    const name = text(raw?.name, 40).trim();
+    if (t.open && name && meta.tester === 'Öppet test') meta.tester = `Öppet test · ${name}`;
     const events = Array.isArray(raw?.events) ? raw.events.slice(0, RECORDING_EVENTS_MAX).map((e) => ({
       t: Number.isFinite(Number(e?.t)) ? Number(e.t) : null,
       k: typeof e?.k === 'string' ? e.k.slice(0, 40) : 'event',
