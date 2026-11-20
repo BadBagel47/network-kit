@@ -197,6 +197,8 @@ Every role has its own invitation key, so a viewer link can never play. In an op
 
 ### Deploying the Worker
 
+**Check the new version, not just an answer (B-119).** Right after `wrangler deploy` the previous version may still answer for a while (Bricks got the old version just after uploading a new one). A check after deploying should wait until the Worker answers with the version just deployed, for example until `GET <basePath>` gives `"version":"<the copied VERSION>"`, polling every 5 seconds for up to 3 minutes, as network-kit's own workflows do.
+
 Deploy from GitHub Actions with the account's deploy token (`CLOUDFLARE_API_TOKEN` as a repository secret). The very first deploy of a brand-new Worker with Durable Objects and a service binding can upload it and then fail with *"This Worker does not exist on your account. [code: 10007]"*; running it again works (seen by Bricks, F-112). Try once more on exactly that error. The step's shell may not stop on a failing command inside a pipe, so check the deploy's own status:
 
 ```sh
