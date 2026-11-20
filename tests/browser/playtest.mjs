@@ -283,6 +283,22 @@ try {
   await late.close();
   await friendCtx.close();
 
+  // Owner Q15: with a tester link the address decides what shows; the link says who it is.
+  const withLinkReport = await ctx.newPage(); // a new tab: nothing stopped in it
+  await withLinkReport.goto(`${url}&report&rec`);
+  await withLinkReport.waitForFunction(() => window.ready);
+  await withLinkReport.locator('.nkp').waitFor();
+  assert.equal(await withLinkReport.evaluate(() => window.recorder.recording), false, '?report with a tester link: the panel, no recording');
+  if (await withLinkReport.locator('.nkp button.fab').count()) await withLinkReport.locator('.nkp button.fab').click(); // folded earlier in this browser
+  await withLinkReport.locator('.nkp').getByRole('button', { name: 'Spela in' }).waitFor();
+  await withLinkReport.close();
+  const withLinkRecord = await ctx.newPage();
+  await withLinkRecord.goto(`${url}&record&rec`);
+  await withLinkRecord.waitForFunction(() => window.ready);
+  assert.equal(await withLinkRecord.evaluate(() => window.recorder.recording), true, '?record with a tester link records');
+  assert.equal(await withLinkRecord.locator('.nkp').count(), 0, '?record with a tester link: no panel');
+  await withLinkRecord.close();
+
   // Owner Q3: "Sluta testa på den här enheten" makes this browser forget the tester link.
   if (await game.locator('.nkp button.fab').count()) await game.locator('.nkp button.fab').click();
   await game.locator('.nkp').getByRole('button', { name: 'Sluta testa på den här enheten' }).click();

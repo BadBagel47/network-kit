@@ -460,6 +460,8 @@ recorder?.attach(room);                          // a NetworkRoom, also one join
 | `…/?record&report` | yes | yes |
 | a tester link (as before) | yes | yes |
 
+With a tester link kept in the browser the address still decides what happens; the link only says who it is (owner Q15): the plain address records and shows the panel as before, `?record` records without the panel, `?report` shows the panel without recording, both give both. This also works while Open test is off, and is marked with the link's name, not *Öppet test*.
+
 - The admin page shows the three addresses with *Kopiera* and a QR code, built from the game's page (owner Q10), and until when the test is on.
 - The page asks the admin page once per tab (`POST /playtest/v1/open`; the browser's `Origin` says which game's page it is, so the page must be on the address given when switching it on). Without `?record` or `?report` nothing is asked or loaded. The answer is kept in sessionStorage (`nk-playtest:open`; the name in `nk-playtest:name`).
 - Reports and recordings are marked *Öppet test* (with the name) under Rapporter, and `open: true` for the agent. Caps per game and UTC day (owner Q9): 300 recording batches, 50 reports, 100 pictures. No Playtest Remote in Open test (it needs a tester link).

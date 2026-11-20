@@ -335,6 +335,10 @@ export async function startPlaytest(options = {}) {
   const token = read(local, TOKEN_KEY);
   const f = options.fetch ?? ((...a) => win.fetch(...a));
   const admin = String(options.admin).replace(/\/$/, '');
+  // The address decides what shows, the tester link only who it is (owner Q15):
+  // with a tester link, ?record alone shows no panel.
+  const mode = openMode(win);
+  if (token && mode && !mode.report) return null;
   if (!token) {
     // Open test (F-118): ?report shows the panel while the game's test is on.
     if (!openMode(win)?.report) return null;

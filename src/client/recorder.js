@@ -299,10 +299,12 @@ export async function startRecorder(options = {}) {
   } catch {
     token = null;
   }
-  let recording = Boolean(token);
+  // The address decides whether it records, the tester link only who it is (owner Q15):
+  // a plain address records with a tester link, ?report alone does not, ?record does.
+  const mode = openMode(win);
+  let recording = Boolean(token) && (mode ? mode.record : true);
   let open = false;
   if (!token) {
-    const mode = openMode(win);
     if (!mode) return null;
     const tester = await openSession({ win, admin: options.admin, fetch: options.fetch });
     if (!tester) return null;
