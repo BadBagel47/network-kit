@@ -10,6 +10,8 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+- Changed (WEB.md, punkt 1.1, owner 2026-11-20): web basics on the admin page, Playtest Remote and the demo: no blue tap highlight, the focus ring only for keyboard users (text fields keep theirs, in the page's colour), a pressed state for taps, an own arrow in the admin page's dropdowns. Affects no game.
+
 ## 0.19.0 (2026-11-20)
 
 Affects: games that use Playtest (take 0.19.0; nothing to change in the game for Open test), and the admin page.
