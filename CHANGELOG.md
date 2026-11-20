@@ -10,7 +10,7 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
-## 0.19.0 (2026-11-19)
+## 0.19.0 (2026-11-20)
 
 Affects: games that use Playtest (take 0.19.0; nothing to change in the game for Open test), and the admin page.
 
@@ -18,6 +18,7 @@ Affects: games that use Playtest (take 0.19.0; nothing to change in the game for
 - New (F-120): *Spela in* / *Sluta spela in* in Playtest-rutan; a recording started there begins with the last two minutes, kept in the browser's memory only until then. `recorder.recording`, `recorder.start()`, `recorder.onStart(fn)`.
 - Changed (owner Q15): with a tester link the address decides too: `?record` records without the panel, `?report` shows the panel without recording; marked with the link's name.
 - Fixed (B-119): the deploy workflows wait until the Worker answers with the version just deployed (up to 3 minutes), not just any answer; the guide says how (section 2, *Deploying the Worker*).
+- Changed (F-118): a note's heading shows *Anteckning* once; a name typed after recording started comes with the recording.
 - Changed (F-120): `recorder.stop()` pauses (the look-back goes on) and `recorder.onStop(fn)` is called each time; `recorder.close()` ends it. In a tab where recording was stopped, `startRecorder` returns a Recorder that does not record (it returned `null`). No game had taken 0.18.
 
 ## 0.18.0 (2026-11-19)

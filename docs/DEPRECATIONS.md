@@ -18,7 +18,7 @@ Owner's decision 2026-11-19: something is removed only when no game still uses i
 | Buzzy | none yet | – | – |
 | The demo (`examples/demo`) | the current version | yes | yes |
 
-Checked at the 0.18.0 release (2026-11-19): nothing removed, nothing new marked. The Recorder's badge became a button and its label changed; no game relied on it.
+Checked at the 0.19.0 release (2026-11-20): nothing removed, nothing new marked; `recorder.stop()` became a pause and `close()` ends it (no game had taken 0.18). Checked at the 0.18.0 release (2026-11-19): nothing removed, nothing new marked. The Recorder's badge became a button and its label changed; no game relied on it.
 
 ## On its way out
 
