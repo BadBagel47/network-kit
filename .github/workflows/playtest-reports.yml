@@ -30,6 +30,10 @@ on:
         description: Also Open test's items, from unknown visitors (F-124), apart under openTest (yes/no)
         required: false
         default: 'no'
+      where:
+        description: live (the real admin page) or preview (nk-admin-preview.trythis.one, the owner's tries before Publicera)
+        required: false
+        default: live
 
 permissions:
   contents: write
@@ -43,13 +47,14 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      ADMIN_URL: https://network-kit-admin.l8p1.workers.dev
+      TRYTHIS_COUNTRY_BYPASS: ${{ secrets.TRYTHIS_COUNTRY_BYPASS }}
       PUBLIC_KEY: ${{ inputs.public_key }}
       GAME: ${{ inputs.game }}
       SINCE: ${{ inputs.since }}
       KEEP: ${{ inputs.keep }}
       WHAT: ${{ inputs.what }}
       OPEN: ${{ inputs.open_test }}
+      WHERE: ${{ inputs.where }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -59,16 +64,23 @@ jobs:
         run: |
           case "$GAME" in (*[!a-z0-9-]*|'') echo "::error::bad game name"; exit 1;; esac
           case "$WHAT" in (reports|recordings|both) ;; (*) echo "::error::what must be reports, recordings or both"; exit 1;; esac
-          # The same key the admin deploy gives the Worker (see deploy-admin.yml).
-          READ_KEY=$(printf 'network-kit playtest read\n%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)
+          # The same keys the deploys give the Workers (deploy-admin.yml, preview.yml).
+          case "$WHERE" in
+            (live) ADMIN_URL=https://network-kit-admin.l8p1.workers.dev; SALT='network-kit playtest read' ;;
+            (preview) ADMIN_URL=https://nk-admin-preview.trythis.one; SALT='network-kit playtest read preview'
+              if [ -n "$TRYTHIS_COUNTRY_BYPASS" ]; then echo "::add-mask::$TRYTHIS_COUNTRY_BYPASS"; export EDGE_BYPASS="$TRYTHIS_COUNTRY_BYPASS"; fi ;;
+            (*) echo "::error::where must be live or preview"; exit 1 ;;
+          esac
+          READ_KEY=$(printf '%s\n%s' "$SALT" "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)
           echo "::add-mask::$READ_KEY"
-          READ_KEY="$READ_KEY" OUT="$RUNNER_TEMP/sealed.txt" node scripts/playtest-reports.mjs
+          ADMIN_URL="$ADMIN_URL" READ_KEY="$READ_KEY" OUT="$RUNNER_TEMP/sealed.txt" node scripts/playtest-reports.mjs
       - name: Keep the sealed reports on the branch playtest-reports
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Recordings alone go in their own file, so a reading of reports never replaces them (F-092).
           FILE="$GAME.txt"; [ "$WHAT" = recordings ] && FILE="$GAME-recordings.txt"
+          [ "$WHERE" = preview ] && FILE="preview-$FILE"
           # GitHub refuses files over 100 MB (F-135): stop well before, and say how to narrow it.
           SIZE=$(stat -c %s "$RUNNER_TEMP/sealed.txt")
           if [ "$SIZE" -gt $((50 * 1024 * 1024)) ]; then

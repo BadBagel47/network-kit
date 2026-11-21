@@ -161,6 +161,31 @@ test('F-121: a scripted test\'s part of the report is kept as plain, short JSON'
   assert.equal(cleanReport({ result: 'worked' }).script, undefined, 'no script part unless sent');
 });
 
+test('F-121, owner Q30: the agent makes a tester link with the read key: a day at most, marked, ten a game a day', async () => {
+  const { env, call, tick } = setup();
+  const ask = (body, key = 'read-key') => call('/playtest/v1/tester', { method: 'POST', headers: { 'x-playtest-key': key, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal((await ask({ game: 'demo', page: 'https://nk-demo.example/' }, 'wrong')).status, 403, 'only with the read key');
+  assert.equal((await call('/playtest/v1/tester', post({ game: 'demo' }))).status, 403, 'not from a page');
+  const res = await ask({ game: 'demo', page: 'https://nk-demo.example/', hours: 500, label: 'iPad' });
+  assert.equal(res.status, 200);
+  const made = await res.json();
+  assert.match(made.token, /^pt_/);
+  assert.equal(made.tester.label, 'Från agenten · iPad');
+  assert.equal(made.tester.agent, true);
+  assert.equal(made.tester.expires - made.tester.created, 24 * 3_600_000, 'a day at most');
+  const check = await (await call('/playtest/v1/check', post({ token: made.token }))).json();
+  assert.equal(check.game, 'demo', 'the link works like any tester link');
+  const cookie = `nk_admin=${await newSession(env)}`;
+  const listed = await (await call('/api/testers', { headers: { cookie } })).json();
+  assert.ok(listed.some((t) => t.id === made.tester.id && t.label.startsWith('Från agenten')), 'the owner sees it under Testarlänkar');
+  for (let i = 0; i < 9; i += 1) assert.equal((await ask({ game: 'demo', page: 'https://nk-demo.example/' })).status, 200);
+  assert.equal((await ask({ game: 'demo', page: 'https://nk-demo.example/' })).status, 429, 'ten a game a day');
+  assert.equal((await ask({ game: 'other', page: 'https://other.example/' })).status, 200, 'another game has its own ten');
+  assert.equal((await ask({ game: 'Bad Name', page: 'https://x.example/' })).status, 400);
+  tick(86_400_001);
+  assert.equal((await ask({ game: 'demo', page: 'https://nk-demo.example/' })).status, 200, 'a new day');
+});
+
 test('F-110, B-097: every open path refuses a stranger; no room is made without a tester link', async () => {
   const { env, call } = setup();
   let made = 0;

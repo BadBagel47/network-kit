@@ -456,6 +456,8 @@ export class PlaytestPanel {
       this.run = saved?.id === wanted ? saved : { id: wanted, startedAt: Date.now(), step: 0, answers: {}, text: '', result: null };
     } else this.run = saved && this.item(saved.id) ? saved : null;
     if (this.run) this.view = 'test';
+    // A start address (owner Q29): ?playtest=ID&kor runs the test's script at once, on this page.
+    this.kor = Boolean(wanted && this.run?.id === wanted && query.has('kor'));
   }
 
   item(id) {
@@ -574,7 +576,13 @@ export class PlaytestPanel {
     this.win.addEventListener?.('online', () => this.sender.flush().catch(() => {}));
     if (read(this.session, PAIR_KEY)) this.pair(true).catch(() => {});
     if (this.tester?.open) this.watchOpenEnd();
-    // A script that asked for its start address runs once that page has loaded (F-121).
+    // A script that asked for its start address runs once that page has loaded (F-121),
+    // and so does one started by a start address with &kor (owner Q29).
+    if (this.kor) {
+      this.kor = false;
+      this.forgetKor();
+      if (this.scripted(this.item(this.run.id))) this.run.autoRun = 'link';
+    }
     if (this.run?.autoRun && this.canScript && this.scripted(this.item(this.run.id))) {
       const from = this.run.autoRun;
       delete this.run.autoRun;
@@ -582,6 +590,17 @@ export class PlaytestPanel {
       const go = () => this.win.setTimeout?.(() => this.runScript(from), 600);
       if (this.doc.readyState === 'complete') go();
       else this.win.addEventListener?.('load', go, { once: true });
+    }
+  }
+
+  /** Takes &kor out of the address, so a reload does not run the script again. */
+  forgetKor() {
+    try {
+      const url = new URL(this.win.location.href);
+      url.searchParams.delete('kor');
+      this.win.history?.replaceState(this.win.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+      // keep the address as it is
     }
   }
 

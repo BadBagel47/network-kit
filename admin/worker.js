@@ -18,6 +18,7 @@
 //                     or for pictures an upload key for Playtest Remote (B-094)
 //   POST /playtest/v1/record  Playtest Recorder's batches from a tester's browser (F-092)
 //   GET  /playtest/read, POST /playtest/keep  the agent's workflow, with PLAYTEST_READ_KEY
+//   POST /playtest/v1/tester                  the agent's tester link (F-121, Q30), with the same key
 //        (also read-image, read-recordings, read-recording)
 //
 // Games ask whether they are open through the GameApi entrypoint (entry.js),
@@ -155,12 +156,20 @@ async function playtestPublic(request, env, deps) {
   // never matches a test's page; tester links do not look at either.
   const who = { 'x-nk-origin': request.headers.get('origin') ?? '', 'x-nk-visitor': visitorKey(request.headers.get('cf-connecting-ip')) };
   const path = url.pathname.replace(/^\/playtest\/v1\//, '/playtest/');
-  if (path === '/playtest/read' || path === '/playtest/keep' || path === '/playtest/read-image' || path === '/playtest/read-recordings' || path === '/playtest/read-recording') {
+  if (path === '/playtest/read' || path === '/playtest/keep' || path === '/playtest/read-image' || path === '/playtest/read-recordings' || path === '/playtest/read-recording' || path === '/playtest/tester') {
     // The agent's workflow (playtest-reports.yml), with the key the deploy derives.
     if (!(await sameKey(request.headers.get('x-playtest-key'), env.PLAYTEST_READ_KEY))) {
       // Wrong keys count against the per-address brake (D-140); the right one is never braked.
       if (tooMany(request, deps.now())) return json({ error: 'too-many' }, 429);
       return json({ error: 'forbidden' }, 403);
+    }
+    if (path === '/playtest/tester') {
+      // A tester link for the agent (F-121, owner Q30): a day at most, marked Från agenten.
+      if (request.method !== 'POST') return json({ error: 'method' }, 405);
+      const text = await request.text();
+      if (text.length > 2048) return json({ error: 'too-large' }, 413);
+      const res = await s.fetch('https://store/testers/agent', { method: 'POST', body: text });
+      return json(await res.json(), res.status);
     }
     if (path === '/playtest/keep' && request.method === 'POST') {
       const { ids = [], keep = true } = await request.json().catch(() => ({}));

@@ -38,6 +38,10 @@ export const REPORT_KEEP_MS = 30 * 86_400_000; // owner 2026-11-19
 export const KEEP_MAX = 50; // reports marked Behåll per game (owner 2026-11-19)
 export const IMAGE_MAX_BYTES = 400 * 1024; // the panel aims at about 300 kB
 const TESTER_DEFAULT_HOURS = 30 * 24;
+// Tester links the agent makes through its workflow (F-121, owner Q30): a day at most, marked, a few a day.
+export const AGENT_MAX_HOURS = 24;
+export const AGENT_PER_DAY = 10;
+export const AGENT_LABEL = 'Från agenten';
 const TESTER_MAX_HOURS = 90 * 24;
 const TESTER_KEEP_MS = 14 * 86_400_000; // links no longer active stay listed this long
 const UNUSED_IMAGE_MS = 86_400_000; // a picture no report points to is deleted after a day
@@ -80,7 +84,7 @@ function cleanScript(raw) {
   }
   return {
     state: ['done', 'failed', 'stopped'].includes(raw.state) ? raw.state : 'failed',
-    from: raw.from === 'remote' ? 'remote' : 'panel',
+    from: ['remote', 'link'].includes(raw.from) ? raw.from : 'panel',
     durationMs: num(raw.durationMs),
     summary: text(raw.summary, 300),
     steps: list(raw.steps, (x) => ({ at: num(x?.at), text: text(x?.text, 200) })),
@@ -141,7 +145,7 @@ export class Playtest {
 
   // ---- tester links
 
-  async createTester({ game, label, hours, page }) {
+  async createTester({ game, label, hours, page, agent = false }) {
     if (!validGame(game)) return { error: 'bad-game' };
     const id = b64url(crypto.getRandomValues(new Uint8Array(6)));
     const secret = b64url(crypto.getRandomValues(new Uint8Array(24)));
@@ -149,12 +153,24 @@ export class Playtest {
     const h = Math.min(TESTER_MAX_HOURS, Math.max(1, Math.round(Number(hours) || TESTER_DEFAULT_HOURS)));
     const tester = {
       id, game, label: text(label, 40), page: text(page, 500), hash: await hashText(secret),
-      created: now, expires: now + h * 3_600_000, revoked: null, lastUsed: null,
+      created: now, expires: now + h * 3_600_000, revoked: null, lastUsed: null, ...(agent ? { agent: true } : {}),
     };
     await this.storage.put(`tst:${id}`, tester);
     await this.log(game, `Testarlänk skapad${tester.label ? ` till ${tester.label}` : ''} för ${game}`, 'link');
     const { hash, ...shown } = tester;
     return { token: `${TESTER_PREFIX}${id}.${secret}`, tester: shown };
+  }
+
+  /** A tester link for the agent's workflow (owner Q30): at most a day, labelled, at most AGENT_PER_DAY a game a day. */
+  async createAgentTester({ game, page, hours, label } = {}) {
+    if (!validGame(game)) return { error: 'bad-game' };
+    const since = this.now() - 86_400_000;
+    let recent = 0;
+    for (const t of (await this.storage.list({ prefix: 'tst:' })).values()) if (t.agent && t.game === game && t.created > since) recent += 1;
+    if (recent >= AGENT_PER_DAY) return { error: 'too-many' };
+    const h = Math.min(AGENT_MAX_HOURS, Math.max(1, Math.round(Number(hours) || AGENT_MAX_HOURS)));
+    const extra = text(label, 25).trim();
+    return this.createTester({ game, page, hours: h, label: `${AGENT_LABEL}${extra ? ` · ${extra}` : ''}`, agent: true });
   }
 
   async testers() {
@@ -653,6 +669,10 @@ export class PlaytestStore {
     if (path === '/testers' && request.method === 'POST') {
       const made = await pt.createTester(await body());
       return made.error ? json(made, 400) : json(made);
+    }
+    if (path === '/testers/agent' && request.method === 'POST') {
+      const made = await pt.createAgentTester(await body());
+      return made.error ? json(made, made.error === 'too-many' ? 429 : 400) : json(made);
     }
     if (path.startsWith('/testers/') && request.method === 'DELETE') {
       await pt.revokeTester(path.slice('/testers/'.length));

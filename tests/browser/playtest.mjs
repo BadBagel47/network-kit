@@ -5,6 +5,10 @@
 // types; Playtest Remote on a phone-sized page pairs by code, starts a test
 // (the game page reloads and pairs again), takes a screenshot and sends.
 import { createServer } from 'node:http';
+import { execFileSync } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { readFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -355,6 +359,37 @@ try {
   await game.locator('.nkp').getByRole('button', { name: 'Tryck igen för att sluta testa här' }).click();
   await game.locator('.nkp').waitFor({ state: 'detached' });
   assert.equal(await game.evaluate(() => localStorage.getItem('nk-playtest:tester')), null, 'the link is forgotten here');
+
+  // F-121, owner Q29 and Q30: the agent's workflow makes a sealed tester link that is also a start
+  // address; opened in a new browser it makes it a tester and runs the test's script at once.
+  const keys = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const dir = mkdtempSync(join(tmpdir(), 'nk-link-'));
+  writeFileSync(join(dir, 'private.pem'), keys.privateKey.export({ type: 'pkcs8', format: 'pem' }));
+  const sealedFile = join(dir, 'testgame-link.txt');
+  execFileSync('node', ['scripts/playtest-link.mjs'], { env: {
+    ...process.env, ADMIN_URL: A, READ_KEY: 'test-read', PUBLIC_KEY: keys.publicKey.export({ type: 'spki', format: 'der' }).toString('base64'),
+    GAME: 'testgame', PAGE: url, TEST: 'T-3', LABEL: 'Chromium', OUT: sealedFile,
+  } });
+  const opened = JSON.parse(execFileSync('node', ['scripts/open-reports.mjs', join(dir, 'private.pem'), sealedFile]).toString());
+  assert.match(opened.link, /[?&]playtest=T-3&kor#nk-tester=pt_/);
+  assert.equal(opened.label, 'Från agenten · Chromium');
+  const linkStart = Date.now() - 1000;
+  const agentCtx = await browser.newContext({ viewport: { width: 1000, height: 760 } });
+  const fresh = await agentCtx.newPage();
+  fresh.on('pageerror', (e) => errors.push(`agent link: ${e.message}`));
+  await fresh.goto(opened.link);
+  await fresh.locator('.nkp .script').getByText('Does it look right?').waitFor({ timeout: 20_000 });
+  assert.ok(!fresh.url().includes('kor') && !fresh.url().includes('nk-tester'), `the address forgets kor and the token: ${fresh.url()}`);
+  await fresh.locator('.nkp .script').getByRole('button', { name: 'Ja', exact: true }).click();
+  await fresh.locator('.nkp').getByText(/^Skickat: /).waitFor();
+  const byLink = (await (await api('/api/reports?game=testgame')).json()).find((r) => r.testId === 'T-3' && r.script?.from === 'link' && r.at >= linkStart);
+  assert.ok(byLink, 'the script started by the link reported');
+  assert.equal(byLink.result, 'worked');
+  assert.equal(byLink.tester, 'Från agenten · Chromium');
+  await fresh.reload();
+  await fresh.locator('.nkp').waitFor();
+  assert.equal(await fresh.locator('.nkp .script').getByText('Skriptet körs').count(), 0, 'a reload does not run it again');
+  await agentCtx.close();
 
   // F-154: the kit's recording notice on a phone: a corner, the text a moment, then a small mark; a tap shows it again.
   for (const corner of [true, 'bottom-left']) {

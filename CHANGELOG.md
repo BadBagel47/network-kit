@@ -16,6 +16,8 @@ Affects: games that use Playtest and want scripted tests (take 0.23.0 and add `r
 
 - New (F-121 run A, owner): scripted tests in Playtest. A test may carry `run: async (t) => …` with `t.step`, `t.wait`, `t.key` / `t.keyDown` / `t.keyUp`, `t.click`, `t.check`, `t.measure` (frames per second, the slowest frame, long frames and the game's own `performance.measure` entries), `t.ask` (Ja / Nej), `t.tap` (a tap the browser needs for sound or fullscreen), `t.shot`, `t.note` and `t.signal`. *Kör skriptet* in Playtest-rutan runs it on the device, only with a tester link (owner Q28); Playtest Remote starts it, answers its questions and stops it (owner Q27). The outcome is sent as a report with a `script` part, shown under Rapporter and read by the agents. The demo's D-PT1 has a script, checked against the real demo in the browser test.
 - Fixed: Playtest-rutan no longer reaches past the window's bottom; it scrolls instead, so its last buttons stay in reach.
+- New (owner Q29): a start address, the game's page with `?playtest=<id>&kor`, runs that test's script at once in a browser with a tester link; `kor` leaves the address, so a reload does not run it again.
+- New (owner Q30): tester links made by the agent: the workflow *Playtest link* asks the admin page (`POST /playtest/v1/tester`, with the read key) for a link that lasts a day at most, is marked *Från agenten* under Testarlänkar and can be revoked there, at most 10 a game a day; the link (with a test id also a start address) is sealed for the agent before it reaches the repository. The workflow *Playtest reports* can read the preview admin page too (`where: preview`). The sealing is shared in `scripts/seal.mjs`.
 
 ## 0.22.0 (2026-11-21)
 

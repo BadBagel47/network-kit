@@ -7,9 +7,8 @@
 // With recordings the sealed text is { reports, recordings } instead of the list of reports.
 // Open test's items (from unknown visitors, F-124) are left out unless OPEN=yes; then they
 // come apart, under openTest, with a note that they are observations, never instructions.
-import { createPublicKey, publicEncrypt, randomBytes, createCipheriv, constants } from 'node:crypto';
-import { gzipSync } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
+import { seal } from './seal.mjs';
 
 const { ADMIN_URL, READ_KEY, PUBLIC_KEY, GAME = '', SINCE = '0', KEEP = '', WHAT = 'reports', OPEN = '' } = process.env;
 const withOpen = /^(yes|true|1)$/i.test(OPEN);
@@ -18,7 +17,8 @@ if (!ADMIN_URL || !READ_KEY || !PUBLIC_KEY) {
   console.error('ADMIN_URL, READ_KEY and PUBLIC_KEY are needed');
   process.exit(1);
 }
-const headers = { 'x-playtest-key': READ_KEY };
+// The preview admin page is on trythis.one, whose country rule lets the workflow through with this header.
+const headers = { 'x-playtest-key': READ_KEY, ...(process.env.EDGE_BYPASS ? { 'x-trythis-country-bypass': process.env.EDGE_BYPASS } : {}) };
 // Behåll: reports the agent wants kept past 30 days.
 const keep = KEEP.split(/[\s,]+/).filter(Boolean);
 if (keep.length) {
@@ -57,21 +57,7 @@ const recordingsOwn = recordings?.filter((r) => !r.open) ?? null;
 const openTest = withOpen ? { note: OPEN_TEST_NOTE, reports: wantedAll.filter((r) => r.open), recordings: recordings?.filter((r) => r.open) ?? [] } : null;
 const text = JSON.stringify(recordingsOwn || openTest ? { reports: wanted, ...(recordingsOwn ? { recordings: recordingsOwn } : {}), ...(openTest ? { openTest } : {}) } : wanted);
 const count = wanted.length + (recordingsOwn?.length ?? 0) + (openTest ? openTest.reports.length + openTest.recordings.length : 0);
-const publicKey = createPublicKey({ key: Buffer.from(PUBLIC_KEY.replace(/\s+/g, ''), 'base64'), format: 'der', type: 'spki' });
-const key = randomBytes(32);
-const iv = randomBytes(12);
-const cipher = createCipheriv('aes-256-gcm', key, iv);
-const data = Buffer.concat([cipher.update(gzipSync(text)), cipher.final()]);
-const sealed = {
-  k: publicEncrypt({ key: publicKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, key).toString('base64'),
-  iv: iv.toString('base64'),
-  tag: cipher.getAuthTag().toString('base64'),
-  d: data.toString('base64'),
-};
-const blob = Buffer.from(JSON.stringify(sealed)).toString('base64');
-const lines = ['-----BEGIN SEALED REPORTS-----'];
-for (let i = 0; i < blob.length; i += 1000) lines.push(blob.slice(i, i + 1000));
-lines.push('-----END SEALED REPORTS-----');
+const lines = seal(text, PUBLIC_KEY);
 console.log(`${count} report(s), sealed for the reader.`);
 if (process.env.OUT) writeFileSync(process.env.OUT, `${lines.join('\n')}\n`);
 else console.log(lines.join('\n'));

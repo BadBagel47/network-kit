@@ -1,0 +1,93 @@
+# Makes a tester link for the agent (F-121, owner Q30), sealed with the reader's
+# public key and kept on the branch playtest-reports as <game>-link.txt, so the
+# agent can give the owner a ready link in the chat and nothing readable
+# reaches this public repository. The link lasts a day at most, is marked
+# "Från agenten" under Testarlänkar on the admin page, and can be revoked there.
+# With a test id it is also a start address (owner Q29): it runs that test's script.
+# Open with: node scripts/open-reports.mjs <private-key.pem> <game>-link.txt
+name: Playtest link
+
+on:
+  workflow_dispatch:
+    inputs:
+      game:
+        description: The game's name, as on its tester links (e.g. demo)
+        required: true
+      page:
+        description: The game's page (https), where the link opens
+        required: true
+      test:
+        description: A test id whose script the link runs at once (optional)
+        required: false
+        default: ''
+      hours:
+        description: How long the link works, at most 24
+        required: false
+        default: '24'
+      label:
+        description: A short word after "Från agenten" (optional, e.g. iPad)
+        required: false
+        default: ''
+      where:
+        description: live (the real admin page) or preview (nk-admin-preview.trythis.one)
+        required: false
+        default: live
+      public_key:
+        description: Reader's RSA public key (base64 SPKI DER)
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: playtest-reports
+  cancel-in-progress: false
+
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TRYTHIS_COUNTRY_BYPASS: ${{ secrets.TRYTHIS_COUNTRY_BYPASS }}
+      PUBLIC_KEY: ${{ inputs.public_key }}
+      GAME: ${{ inputs.game }}
+      PAGE: ${{ inputs.page }}
+      TEST: ${{ inputs.test }}
+      HOURS: ${{ inputs.hours }}
+      LABEL: ${{ inputs.label }}
+      WHERE: ${{ inputs.where }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Make and seal the link
+        run: |
+          case "$GAME" in (*[!a-z0-9-]*|'') echo "::error::bad game name"; exit 1;; esac
+          case "$TEST" in (*[!A-Za-z0-9_-]*) echo "::error::bad test id"; exit 1;; esac
+          # The same keys the deploys give the Workers (deploy-admin.yml, preview.yml).
+          case "$WHERE" in
+            (live) ADMIN_URL=https://network-kit-admin.l8p1.workers.dev; SALT='network-kit playtest read' ;;
+            (preview) ADMIN_URL=https://nk-admin-preview.trythis.one; SALT='network-kit playtest read preview'
+              if [ -n "$TRYTHIS_COUNTRY_BYPASS" ]; then echo "::add-mask::$TRYTHIS_COUNTRY_BYPASS"; export EDGE_BYPASS="$TRYTHIS_COUNTRY_BYPASS"; fi ;;
+            (*) echo "::error::where must be live or preview"; exit 1 ;;
+          esac
+          READ_KEY=$(printf '%s\n%s' "$SALT" "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)
+          echo "::add-mask::$READ_KEY"
+          ADMIN_URL="$ADMIN_URL" READ_KEY="$READ_KEY" OUT="$RUNNER_TEMP/sealed.txt" node scripts/playtest-link.mjs
+      - name: Keep the sealed link on the branch playtest-reports
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # One commit with the newest file of each kind (F-135); the reports' files stay.
+          mkdir -p "$RUNNER_TEMP/kept"
+          if git ls-remote --exit-code origin refs/heads/playtest-reports >/dev/null; then
+            git fetch -q origin playtest-reports && git checkout -q FETCH_HEAD
+            cp ./*.txt "$RUNNER_TEMP/kept/" 2>/dev/null || true
+          fi
+          git checkout -q --orphan fresh-playtest-reports && git rm -rqf . 2>/dev/null || true
+          cp "$RUNNER_TEMP/kept/"*.txt . 2>/dev/null || true
+          cp "$RUNNER_TEMP/sealed.txt" "$GAME-link.txt"
+          git add ./*.txt
+          git commit -q -m "Sealed Playtest readings (newest per game; this run: a tester link for $GAME) (F-091, F-121)"
+          git push -q -f origin HEAD:playtest-reports
