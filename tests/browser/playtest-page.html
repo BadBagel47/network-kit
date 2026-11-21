@@ -28,6 +28,17 @@
       items: [
         { id: 'T-1', title: 'The base inside', where: 'dator', steps: ['Go in', 'Look at the light'], links: [['Start here', './playtest-page.html?admin=' + encodeURIComponent(admin) + '&at=base']], ask: ['Is the light right?', 'How many frames per second?'] },
         { id: 'T-2', title: 'Music on start', steps: ['Open the game'], links: [], ask: 'Does the music start?' },
+        // F-121: a scripted test: keys to the game, a check, a measurement with the game's own measure, a question.
+        { id: 'T-3', title: 'Scripted', steps: ['The script plays'], links: [], run: async (t) => {
+          t.step('Press a key');
+          await t.key('w', { hold: 20 });
+          t.check(Number(document.getElementById('keys').textContent) > 0, 'the game got the key');
+          setTimeout(() => { performance.mark('work-start'); performance.measure('work', 'work-start'); }, 100);
+          const m = await t.measure('play', 400);
+          t.check(m.frames > 0, 'frames were drawn');
+          t.step('Ask');
+          await t.ask('Does it look right?');
+        } },
       ],
       context: () => ({ mode: 'test', at: new URLSearchParams(location.search).get('at') }),
     });

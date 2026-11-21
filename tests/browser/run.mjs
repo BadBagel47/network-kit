@@ -202,6 +202,19 @@ try {
     await c.p.click('.nk-notice button');
   }
 
+  // F-121: the demo's scripted test D-PT1 plays the real demo to the end (Kör needs a tester link; here it runs directly).
+  const scripted = await page('Script');
+  await scripted.p.goto(`${server.base}/`);
+  const outcome = await scripted.p.evaluate(async () => {
+    const { ScriptRun } = await import('./network-kit/client/playtest-script.js');
+    const item = window.demo.playtest.find((i) => i.id === 'D-PT1');
+    const run = await new ScriptRun({ item, win: window, doc: document, ui: { ask: async () => true } }).go();
+    window.demo.room?.leave();
+    return { result: run.result, error: run.error, summary: run.summary(), checks: run.checks.map((c) => `${c.ok ? 'ok' : 'FAIL'} ${c.text}`) };
+  });
+  assert.equal(outcome.result, 'worked', JSON.stringify(outcome));
+  await scripted.context.close();
+
   const relevant = errors.filter((e) => !/WebSocket connection .* failed/i.test(e));
   assert.deepEqual(relevant, [], 'no errors in the pages');
   console.log('browser test passed');

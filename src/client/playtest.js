@@ -23,6 +23,7 @@
 // Texts are Swedish: it is the owner's tool (owner 2026-11-19).
 
 import { VERSION } from '../version.js';
+import { ScriptRun, ScriptStopped } from './playtest-script.js';
 // The QR code maker and the room client are loaded only when Playtest Remote
 // is opened (F-096): a tester who never pairs a remote does not load them.
 const loadShare = () => import('./share.js');
@@ -182,6 +183,11 @@ const STYLE = `
 .nkp .code { font: 800 26px ui-monospace, Menlo, monospace; letter-spacing: .15em; }
 .nkp .note { color: #7fd49a; }
 .nkp .warn { color: #ffcc33; }
+.nkp .script { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid #3a4386; border-radius: 8px; background: #0b1020; }
+.nkp .script ul { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.nkp .script .ok::before { content: "✓ "; color: #7fd49a; }
+.nkp .script .bad::before { content: "✗ "; color: #ff7b72; }
+.nkp .script .ask { font-weight: 700; color: #ffcc33; }
 `;
 
 function addStyle(doc) {
@@ -437,6 +443,10 @@ export class PlaytestPanel {
     this.view = 'list';
     this.remote = null; // the pairing room (Playtest Remote)
     this.frames = { count: 0, slowest: 0, last: 0, since: 0 };
+    // Scripted tests (F-121) run only with a tester link, never in Open test (owner Q28).
+    this.canScript = !o.tester?.open;
+    this.script = null; // the running ScriptRun
+    this.pending = null; // { kind: 'ask' | 'tap', resolve, reject, fn } while the script waits for the tester
     const query = new URLSearchParams(this.win.location?.search ?? '');
     this.hidden = o.hidden ?? query.has('still');
     // A test is running: from the address (?playtest=ID) or from before a reload.
@@ -564,6 +574,15 @@ export class PlaytestPanel {
     this.win.addEventListener?.('online', () => this.sender.flush().catch(() => {}));
     if (read(this.session, PAIR_KEY)) this.pair(true).catch(() => {});
     if (this.tester?.open) this.watchOpenEnd();
+    // A script that asked for its start address runs once that page has loaded (F-121).
+    if (this.run?.autoRun && this.canScript && this.scripted(this.item(this.run.id))) {
+      const from = this.run.autoRun;
+      delete this.run.autoRun;
+      this.save();
+      const go = () => this.win.setTimeout?.(() => this.runScript(from), 600);
+      if (this.doc.readyState === 'complete') go();
+      else this.win.addEventListener?.('load', go, { once: true });
+    }
   }
 
   /** Open test ends at its time (B-133): ask again then; extended goes on, ended takes the panel away. */
@@ -596,6 +615,8 @@ export class PlaytestPanel {
     const y = Math.min(Math.max(4, p?.y ?? Math.round(h * 0.3)), Math.max(4, h - 48));
     this.root.style.left = `${x}px`;
     this.root.style.top = `${y}px`;
+    // Never past the window's bottom: the box scrolls instead, so its last buttons stay in reach.
+    this.root.style.maxHeight = `min(78vh, 640px, ${Math.max(120, h - y - 8)}px)`;
     this.at = { x, y };
   }
 
@@ -705,7 +726,7 @@ export class PlaytestPanel {
     for (const item of this.items) {
       const done = this.reported.has(item.id);
       body.append(this.el('button', { type: 'button', class: `item${done ? ' done' : ''}`, on: { click: () => this.open(item.id) } },
-        this.el('span', { class: 'id' }, `${item.id}${done ? ' · rapporterad' : ''}${item.where ? ` · ${item.where}` : ''}`),
+        this.el('span', { class: 'id' }, `${item.id}${done ? ' · rapporterad' : ''}${this.scripted(item) ? ' · skript' : ''}${item.where ? ` · ${item.where}` : ''}`),
         this.el('span', {}, item.title ?? item.id)));
     }
     body.append(this.el('button', { type: 'button', on: { click: () => this.note() } }, 'Skriv en anteckning utan test'));
@@ -774,6 +795,7 @@ export class PlaytestPanel {
     body.append(this.el('div', {},
       this.el('div', { class: 'muted' }, `${item.id}${item.where ? ` · ${item.where}` : ''}`),
       this.el('strong', {}, item.title ?? item.id)));
+    if (this.scripted(item)) this.renderScript(body);
     if (Array.isArray(item.steps) && item.steps.length) {
       body.append(this.el('ol', {}, item.steps.map((s, i) => this.el('li', { class: i === this.run.step ? 'now' : null }, String(s)))));
       if (this.run.step < item.steps.length - 1) {
@@ -861,6 +883,8 @@ export class PlaytestPanel {
 
   async cancel() {
     if (!this.run) return;
+    // A running script stops and reports itself as cancelled.
+    if (this.script?.state === 'running') return void this.script.stop();
     await this.finish('cancelled');
   }
 
@@ -886,6 +910,7 @@ export class PlaytestPanel {
       text: extra.text ?? this.run.text ?? '',
       via: extra.via ?? 'panel',
       images: extra.images ?? [],
+      ...(extra.script ? { script: extra.script } : {}),
       context: this.context(),
       ...(this.tester?.open && read(this.session, NAME_KEY) ? { name: read(this.session, NAME_KEY) } : {}),
     };
@@ -910,6 +935,144 @@ export class PlaytestPanel {
     this.giveBack();
     this.remoteState();
     return outcome;
+  }
+
+  // ---- scripted tests (F-121)
+
+  /** True when the test has a script and this browser may run it (a tester link, owner Q28). */
+  scripted(item) {
+    return Boolean(this.canScript && item && typeof item.run === 'function');
+  }
+
+  renderScript(body) {
+    const run = this.script;
+    const box = this.el('div', { class: 'script', 'aria-label': 'Skript' });
+    body.append(box);
+    if (!run || run.state !== 'running') {
+      box.append(this.el('button', { type: 'button', class: 'go', on: { click: () => this.startScript('panel') } }, 'Kör skriptet'),
+        this.el('p', { class: 'muted' }, 'Skriptet spelar testet själv, frågar dig bara det som behöver ögon och öron, och skickar resultatet.'));
+      return;
+    }
+    box.append(this.el('div', {}, this.el('b', {}, 'Skriptet körs'), run.current ? ` · ${run.current}` : ''));
+    if (run.checks.length) box.append(this.el('ul', {}, run.checks.slice(-6).map((c) => this.el('li', { class: c.ok ? 'ok' : 'bad' }, c.text))));
+    if (this.pending?.kind === 'ask') {
+      box.append(this.el('p', { class: 'ask', role: 'status' }, this.pending.text),
+        this.el('div', { class: 'row', role: 'group', 'aria-label': 'Svar' },
+          this.el('button', { type: 'button', class: 'go', on: { click: () => this.answer(true) } }, 'Ja'),
+          this.el('button', { type: 'button', on: { click: () => this.answer(false) } }, 'Nej')));
+    } else if (this.pending?.kind === 'tap') {
+      // The browser needs a real tap for sound or fullscreen: the script's own step runs inside it.
+      box.append(this.el('button', { type: 'button', class: 'go', on: { click: () => this.tapped() } }, this.pending.text));
+    }
+    box.append(this.el('button', { type: 'button', class: 'small', on: { click: () => run.stop() } }, 'Stoppa skriptet'));
+  }
+
+  /** *Kör* (from this panel or Playtest Remote): to the test's start address first when it has one. */
+  startScript(from = 'panel') {
+    const item = this.item(this.run?.id);
+    if (!this.scripted(item) || this.script?.state === 'running') return;
+    const first = Array.isArray(item.links) && item.links[0]?.[1];
+    if (first) {
+      this.run.autoRun = from;
+      this.go(first);
+      return;
+    }
+    this.runScript(from);
+  }
+
+  async runScript(from = 'panel') {
+    const item = this.item(this.run?.id);
+    if (!this.scripted(item) || this.script?.state === 'running') return;
+    if (this.folded) this.fold(false);
+    this.view = 'test';
+    this.notice = null;
+    this.frames = { count: 0, slowest: 0, last: 0, since: 0 };
+    this.errors = [];
+    const run = new ScriptRun({
+      item, win: this.win, doc: this.doc, outside: this.root,
+      ui: {
+        update: () => {
+          if (this.view === 'test' && !this.folded) this.render();
+          this.remoteState();
+        },
+        ask: (text, r) => this.wait('ask', text, r),
+        tap: (text, fn, r) => this.wait('tap', text, r, fn),
+        shot: () => this.scriptShot(),
+      },
+    });
+    this.script = run;
+    this.render();
+    this.remoteState();
+    await run.go();
+    this.pending = null;
+    if (!this.pictures.length && run.state !== 'stopped') await this.scriptShot();
+    const outcome = await this.finish(run.result, {
+      answers: run.asks.map((a) => ({ q: a.q, a: a.a === null ? '' : a.a ? 'Ja' : 'Nej' })),
+      text: run.summary(),
+      via: from === 'remote' ? 'remote' : 'panel',
+      script: run.toReport(from),
+    });
+    if (outcome?.sent || outcome?.queued) {
+      this.notice = `${outcome.sent ? 'Skickat' : 'Sparat, skickas när det går'}: ${run.summary()}`;
+      this.render();
+    }
+    this.remote?.send({ t: 'script', done: true, result: run.result, summary: run.summary(), ok: Boolean(outcome?.sent), queued: Boolean(outcome?.queued) });
+    this.script = null;
+    this.remoteState();
+  }
+
+  /** The script waits for the tester: Ja / Nej (here or on the remote), or a tap on this device. */
+  wait(kind, text, run, fn = null) {
+    return new Promise((resolve, reject) => {
+      const stop = () => {
+        this.pending = null;
+        reject(new ScriptStopped());
+      };
+      run.signal.addEventListener('abort', stop, { once: true });
+      this.pending = {
+        kind, text, fn,
+        resolve: (v) => {
+          run.signal.removeEventListener('abort', stop);
+          this.pending = null;
+          resolve(v);
+        },
+        reject: (e) => {
+          run.signal.removeEventListener('abort', stop);
+          this.pending = null;
+          reject(e);
+        },
+      };
+      if (this.folded) this.fold(false);
+      this.render();
+      this.remoteState();
+    });
+  }
+
+  answer(yes) {
+    if (this.pending?.kind === 'ask') this.pending.resolve(Boolean(yes));
+  }
+
+  tapped() {
+    const p = this.pending;
+    if (p?.kind !== 'tap') return;
+    try {
+      p.fn?.(); // inside the tap, so the browser allows sound and fullscreen
+      p.resolve();
+    } catch (e) {
+      p.reject(e);
+    }
+  }
+
+  /** A screenshot for the running script, without the box in it. */
+  async scriptShot() {
+    this.root.hidden = true;
+    const blob = await this.screenshot();
+    this.root.hidden = this.hidden;
+    if (blob) {
+      if (this.pictures.length >= 4) this.pictures.shift();
+      this.pictures.push(blob);
+    }
+    return blob;
   }
 
   // ---- Playtest Remote: the same panel on another device
@@ -1020,10 +1183,10 @@ export class PlaytestPanel {
       admin: this.o.admin,
       items: this.items.filter((i) => i.id !== 'note').map((i) => ({
         id: i.id, title: i.title ?? i.id, where: i.where ?? '', steps: (i.steps ?? []).map(String),
-        links: (i.links ?? []).map(([t]) => String(t)), questions: questionsOf(i),
+        links: (i.links ?? []).map(([t]) => String(t)), questions: questionsOf(i), script: this.scripted(i),
       })),
       reported: [...this.reported],
-      run: this.run ? { id: this.run.id, startedAt: this.run.startedAt, step: this.run.step } : null,
+      run: this.run ? { id: this.run.id, startedAt: this.run.startedAt, step: this.run.step, script: this.script?.toRemote() ?? null } : null,
       page: { title: this.doc.title, device: describeDevice(this.win.navigator).device },
     });
   }
@@ -1042,6 +1205,12 @@ export class PlaytestPanel {
       this.render();
       this.remoteState();
     } else if (data.t === 'restart' && this.run) this.restart();
+    else if (data.t === 'run' && this.item(data.id)) {
+      // Playtest Remote starts the script on this device (owner Q27).
+      if (this.run?.id !== data.id) this.open(data.id);
+      this.startScript('remote');
+    } else if (data.t === 'answer') this.answer(Boolean(data.yes));
+    else if (data.t === 'stop') this.script?.stop();
     else if (data.t === 'shot') {
       const blob = await this.takeShot();
       if (!blob) this.remote?.send({ t: 'shot', ok: false });

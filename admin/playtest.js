@@ -71,6 +71,27 @@ function plain(value, depth = 3) {
   return null;
 }
 
+/** A scripted test's part of a report (F-121): steps, checks, answers and measurements, as plain JSON. */
+function cleanScript(raw) {
+  const list = (v, f) => (Array.isArray(v) ? v.slice(-50).map(f) : []);
+  const measures = {};
+  for (const [label, m] of Object.entries(raw.measures && typeof raw.measures === 'object' ? raw.measures : {}).slice(0, 20)) {
+    measures[String(label).slice(0, 60)] = plain(m, 3);
+  }
+  return {
+    state: ['done', 'failed', 'stopped'].includes(raw.state) ? raw.state : 'failed',
+    from: raw.from === 'remote' ? 'remote' : 'panel',
+    durationMs: num(raw.durationMs),
+    summary: text(raw.summary, 300),
+    steps: list(raw.steps, (x) => ({ at: num(x?.at), text: text(x?.text, 200) })),
+    checks: list(raw.checks, (x) => ({ at: num(x?.at), text: text(x?.text, 200), ok: Boolean(x?.ok) })),
+    asks: list(raw.asks, (x) => ({ at: num(x?.at), q: text(x?.q, 300), a: x?.a === 'Ja' || x?.a === 'Nej' ? x.a : null })),
+    measures,
+    notes: list(raw.notes, (x) => ({ at: num(x?.at), text: text(x?.text, 500) })),
+    ...(raw.error ? { error: text(raw.error, 500) } : {}),
+  };
+}
+
 /** A report as the panel sends it, with known fields only and short texts. */
 export function cleanReport(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
@@ -106,6 +127,7 @@ export function cleanReport(raw) {
     via: r.via === 'remote' ? 'remote' : 'panel',
     images: Array.isArray(r.images) ? r.images.filter((i) => typeof i === 'string' && /^[A-Za-z0-9_-]{6,20}$/.test(i)).slice(0, 4) : [],
     context,
+    ...(r.script && typeof r.script === 'object' ? { script: cleanScript(r.script) } : {}),
   };
 }
 

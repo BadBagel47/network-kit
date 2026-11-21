@@ -189,3 +189,91 @@ test('B-131, B-132: recorded data is copied at once, never throws, is capped; la
   const last = JSON.parse(bodies[bodies.length - 1]);
   assert.equal(last.events[0].k, 'lost', 'the lost batch is marked first');
 });
+
+// ---- F-121: scripted tests
+
+import { ScriptRun, codeOf, findControl } from '../../src/client/playtest-script.js';
+
+function scriptWindow() {
+  const sent = [];
+  class KeyboardEvent { constructor(type, init) { Object.assign(this, init, { type }); } }
+  let frame = 0;
+  const win = {
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (t) => clearTimeout(t),
+    KeyboardEvent,
+    requestAnimationFrame: (fn) => setTimeout(() => fn((frame += 16)), 4),
+    performance: { now: () => 0, getEntriesByType: () => [{ name: 'draw', startTime: 5, duration: 2 }, { name: 'draw', startTime: 6, duration: 4 }] },
+  };
+  const body = { dispatchEvent: (e) => sent.push(`${e.type}:${e.key}:${e.code}`) };
+  const doc = { body, querySelector: () => null, querySelectorAll: () => [] };
+  return { win, doc, sent };
+}
+
+test('F-121: a script steps, presses keys, checks, measures and asks; the report says what happened', async () => {
+  const { win, doc, sent } = scriptWindow();
+  const asked = [];
+  let x = 0;
+  const item = {
+    id: 'G-1',
+    run: async (t) => {
+      t.step('Steer');
+      await t.key('ArrowRight', { hold: 5 });
+      x = 20;
+      await t.wait(() => x > 10);
+      t.check(x > 10, 'moved right');
+      t.check(false, 'a check that fails');
+      const m = await t.measure('steering', 60);
+      t.check(m.fps > 0, 'frames counted');
+      assert.equal(m.marks.draw.count, 2);
+      assert.equal(m.marks.draw.avgMs, 3);
+      assert.equal(await t.ask('Smooth?'), true);
+      t.note('done');
+    },
+  };
+  const run = await new ScriptRun({ item, win, doc, ui: { ask: async (q) => { asked.push(q); return true; } } }).go();
+  assert.deepEqual(sent, ['keydown:ArrowRight:ArrowRight', 'keyup:ArrowRight:ArrowRight']);
+  assert.deepEqual(asked, ['Smooth?']);
+  assert.equal(run.state, 'done');
+  assert.equal(run.result, 'failed', 'a failed check fails the test');
+  const report = run.toReport('remote');
+  assert.equal(report.from, 'remote');
+  assert.deepEqual(report.steps.map((s) => s.text), ['Steer']);
+  assert.deepEqual(report.checks.map((c) => c.ok), [true, false, true]);
+  assert.deepEqual(report.asks.map((a) => a.a), ['Ja']);
+  assert.ok(report.measures.steering.frames > 0);
+  assert.match(report.summary, /2 av 3 kontroller/);
+  assert.equal(codeOf('w'), 'KeyW');
+  assert.equal(codeOf(' '), 'Space');
+});
+
+test('F-121: a script that throws fails with its reason, a Nej fails, a stop cancels and lets go of held keys', async () => {
+  const { win, doc, sent } = scriptWindow();
+  const thrown = await new ScriptRun({ item: { run: async (t) => { await t.wait(() => false, { timeout: 30, what: 'the door' }); } }, win, doc, ui: {} }).go();
+  assert.equal(thrown.state, 'failed');
+  assert.match(thrown.error, /the door/);
+  const no = await new ScriptRun({ item: { run: async (t) => { await t.ask('Right?'); } }, win, doc, ui: { ask: async () => false } }).go();
+  assert.equal(no.result, 'failed');
+  const passed = await new ScriptRun({ item: { run: async (t) => { t.check(true, 'ok'); } }, win, doc, ui: {} }).go();
+  assert.equal(passed.result, 'worked');
+  const long = new ScriptRun({ item: { run: async (t) => { t.keyDown('d'); await t.wait(10_000); } }, win, doc, ui: {} });
+  const going = long.go();
+  setTimeout(() => long.stop(), 20);
+  await going;
+  assert.equal(long.state, 'stopped');
+  assert.equal(long.result, 'cancelled');
+  assert.deepEqual(sent.slice(-2), ['keydown:d:KeyD', 'keyup:d:KeyD'], 'a key held by the script is let go');
+});
+
+test('F-121: a control is found by its text, aria-label or a selector, never inside the panel', () => {
+  const button = (text, extra = {}) => ({ textContent: text, hidden: false, disabled: false, closest: () => null, getClientRects: () => [1], getAttribute: (k) => extra[k] ?? null, ...extra });
+  const start = button(' Start ');
+  const inPanel = button('Start');
+  const icon = button('', { 'aria-label': 'Pause' });
+  const panel = { contains: (e) => e === inPanel };
+  const doc = { querySelectorAll: (sel) => (sel.startsWith('#') ? [icon] : [inPanel, start, icon]) };
+  assert.equal(findControl(doc, 'start', panel), start);
+  assert.equal(findControl(doc, 'Pause', panel), icon);
+  assert.equal(findControl(doc, '#pause', panel), icon);
+  assert.equal(findControl(doc, 'Missing', panel), null);
+});

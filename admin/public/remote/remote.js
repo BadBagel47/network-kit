@@ -98,6 +98,9 @@ function fromGame(data) {
       $('test-note').textContent = '';
     } else $('test-note').textContent = 'Spelet kunde inte ta en bild här. Ta ett foto av skärmen i stället.';
     renderThumbs();
+  } else if (data.t === 'script' && data.done) {
+    // The scripted test sent itself (F-121): back to the list with its outcome.
+    $('list-note').textContent = `${data.ok ? 'Skickat' : data.queued ? 'Sparat på spelet, skickas när det går' : 'Kunde inte skickas'}: ${data.summary ?? ''}`;
   } else if (data.t === 'sent') {
     sending = false;
     $('list-note').textContent = data.ok ? 'Skickat. Tack!' : data.queued ? 'Spelet har ingen kontakt just nu; rapporten skickas när det går.' : 'Rapporten kunde inte skickas.';
@@ -113,6 +116,7 @@ function render() {
   const answers = answersFor(run.id);
   $('test-id').textContent = `${run.id}${run.where ? ` · ${run.where}` : ''}`;
   $('test-title').textContent = run.title;
+  renderScript(run);
   const step = state.run.step ?? 0;
   $('steps').replaceChildren(...run.steps.map((s, i) => el('li', { class: i === step ? 'now' : null }, s)));
   $('next-step').hidden = !(step < run.steps.length - 1);
@@ -128,13 +132,39 @@ function render() {
   renderThumbs();
 }
 
+/** A scripted test (F-121): start it on the game's device, answer Ja / Nej, stop it (owner Q27). */
+function renderScript(run) {
+  const box = $('script');
+  box.hidden = !run.script;
+  if (!run.script) return box.replaceChildren();
+  const sc = state.run.script;
+  if (!sc || sc.state !== 'running') {
+    box.replaceChildren(
+      el('button', { type: 'button', class: 'go', on: { click: () => room.send({ t: 'run', id: run.id }) } }, 'Kör skriptet på spelet'),
+      el('p', { class: 'muted' }, 'Skriptet spelar testet på spelets enhet, frågar här det som behöver ögon och öron, och skickar resultatet.'));
+    return;
+  }
+  const parts = [el('div', {}, el('b', {}, 'Skriptet körs'), sc.current ? ` · ${sc.current}` : '')];
+  if (sc.checks?.length) parts.push(el('ul', {}, sc.checks.slice(-6).map((c) => el('li', { class: c.ok ? 'ok' : 'bad' }, c.text))));
+  if (sc.waiting?.ask) {
+    parts.push(el('p', { class: 'ask', role: 'status' }, sc.waiting.ask),
+      el('div', { class: 'row', role: 'group', 'aria-label': 'Svar' },
+        el('button', { type: 'button', class: 'go', on: { click: () => room.send({ t: 'answer', yes: true }) } }, 'Ja'),
+        el('button', { type: 'button', on: { click: () => room.send({ t: 'answer', yes: false }) } }, 'Nej')));
+  } else if (sc.waiting?.tap) {
+    parts.push(el('p', { class: 'ask', role: 'status' }, `Tryck på spelets enhet: ${sc.waiting.tap}`));
+  }
+  parts.push(el('button', { type: 'button', on: { click: () => room.send({ t: 'stop' }) } }, 'Stoppa skriptet'));
+  box.replaceChildren(...parts);
+}
+
 function renderList() {
   $('who').textContent = state ? `${state.tester ?? 'Testare'} · ${state.game ?? ''}` : '';
   const reported = new Set(state?.reported ?? []);
   $('items').replaceChildren(...(state?.items ?? []).map((i) => el('button', {
     type: 'button', class: reported.has(i.id) ? 'done' : null,
     on: { click: () => { $('list-note').textContent = ''; room.send({ t: 'start', id: i.id, link: 0, go: i.links.length > 0 }); } },
-  }, el('span', { class: 'id' }, `${i.id}${reported.has(i.id) ? ' · rapporterad' : ''}${i.where ? ` · ${i.where}` : ''}`), el('span', {}, i.title))));
+  }, el('span', { class: 'id' }, `${i.id}${reported.has(i.id) ? ' · rapporterad' : ''}${i.script ? ' · skript' : ''}${i.where ? ` · ${i.where}` : ''}`), el('span', {}, i.title))));
   if (state && !state.items.length) $('items').replaceChildren(el('p', { class: 'muted' }, 'Spelet har inga tester i listan just nu.'));
 }
 

@@ -136,6 +136,31 @@ test('F-091: a report keeps known fields only, with short texts', () => {
   assert.deepEqual(r.context.game, { deep: { deeper: { deepest: null } } });
 });
 
+test('F-121: a scripted test\'s part of the report is kept as plain, short JSON', () => {
+  const r = cleanReport({
+    result: 'failed',
+    script: {
+      state: 'hacked', from: 'remote', durationMs: 4200, summary: 's'.repeat(400), extra: 1,
+      steps: Array(80).fill({ at: 1, text: 'step' }),
+      checks: [{ at: 2, text: 'moved', ok: 1 }, { text: 'x'.repeat(300), ok: 0 }],
+      asks: [{ q: 'Smooth?', a: 'Ja' }, { q: 'Odd?', a: '<b>' }],
+      measures: { steering: { fps: 58, slowestFrameMs: 40, marks: { draw: { count: 3, avgMs: 2 } } } },
+      error: 'e'.repeat(900),
+    },
+  });
+  assert.equal(r.script.state, 'failed');
+  assert.equal(r.script.from, 'remote');
+  assert.equal(r.script.summary.length, 300);
+  assert.equal(r.script.steps.length, 50);
+  assert.deepEqual(r.script.checks.map((c) => c.ok), [true, false]);
+  assert.equal(r.script.checks[1].text.length, 200);
+  assert.deepEqual(r.script.asks.map((a) => a.a), ['Ja', null]);
+  assert.equal(r.script.measures.steering.marks.draw.avgMs, 2);
+  assert.equal(r.script.error.length, 500);
+  assert.equal(r.script.extra, undefined);
+  assert.equal(cleanReport({ result: 'worked' }).script, undefined, 'no script part unless sent');
+});
+
 test('F-110, B-097: every open path refuses a stranger; no room is made without a tester link', async () => {
   const { env, call } = setup();
   let made = 0;

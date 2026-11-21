@@ -10,6 +10,13 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.23.0 (2026-11-21)
+
+Affects: games that use Playtest and want scripted tests (take 0.23.0 and add `run` to a test; nothing changes otherwise), and the admin page.
+
+- New (F-121 run A, owner): scripted tests in Playtest. A test may carry `run: async (t) => …` with `t.step`, `t.wait`, `t.key` / `t.keyDown` / `t.keyUp`, `t.click`, `t.check`, `t.measure` (frames per second, the slowest frame, long frames and the game's own `performance.measure` entries), `t.ask` (Ja / Nej), `t.tap` (a tap the browser needs for sound or fullscreen), `t.shot`, `t.note` and `t.signal`. *Kör skriptet* in Playtest-rutan runs it on the device, only with a tester link (owner Q28); Playtest Remote starts it, answers its questions and stops it (owner Q27). The outcome is sent as a report with a `script` part, shown under Rapporter and read by the agents. The demo's D-PT1 has a script, checked against the real demo in the browser test.
+- Fixed: Playtest-rutan no longer reaches past the window's bottom; it scrolls instead, so its last buttons stay in reach.
+
 ## 0.22.0 (2026-11-21)
 
 Affects: games whose players may be recorded with Playtest Recorder (take 0.22.0; nothing to change unless the notice should sit in another corner).

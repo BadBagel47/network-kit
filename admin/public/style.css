@@ -234,6 +234,9 @@ svg.ring .arc { transition: stroke-dashoffset 0.9s cubic-bezier(0.2, 0.8, 0.2, 1
 .report .badge.partly { background: #7a5b12; }
 .report .badge.failed { background: #7a1f1f; }
 .report .badge.cancelled, .report .badge.note { background: #39424f; }
+.report .script-part .checks { margin: 4px 0; padding: 0; list-style: none; font-size: 14px; }
+.report .script-part .checks .ok { color: #7fd49a; }
+.report .script-part .checks .bad { color: #ff7b72; }
 .report-body { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
 .report-body p { margin: 0; }
 .report-body .pics { display: flex; gap: 8px; flex-wrap: wrap; }

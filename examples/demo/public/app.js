@@ -23,7 +23,34 @@ watchNotices(SERVER, { onNotice: (n) => diag.event(`notice ${n.kind}`) });
 const PLAYTEST_ITEMS = [
   { id: 'D-PT1', title: 'Skapa ett rum och styr skeppet', where: 'mobil eller padda',
     steps: ['Skriv ett namn och tryck Create room.', 'Styr skeppet en stund med knapparna eller tangenterna.'],
-    links: [['Öppna demon', './']], ask: ['Går skeppet dit du styr, utan hack?'] },
+    links: [['Öppna demon', './']], ask: ['Går skeppet dit du styr, utan hack?'],
+    // A scripted test (F-121): Kör in Playtest-rutan plays it on this device and sends the result.
+    run: async (t) => {
+      const demo = window.demo;
+      t.step('Skapa ett rum');
+      if (!demo.room || demo.room.status === 'closed') await t.click('Create room');
+      await t.wait(() => demo.room?.status === 'online', { what: 'rummet', timeout: 15_000 });
+      t.check(true, 'Rummet skapades');
+      if (demo.room.phase !== 'playing') {
+        t.step('Starta matchen');
+        await t.click('Start');
+        await t.wait(() => demo.room.phase === 'playing', { what: 'matchen', timeout: 10_000 });
+      }
+      const ship = () => demo.world.ships[demo.room.me] ?? { x: 0, y: 0 };
+      t.step('Styr åt höger');
+      const x = ship().x;
+      await t.key('ArrowRight', { hold: 700 });
+      t.check(ship().x > x + 10, 'Skeppet rörde sig åt höger');
+      t.step('Styr nedåt');
+      const y = ship().y;
+      await t.key('ArrowDown', { hold: 700 });
+      t.check(ship().y > y + 10, 'Skeppet rörde sig nedåt');
+      t.step('Mäter bilder per sekund');
+      const m = await t.measure('styrning', 3000);
+      t.check(m.fps >= 30, `Minst 30 bilder per sekund (${m.fps})`);
+      t.step('Din bedömning');
+      await t.ask('Rörde sig skeppet mjukt, utan hack?');
+    } },
   { id: 'D-PT2', title: 'Två enheter i samma rum', where: 'två enheter',
     steps: ['Skapa ett rum på den ena enheten.', 'Gå med från den andra med koden eller QR-koden.', 'Styr på båda.'],
     links: [['Öppna demon', './']], ask: ['Syns båda skeppen på båda skärmarna?', 'Hur snabbt följer den andra skärmen med?'] },
@@ -589,4 +616,4 @@ function draw() {
 draw();
 
 // For the browser test and for poking around in the console.
-window.demo = { get room() { return room; }, get world() { return world; }, get mine() { return mine; } };
+window.demo = { get room() { return room; }, get world() { return world; }, get mine() { return mine; }, playtest: PLAYTEST_ITEMS };

@@ -1193,6 +1193,23 @@ $('new-open').addEventListener('submit', async (e) => {
 
 const RESULT_SV = { worked: 'Fungerade', partly: 'Delvis', failed: 'Fungerade inte', cancelled: 'Avbrutet', note: 'Anteckning' };
 
+/** A scripted test's checks and measurements (F-121). */
+function scriptPart(sc) {
+  const box = el('div', { class: 'script-part' });
+  box.append(el('p', { class: 'muted small' }, `Skript${sc.from === 'remote' ? ' (startat från fjärr)' : ''} · ${sc.state === 'done' ? 'körde klart' : sc.state === 'stopped' ? 'avbrutet' : 'stoppade'}${sc.durationMs ? ` · ${Math.round(sc.durationMs / 1000)} s` : ''}`));
+  if (sc.error) box.append(el('p', { class: 'error small' }, `Stoppade: ${sc.error}`));
+  if (sc.checks?.length) {
+    const list = el('ul', { class: 'checks' });
+    for (const c of sc.checks) list.append(el('li', { class: c.ok ? 'ok' : 'bad' }, `${c.ok ? '✓' : '✗'} ${c.text}`));
+    box.append(list);
+  }
+  for (const [label, m] of Object.entries(sc.measures ?? {})) {
+    const marks = Object.entries(m?.marks ?? {}).map(([n, x]) => `${n} ${x.avgMs} ms i snitt`).join(', ');
+    box.append(el('p', { class: 'muted small' }, `${label}: ${m?.fps ?? '?'} bilder/s · långsammaste ${m?.slowestFrameMs ?? '?'} ms · ${m?.longFrames ?? 0} långa${marks ? ` · ${marks}` : ''}`));
+  }
+  return box;
+}
+
 function reportItem(r) {
   const item = el('details', { class: `report ${r.result}` });
   const head = el('summary');
@@ -1210,6 +1227,7 @@ function reportItem(r) {
     body.append(p);
   }
   if (r.text) body.append(el('p', {}, r.text));
+  if (r.script) body.append(scriptPart(r.script));
   const c = r.context ?? {};
   const facts = [c.device, c.browser, c.window && `fönster ${c.window}`, c.dpr && `dpr ${c.dpr}`, c.fullscreen && 'fullskärm',
     c.game?.fps && `${c.game.fps} fps`, c.game?.slowestFrameMs && `långsammaste bild ${c.game.slowestFrameMs} ms`,

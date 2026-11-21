@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.22** (0.22.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.23** (0.23.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -458,6 +458,31 @@ startPlaytest({
 The panel talks to the admin page's versioned paths (`/playtest/v1/…`, from 0.15, F-103); the unversioned paths of 0.14 were removed in 0.17 (F-114). A tester's token goes in the header `x-playtest-token`, not in the address (from 0.17, D-111).
 
 **Playtest Remote.** *Fjärr* in the panel opens a small room on the admin page's Worker (only with a working tester link) and shows a QR code, a six-character code and a link. The other device scans the code, opens the link, or types the code at `https://network-kit-admin.l8p1.workers.dev/remote/`. The remote shows the list; *Starta* loads the test's start address on the game page (which pairs again after loading); the steps, questions, result, *Skärmbild från spelet* (taken on the game page and sent with the report), *Ta foto eller välj bild* (the remote's own camera; it sends with a key that only sends pictures and lasts six hours, never the tester link, from 0.14.1), *Skicka*, *Börja om* and *Avbryt* work from there, and the game page folds the panel to a small tab while a remote is connected. The report goes through the game page, which adds its context. Rooms stay in the EU and close an hour after every page was hidden.
+
+**Scripted tests (from 0.23, F-121).** A test in `items` may carry a script, `run: async (t) => { … }`. With a tester link (never in Open test, owner Q28) the panel shows *Kör skriptet*, and Playtest Remote *Kör skriptet på spelet* (owner Q27): the script plays the game on the real device (the owner's computer, phone or iPad), checks and measures, asks the tester only what needs eyes and ears, and sends the outcome as an ordinary report. A test with `links` first loads its first link (as a manual test does) and runs the script once that page has loaded, so a script can start from a set-up address (`./?test&at=star`). Each game writes its own scripts; the kit only drives the page as a player would.
+
+```js
+{ id: 'G-1', title: 'Start and steer', links: [['Open the game', './?test']],
+  run: async (t) => {
+    t.step('Start a match');                       // shown to the tester, kept in the report
+    await t.click('Start');                        // a button or link by its text, aria-label or title (or '#id')
+    await t.wait(() => game.mode === 'playing');   // a condition (at most 10 s, then the script fails), or t.wait(500)
+    await t.key('ArrowRight', { hold: 500 });      // keydown, then keyup; also t.keyDown / t.keyUp
+    t.check(game.ship.x > 100, 'the ship moved right'); // a false check fails the test, the script goes on
+    const m = await t.measure('steering', 3000);   // { fps, slowestFrameMs, longFrames, frames, marks }
+    t.check(m.fps >= 50, `at least 50 frames a second (${m.fps})`);
+    await t.ask('Does the ship move smoothly?');   // Ja / Nej, in the panel or on the remote; Nej fails the test
+    await t.tap('Turn the sound on', () => game.audio.resume()); // a tap on this device; fn runs inside it
+    await t.shot();                                // a screenshot (one is taken at the end anyway)
+    t.note('anything else worth reading');
+  } }
+```
+
+- Keys go to the page as `KeyboardEvent`s with `key` and `code` (`'w'` → `KeyW`, `' '` → `Space`, otherwise the key name), dispatched on a `canvas[tabindex]` or the body, so a game listening on `window` or `document` gets them; `{ target }` chooses another element. Keys the script still holds are let go when it ends.
+- `t.measure` counts the frames the browser draws and adds the game's own `performance.measure` entries made meanwhile, per name (`count`, `avgMs`, `maxMs`, `totalMs`); a game that wants a split per part marks it with `performance.mark`/`measure`. Measure only while a script runs: user timing entries are kept by the browser.
+- `t.signal` is an `AbortSignal` for the game's own waits; *Stoppa skriptet* (panel or remote) and *Avbryt* stop the script and report it as *Avbrutet*.
+- The report: result *Fungerade* when the script ran to its end, every check passed and every answer was Ja, otherwise *Fungerade inte* (or *Avbrutet*); the answers as Ja/Nej; a summary line as the text; at least one screenshot; and `script: { state, from, durationMs, summary, steps, checks, asks, measures, notes, error }`, shown under *Rapporter* and read by the agents with the rest (`.github/workflows/playtest-reports.yml`).
+- A script cannot go on across a page load: a link it follows itself ends it.
 
 **Playtest Recorder (from 0.18, F-092).** Records a match without disturbing the players, so it can be read afterwards to see what can be improved or what went wrong. It runs in a browser that has opened a tester link (owner 2026-11-19, Q7), and from 0.19 in Open test (below); everyone else records nothing and loads nothing more.
 

@@ -87,6 +87,26 @@ try {
   await game.locator('.nkp').getByText('Skickat. Tack!').waitFor();
   assert.match(await game.locator('.nkp').innerText(), /T-2 · rapporterad/);
 
+  // F-121: a scripted test run with Kör in the panel; the tester answers Nej, so it fails, with its checks and measures.
+  assert.match(await game.locator('.nkp').innerText(), /T-3 · (rapporterad · )?skript/);
+  const scriptStart = Date.now() - 1000; // the local store may keep earlier runs
+  await game.getByRole('button', { name: /T-3/ }).click();
+  await game.locator('.nkp').getByRole('button', { name: 'Kör skriptet' }).click();
+  await game.locator('.nkp .script').getByText('Does it look right?').waitFor();
+  if (process.env.SHOTS) await game.screenshot({ path: `${process.env.SHOTS}/script-ask.png` });
+  await game.locator('.nkp .script').getByRole('button', { name: 'Nej', exact: true }).click();
+  await game.locator('.nkp').getByText(/^Skickat: 2 av 2 kontroller gick igenom/).waitFor();
+  const scripted = (await (await api('/api/reports?game=testgame')).json()).find((r) => r.testId === 'T-3' && r.at >= scriptStart);
+  assert.ok(scripted, 'the scripted report reached Rapporter');
+  assert.equal(scripted.result, 'failed', 'a Nej fails the test');
+  assert.equal(scripted.script.from, 'panel');
+  assert.equal(scripted.script.state, 'done');
+  assert.deepEqual(scripted.script.checks.map((c) => [c.text, c.ok]), [['the game got the key', true], ['frames were drawn', true]]);
+  assert.deepEqual(scripted.answers, [{ q: 'Does it look right?', a: 'Nej' }]);
+  assert.equal(scripted.script.measures.play.marks.work.count, 1, 'the game\'s own measure is counted');
+  assert.equal(scripted.images.length, 1, 'a screenshot at the end');
+  assert.equal(await game.locator('#keys').innerText(), '1', 'the key reached the game');
+
   let reports = await (await api('/api/reports?game=testgame')).json();
   const first = reports.find((r) => r.testId === 'T-2');
   assert.ok(first, 'the report reached Rapporter');
@@ -178,6 +198,18 @@ try {
   assert.equal(second.answers[0].a, 'Too dark in the cellar');
   assert.equal(second.images.length, 2, 'the game page\'s screenshot and the remote\'s photo went with it');
   assert.equal(second.context.game.at, 'base');
+
+  // F-121, owner Q27: the phone starts the script on the game page and answers its question there.
+  await phone.getByRole('button', { name: /T-3/ }).click();
+  await phone.locator('#script').getByRole('button', { name: 'Kör skriptet på spelet' }).click();
+  await phone.locator('#script').getByText('Does it look right?').waitFor({ timeout: 15_000 });
+  if (process.env.SHOTS) await phone.screenshot({ path: `${process.env.SHOTS}/remote-script.png`, fullPage: true });
+  await phone.locator('#script').getByRole('button', { name: 'Ja', exact: true }).click();
+  await phone.getByText(/Skickat: /).waitFor({ timeout: 15_000 });
+  const fromRemote = (await (await api('/api/reports?game=testgame')).json()).find((r) => r.testId === 'T-3' && r.script?.from === 'remote' && r.at >= scriptStart);
+  assert.ok(fromRemote, 'the script started from the phone reported');
+  assert.equal(fromRemote.result, 'worked');
+  assert.equal(fromRemote.via, 'remote');
 
   // The agent's reading.
   const read = await (await fetch(`${A}/playtest/v1/read?game=testgame`, { headers: { 'x-playtest-key': 'test-read' } })).json();
