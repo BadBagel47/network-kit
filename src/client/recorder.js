@@ -20,7 +20,7 @@
 //   recorder?.onStop(() => room.send({ type: 'recording', on: false }));
 
 import { VERSION } from '../version.js';
-import { describeDevice, confirmTap, openSession, openMode, NAME_KEY } from './playtest.js';
+import { describeDevice, confirmTap, openSession, openMode, NAME_KEY, pageAddress } from './playtest.js';
 import { RECORDER_NOTICE } from './playtest-entry.js';
 
 export { RECORDER_NOTICE };
@@ -30,6 +30,8 @@ const BATCH_MS = 60_000;
 const EVENTS_MAX = 500; // per batch, as the admin page takes them
 const CHUNKS_MAX = 240; // per session (four hours); then a new session starts
 export const LOOKBACK_MS = 2 * 60_000; // owner Q12: the last two minutes
+const EVENT_MAX_CHARS = 2048; // one event's data, as JSON (B-131)
+const BATCH_MAX_CHARS = 48 * 1024; // a batch, split above this (B-131); the beacon takes about 64 kB
 
 const randomId = (win) => {
   const bytes = win.crypto.getRandomValues(new Uint8Array(12));
@@ -44,8 +46,24 @@ const session = (win) => {
   }
 };
 
+/**
+ * The game's data as it is now (B-131): a copy made at once, so later changes do not
+ * show up, never throwing (a loop or a BigInt), and at most EVENT_MAX_CHARS.
+ */
+function snapshotOf(data) {
+  if (data === null || data === undefined) return null;
+  try {
+    const text = JSON.stringify(data);
+    if (text === undefined) return null;
+    if (text.length > EVENT_MAX_CHARS) return { tooLarge: text.length };
+    return JSON.parse(text);
+  } catch {
+    return { notJson: true };
+  }
+}
+
 export class Recorder {
-  constructor({ admin, token, version = '', window: win, document: doc, fetch: f, everyMs = BATCH_MS, badge = true, recording = true, open = false }) {
+  constructor({ admin, token, version = '', window: win, document: doc, fetch: f, everyMs = BATCH_MS, badge = true, recording = true, open = false, expires = null }) {
     this.admin = String(admin).replace(/\/$/, '');
     this.token = token;
     this.open = open;
@@ -65,6 +83,8 @@ export class Recorder {
     this.watch();
     this.timer = win.setInterval?.(() => this.tick(), everyMs);
     win.__nkRecorder = this; // Playtest-rutan finds it for *Spela in* (F-120)
+    this.full = false; // the day's cap is reached (429): nothing more is sent from this page (B-125)
+    if (open && expires) this.watchEnd(expires);
     if (recording) this.start({ quiet: true });
     else win.dispatchEvent?.(new win.CustomEvent('nk-playtest-recorder', { detail: { recording: false } })); // the panel shows *Spela in*
   }
@@ -85,13 +105,15 @@ export class Recorder {
       }
       this.events.shift(); // the look-back keeps the newest
     }
-    this.events.push({ at: Date.now(), k: String(kind).slice(0, 40), d: data });
+    this.events.push({ at: Date.now(), k: String(kind).slice(0, 40), d: snapshotOf(data) });
   }
 
   /** Also record what happens in a NetworkRoom: connection, participants, host, closing. */
   attach(room) {
     if (!room || this.rooms.has(room)) return;
     this.rooms.add(room);
+    // The kit tells the others in the room itself (D-126, owner Q20); the room passes it on.
+    if (this.recording) room.announceRecording?.(true, { lookback: this.lookback });
     this.record('room', { code: room.code, me: room.me ?? null });
     room.on('status', (status) => this.record('room-status', { status }));
     room.on('peer', (p) => this.record('room-peer', { event: p?.event ?? p?.type ?? null, id: p?.id ?? p?.player?.id ?? null }));
@@ -111,7 +133,7 @@ export class Recorder {
     w.addEventListener?.('unhandledrejection', (e) => this.record('error', { message: `Unhandled: ${String(e.reason?.message ?? e.reason).slice(0, 300)}` }));
     w.addEventListener?.('pagehide', () => this.flush(true));
     // Playtest-rutan's "Sluta testa på den här enheten" (F-117).
-    w.addEventListener?.('nk-playtest-forget', () => this.close());
+    w.addEventListener?.('nk-playtest-forget', () => { this.flush().finally(() => this.close()); });
     this.doc?.addEventListener?.('visibilitychange', () => {
       this.record('visibility', { hidden: Boolean(this.doc.hidden) });
       if (this.doc.hidden) this.flush(true);
@@ -138,6 +160,9 @@ export class Recorder {
   }
 
   measure() {
+    // At most an hour of frame lines waits for something worth sending (B-125).
+    const perf = this.events.filter((e) => e.k === 'perf');
+    if (perf.length >= 60) this.events.splice(this.events.indexOf(perf[0]), 1);
     if (this.frames.count > 1) {
       this.events.push({ at: Date.now(), k: 'perf', d: { fps: Math.round(this.frames.count / (this.everyMs / 1000)), slowestFrameMs: Math.round(this.frames.slowest) } });
       this.frames = { count: 0, slowest: 0, last: 0 };
@@ -154,7 +179,7 @@ export class Recorder {
     const w = this.win;
     const { device, browser, userAgent } = describeDevice(w.navigator);
     return {
-      url: String(w.location?.href ?? ''), version: String(this.version ?? ''), kit: VERSION, device, browser, userAgent,
+      url: pageAddress(w.location), version: String(this.version ?? ''), kit: VERSION, device, browser, userAgent,
       window: `${w.innerWidth}x${w.innerHeight}`, screen: `${w.screen?.width ?? 0}x${w.screen?.height ?? 0}`,
       dpr: w.devicePixelRatio ?? 1, language: w.navigator?.language ?? '', startedAt: this.startedAt,
     };
@@ -162,9 +187,16 @@ export class Recorder {
 
   /** Sends what has been gathered while recording; `leaving` uses sendBeacon, which outlives the page. */
   async flush(leaving = false) {
-    if (!this.recording) return false;
+    if (!this.recording || this.full) return false;
+    // Frame lines and hiding alone are not worth a request (B-125): they go with the next real event.
+    if (!this.dropped && !this.events.some((e) => e.k !== 'perf' && e.k !== 'visibility')) return false;
+    // Markers first, so a full batch never loses them (B-132).
+    if (this.lost) {
+      this.events.unshift({ at: Date.now(), k: 'lost', d: { events: this.lost } });
+      this.lost = 0;
+    }
     if (this.dropped) {
-      this.events.push({ at: Date.now(), k: 'dropped', d: { events: this.dropped } });
+      this.events.unshift({ at: Date.now(), k: 'dropped', d: { events: this.dropped } });
       this.dropped = 0;
     }
     if (!this.events.length) return false;
@@ -175,25 +207,48 @@ export class Recorder {
       name = '';
     }
     // Times count from the session's start; the look-back's are negative (F-120).
-    const events = this.events.slice(0, EVENTS_MAX + 2).map((e) => ({ t: e.at - this.startedAt, k: e.k, d: e.d }));
+    // A batch stays under about 48 kB (B-131): what does not fit goes in the next one, at once.
+    const events = [];
+    let size = 0;
+    while (this.events.length && events.length < EVENTS_MAX) {
+      const e = this.events[0];
+      const one = { t: e.at - this.startedAt, k: e.k, d: e.d };
+      const chars = JSON.stringify(one).length;
+      if (events.length && size + chars > BATCH_MAX_CHARS) break;
+      events.push(one);
+      size += chars;
+      this.events.shift();
+    }
+    const more = this.events.length > 0;
     const chunk = {
       token: this.token, session: this.session, seq: this.seq, events,
       ...(this.seq === 0 ? { context: this.context() } : {}),
       ...(name ? { name } : {}),
     };
-    this.events = [];
     this.seq += 1;
     if (this.seq >= CHUNKS_MAX) this.newSession();
     const url = `${this.admin}/playtest/v1/record`;
     const body = JSON.stringify(chunk);
-    // A plain-text beacon needs no preflight, so it still goes when the page closes.
-    if (leaving && this.win.navigator?.sendBeacon) return this.win.navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
-    try {
-      const res = await this.fetch(url, { method: 'POST', headers: { 'content-type': 'text/plain' }, body, keepalive: true });
-      return res.ok;
-    } catch {
-      return false; // a lost batch is acceptable: recording never disturbs the game
+    let ok = false;
+    if (leaving && this.win.navigator?.sendBeacon) {
+      // A plain-text beacon needs no preflight, so it still goes when the page closes.
+      ok = this.win.navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
+    } else {
+      try {
+        const res = await this.fetch(url, { method: 'POST', headers: { 'content-type': 'text/plain' }, body, keepalive: true });
+        // The admin page says no (B-125): the link or the test has ended, so stop for good;
+        // the day is full, so stop sending and say so on the badge.
+        if (res.status === 401) this.close();
+        else if (res.status === 429) this.dayFull();
+        ok = res.ok;
+      } catch {
+        ok = false; // a lost batch is acceptable: recording never disturbs the game
+      }
     }
+    // A batch that did not arrive is marked in the next one (B-131).
+    if (!ok && !this.closed && !this.full) this.lost = (this.lost ?? 0) + events.length;
+    if (more && !this.closed && !this.full) return this.flush(leaving);
+    return ok;
   }
 
   showBadge() {
@@ -219,6 +274,39 @@ export class Recorder {
     });
     doc.documentElement.append(b);
     this.badge = b;
+    // Open test: say once in this tab what is kept and how to stop (D-126, review PRIV-1).
+    const told = 'nk-playtest:told';
+    if (this.open && !session(this.win)?.getItem?.(told)) {
+      try {
+        session(this.win)?.setItem(told, '1');
+      } catch {
+        // told for this page anyway
+      }
+      b.textContent = '● Inspelning för speltest: enhet, webbläsare och vad som händer i spelet sparas i 30 dagar. Tryck två gånger för att sluta.';
+      Object.assign(b.style, { maxWidth: 'min(320px, calc(100vw - 16px))', whiteSpace: 'normal', textAlign: 'left', borderRadius: '10px' });
+      this.win.setTimeout?.(() => {
+        if (this.badge !== b || b.dataset.confirming) return;
+        b.textContent = '● Inspelning';
+        Object.assign(b.style, { maxWidth: '', whiteSpace: '', textAlign: '', borderRadius: '999px' });
+      }, 12_000);
+    }
+  }
+
+  dayFull() {
+    this.full = true;
+    this.events = [];
+    if (this.badge) this.badge.textContent = '● Inspelning: fullt i dag';
+  }
+
+  /** Open test ends at its time (B-125): ask again then; extended goes on, ended stops for good. */
+  watchEnd(expires) {
+    const ms = Math.max(1000, expires - Date.now() + 2000);
+    this.win.clearTimeout?.(this.endTimer);
+    this.endTimer = this.win.setTimeout?.(async () => {
+      const again = await openSession({ win: this.win, admin: this.admin, fetch: this.fetch, fresh: true });
+      if (again) this.watchEnd(again.expires);
+      else this.close();
+    }, Math.min(ms, 2 ** 31 - 1));
   }
 
   /** Called each time recording starts, for example so the game can tell the others. */
@@ -232,6 +320,13 @@ export class Recorder {
   }
 
   emit(kind) {
+    for (const room of this.rooms) {
+      try {
+        room.announceRecording?.(kind === 'start', { lookback: this.lookback });
+      } catch {
+        // a closed room needs no word
+      }
+    }
     for (const fn of this.listeners[kind]) {
       try {
         fn();
@@ -244,8 +339,10 @@ export class Recorder {
 
   /** Starts recording (*Spela in*, F-120), with the last two minutes kept so far. */
   start({ quiet = false } = {}) {
-    if (this.closed || this.recording) return;
+    if (this.closed || this.recording || this.full) return;
     this.trim();
+    // Started with *Spela in*: the last two minutes come along, and the others are told so (D-126).
+    this.lookback = !quiet && this.events.length > 0;
     this.newSession();
     this.recording = true;
     try {
@@ -277,9 +374,18 @@ export class Recorder {
 
   /** Stops for good on this page (the browser forgot its tester link). */
   async close() {
-    await this.stop();
-    this.closed = true;
+    if (this.closed) return;
+    this.closed = true; // first, so a refused last batch does not close it twice
+    this.full = true;
+    if (this.recording) {
+      this.recording = false;
+      this.events = [];
+      this.badge?.remove();
+      this.badge = null;
+      this.emit('stop');
+    }
     this.win.clearInterval?.(this.timer);
+    this.win.clearTimeout?.(this.endTimer);
     if (this.win.__nkRecorder === this) this.win.__nkRecorder = null;
   }
 }
@@ -304,11 +410,13 @@ export async function startRecorder(options = {}) {
   const mode = openMode(win);
   let recording = Boolean(token) && (mode ? mode.record : true);
   let open = false;
+  let expires = null;
   if (!token) {
     if (!mode) return null;
     const tester = await openSession({ win, admin: options.admin, fetch: options.fetch });
     if (!tester) return null;
     token = tester.token;
+    expires = tester.expires;
     open = true;
     recording = mode.record;
   }
@@ -317,7 +425,7 @@ export async function startRecorder(options = {}) {
   } catch {
     // no session storage: as asked
   }
-  const recorder = new Recorder({ ...options, token, open, recording, window: win, document: doc });
+  const recorder = new Recorder({ ...options, token, open, recording, expires: open ? expires : null, window: win, document: doc });
   if (options.room) recorder.attach(options.room);
   return recorder;
 }

@@ -117,3 +117,75 @@ test('F-120: not recording, the Recorder keeps only the last two minutes in memo
   await rec.stop();
   assert.equal(rec.recording, false);
 });
+
+test('B-125: the Recorder sends nothing for frame lines alone, pauses when the day is full and stops for good when refused', async () => {
+  const { Recorder } = await import('../../src/client/recorder.js');
+  let status = 200;
+  let sent = 0;
+  const win = {
+    crypto: globalThis.crypto, location: { href: 'https://game.example/', search: '' }, navigator: { userAgent: 'test' },
+    innerWidth: 800, innerHeight: 600, screen: { width: 800, height: 600 },
+    addEventListener: () => {}, dispatchEvent: () => true, CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+    setInterval: () => 1, clearInterval: () => {}, setTimeout: () => 1, clearTimeout: () => {}, sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  };
+  const fetchStub = async () => { sent += 1; return new Response('{}', { status }); };
+  const rec = new Recorder({ admin: 'https://admin.example', token: 'pt_a.b', window: win, document: null, fetch: fetchStub, badge: false });
+  rec.events.push({ at: Date.now(), k: 'perf', d: { fps: 60 } });
+  assert.equal(await rec.flush(), false);
+  assert.equal(sent, 0, 'a frame line alone is not sent');
+  rec.record('level-start', { level: 1 });
+  status = 429;
+  await rec.flush();
+  assert.equal(rec.full, true, 'the day is full');
+  rec.record('death', {});
+  await rec.flush();
+  assert.equal(sent, 1, 'nothing more is sent once full');
+
+  let stopped = 0;
+  const other = new Recorder({ admin: 'https://admin.example', token: 'pto_x.y', open: true, window: win, document: null, fetch: fetchStub, badge: false });
+  other.onStop(() => { stopped += 1; });
+  status = 401;
+  other.record('room', {});
+  await other.flush();
+  assert.equal(other.closed, true, 'refused: stopped for good');
+  assert.equal(other.recording, false);
+  assert.equal(stopped, 1, 'the game is told, so the others are too');
+});
+
+test('B-131, B-132: recorded data is copied at once, never throws, is capped; large batches are split; a lost batch is marked', async () => {
+  const { Recorder } = await import('../../src/client/recorder.js');
+  const bodies = [];
+  let status = 200;
+  const win = {
+    crypto: globalThis.crypto, location: { href: 'https://game.example/', search: '' }, navigator: { userAgent: 'test' },
+    innerWidth: 800, innerHeight: 600, screen: { width: 800, height: 600 },
+    addEventListener: () => {}, dispatchEvent: () => true, CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+    setInterval: () => 1, clearInterval: () => {}, setTimeout: () => 1, clearTimeout: () => {}, sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  };
+  const fetchStub = async (url, init) => { bodies.push(init.body); return new Response('{}', { status }); };
+  const rec = new Recorder({ admin: 'https://admin.example', token: 'pt_a.b', window: win, document: null, fetch: fetchStub, badge: false });
+  const live = { hp: 3 };
+  rec.record('hit', live);
+  live.hp = 0;
+  const loop = {};
+  loop.self = loop;
+  rec.record('loop', loop);
+  rec.record('big', { text: 'x'.repeat(5000) });
+  for (let i = 0; i < 60; i += 1) rec.record('filler', { text: 'y'.repeat(1500) });
+  await rec.flush();
+  const sent = bodies.map((b) => JSON.parse(b));
+  assert.ok(sent.length >= 2, 'split into several batches');
+  assert.ok(bodies.every((b) => b.length < 64 * 1024), 'each under the beacon\'s limit');
+  const all = sent.flatMap((b) => b.events);
+  assert.deepEqual(all.find((e) => e.k === 'hit').d, { hp: 3 }, 'the value when recorded');
+  assert.deepEqual(all.find((e) => e.k === 'loop').d, { notJson: true });
+  assert.ok(all.find((e) => e.k === 'big').d.tooLarge > 2048, 'capped');
+  status = 500;
+  rec.record('lost-one', {});
+  await rec.flush();
+  status = 200;
+  rec.record('next', {});
+  await rec.flush();
+  const last = JSON.parse(bodies[bodies.length - 1]);
+  assert.equal(last.events[0].k, 'lost', 'the lost batch is marked first');
+});

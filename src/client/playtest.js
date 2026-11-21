@@ -236,7 +236,8 @@ export class ReportSender {
       await this.post({ ...report, images });
       return { sent: true };
     } catch (e) {
-      if (e.status === 401 || e.status === 413 || e.status === 415) return { sent: false, error: e.status };
+      // Refused, too large, or the day is full (429, B-133): not kept to send later.
+      if (e.status === 401 || e.status === 413 || e.status === 415 || e.status === 429) return { sent: false, error: e.status };
       // Kept to send later: pictures as data URLs, so they survive a reload.
       const kept = [];
       for (const p of pictures) kept.push(typeof p === 'string' ? p : await blobToDataUrl(p));
@@ -257,7 +258,7 @@ export class ReportSender {
         for (const p of q.pictures) images.push(await this.image(await (await this.fetch(p)).blob()));
         await this.post({ ...q.report, images: [...(q.report.images ?? []), ...images] });
       } catch (e) {
-        if (e.status !== 401 && e.status !== 413 && e.status !== 415) left.push(q);
+        if (e.status !== 401 && e.status !== 413 && e.status !== 415 && e.status !== 429) left.push(q);
       }
     }
     write(this.storage, QUEUE_KEY, left.length ? left : null);
@@ -276,33 +277,57 @@ function blobToDataUrl(blob) {
 
 // ------------------------------------------------------------------ the panel
 
+/**
+ * The page's address as reports and recordings keep it (D-134, review PRIV-2): no
+ * fragment (invitation keys, game links and tester links travel there), and no values
+ * for parameters that carry a secret (Open test's key, anything named key, token or
+ * pass). Other values stay, since they set up the test (`?test&at=star`).
+ */
+export function pageAddress(loc) {
+  try {
+    const u = new URL(String(loc?.href ?? ''));
+    const query = [...u.searchParams].map(([k, v]) => (/^(record|report)$|key|token|pass|secret/i.test(k) || !v ? k : `${k}=${v}`)).join('&');
+    return `${u.origin}${u.pathname}${query ? `?${query}` : ''}`;
+  } catch {
+    return '';
+  }
+}
+
 /** Open test (F-118): what the address asks for, `?record`, `?report` or both; null for neither. */
 export function openMode(win = globalThis.window) {
   const q = new URLSearchParams(win?.location?.search ?? '');
   const record = q.has('record');
   const report = q.has('report');
-  return record || report ? { record, report } : null;
+  // The key of this switch-on rides in the address (B-123): ?record=<key>, ?report=<key>.
+  const key = (q.get('record') || q.get('report') || '').slice(0, 40);
+  return record || report ? { record, report, key } : null;
 }
 
 /**
- * Asks the admin page once per tab whether this game's Open test is on (the
- * browser's Origin says which game); the answer is kept until the test ends.
- * Resolves to { game, label, expires, open: true, token } or null.
+ * Asks the admin page whether this game's Open test is on (the browser's
+ * Origin says which game), once per page load: a test switched off is gone at
+ * the next load (B-155). Resolves to { game, label, expires, open: true, token } or null.
  */
-export function openSession({ win, admin, fetch: f }) {
-  if (win.__nkOpen) return win.__nkOpen;
+export function openSession({ win, admin, fetch: f, fresh = false }) {
+  if (win.__nkOpen && !fresh) return win.__nkOpen;
+  const key = openMode(win)?.key ?? '';
+  if (!key) return Promise.resolve(null); // no key in the address: nothing to ask (B-123)
   const s = store(win, 'sessionStorage');
   const kept = read(s, OPEN_KEY);
-  if (kept?.token && kept.expires > Date.now()) return (win.__nkOpen = Promise.resolve(kept));
+  // A "no" is kept for ten minutes, so an address with ?record or ?report does not ask on every load (D-140).
+  if (!fresh && kept?.no && kept.key === key && kept.until > Date.now()) return (win.__nkOpen = Promise.resolve(null));
   const go = f ?? ((...a) => win.fetch(...a));
   win.__nkOpen = (async () => {
     try {
       // Plain text needs no preflight.
-      const res = await go(`${String(admin).replace(/\/$/, '')}/playtest/v1/open`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{}' });
-      if (!res.ok) return null;
-      const found = await res.json();
-      write(s, OPEN_KEY, found);
-      return found;
+      const res = await go(`${String(admin).replace(/\/$/, '')}/playtest/v1/open`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ key }) });
+      if (!res.ok) {
+        write(s, OPEN_KEY, { no: true, key, until: Date.now() + 10 * 60_000 });
+        return null;
+      }
+      // Only a no is kept; a yes is asked again at the next load (B-155).
+      write(s, OPEN_KEY, null);
+      return { ...(await res.json()), key };
     } catch {
       return null;
     }
@@ -479,7 +504,7 @@ export class PlaytestPanel {
       game = { error: String(e?.message ?? e) };
     }
     return {
-      url: String(w.location?.href ?? ''),
+      url: pageAddress(w.location),
       version: String(this.o.version ?? ''),
       kit: VERSION,
       device,
@@ -538,6 +563,28 @@ export class PlaytestPanel {
     this.sender.flush().catch(() => {});
     this.win.addEventListener?.('online', () => this.sender.flush().catch(() => {}));
     if (read(this.session, PAIR_KEY)) this.pair(true).catch(() => {});
+    if (this.tester?.open) this.watchOpenEnd();
+  }
+
+  /** Open test ends at its time (B-133): ask again then; extended goes on, ended takes the panel away. */
+  watchOpenEnd() {
+    const ms = Math.max(1000, (this.tester.expires ?? 0) - Date.now() + 2000);
+    this.win.clearTimeout?.(this.openTimer);
+    this.openTimer = this.win.setTimeout?.(async () => {
+      const again = await openSession({ win: this.win, admin: this.o.admin, fetch: this.o.fetch, fresh: true });
+      if (again) {
+        this.tester = again;
+        this.watchOpenEnd();
+        this.render();
+      } else if (this.run) {
+        // Something is being written: keep it on the screen, so it can be copied.
+        this.notice = 'Öppet test är avslutat, så rapporten kan inte skickas. Texten finns kvar här om du vill kopiera den.';
+        this.render();
+      } else {
+        this.root.remove();
+        this.giveBack();
+      }
+    }, Math.min(ms, 2 ** 31 - 1));
   }
 
   /** Where the box is: kept per browser; at first on the left, a third down, away from the corners. */
@@ -844,13 +891,21 @@ export class PlaytestPanel {
     };
     const outcome = await this.sender.send(report, this.pictures);
     if (outcome.sent && result !== 'cancelled' && report.testId) this.reported.add(report.testId);
+    if (!outcome.sent && !outcome.queued) {
+      // Refused: the text stays in the panel, so nothing written is lost (B-133).
+      this.notice = outcome.error === 429 ? 'Fullt för i dag: Playtest tar inte emot fler rapporter i dag. Texten finns kvar här.'
+        : outcome.error === 413 ? 'Rapporten är för stor. Korta texten eller ta bort en bild.'
+          : this.tester?.open ? 'Öppet test är avslutat, så rapporten kunde inte skickas. Texten finns kvar här om du vill kopiera den.'
+            : 'Rapporten kunde inte skickas. Testarlänken kan ha gått ut. Texten finns kvar här.';
+      this.render();
+      return outcome;
+    }
     this.run = null;
     this.pictures = [];
     this.save();
     this.view = 'list';
     this.notice = outcome.sent ? (result === 'cancelled' ? 'Avbrutet och rapporterat.' : 'Skickat. Tack!')
-      : outcome.queued ? 'Ingen kontakt just nu. Rapporten är sparad och skickas när det går.'
-        : 'Rapporten kunde inte skickas. Testarlänken kan ha gått ut.';
+      : 'Ingen kontakt just nu. Rapporten är sparad och skickas när det går.';
     this.render();
     this.giveBack();
     this.remoteState();

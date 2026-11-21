@@ -500,3 +500,19 @@ test('F-030: the host sets the state for newcomers; a joiner gets it with an eve
   assert.deepEqual(a.welcomeState, { turn: 3 });
   assert.equal(a.setWelcomeState({ turn: 4 }), false, 'only the host');
 });
+
+test('F-141: sends faster than the pace wait in a queue, and the game hears "backlog" when it grows and when it has drained; B-142: its own join says self', async () => {
+  const { world, owner } = await start(CREW);
+  const a = await join(world, 'A');
+  assert.equal(owner.events('peer').find((e) => e.id === owner.me)?.self, true, 'the host\'s own join is marked self');
+  assert.equal(owner.events('peer').find((e) => e.id === a.me)?.self, false);
+  const words = [];
+  a.on('backlog', (e) => words.push(e));
+  for (let i = 0; i < 80; i += 1) a.send({ input: i });
+  assert.ok(a.waiting > 16, `queued: ${a.waiting}`);
+  assert.ok(words.length >= 1 && words[0].waiting >= 16, 'the game is told the queue grows');
+  await until(() => a.waiting === 0, 10_000);
+  await until(() => words.some((e) => e.waiting === 0), 2_000);
+  await world.settle();
+  assert.equal(owner.events('message').filter((m) => m.from === a.me).length, 80, 'nothing is lost');
+});

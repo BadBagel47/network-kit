@@ -3,7 +3,7 @@
 // host sends positions often and gives the room a full snapshot now and then.
 import {
   NetworkRoom, shareLink, readShareLink, forgetShareKey, qrSvg, tabSession, VERSION, watchNotices, readLobbyLink, forgetLobbyLink,
-  startPlaytest, startRecorder, RECORDER_NOTICE,
+  startPlaytest, startRecorder,
 } from './network-kit/client/index.js';
 import * as diag from './diag.js';
 
@@ -40,17 +40,11 @@ startPlaytest({
   context: () => ({ room: room?.code ?? null, status: room?.status ?? null, players: room?.players?.length ?? 0 }),
   canvas: () => document.querySelector('canvas'),
 }).then(async () => {
-  // Playtest Recorder (F-092), also only with a tester link: records the demo's
-  // rooms without disturbing anyone; the others in the room are told.
+  // Playtest Recorder (F-092), only with a tester link or Open test: records the
+  // demo's rooms without disturbing anyone. The kit tells the others in the room
+  // itself (D-126), so the demo only attaches its room.
   recorder = await startRecorder({ admin: ADMIN, version: VERSION });
-  // Stopped with the badge or "Sluta testa på den här enheten": the others are told.
-  // Started or stopped (the badge, Spela in in Playtest-rutan): the others are told.
-  recorder?.onStart(() => room?.send({ type: 'recording' }));
-  recorder?.onStop(() => room?.send({ type: 'recording', on: false }));
-  if (recorder && room) {
-    recorder.attach(room);
-    if (recorder.recording) room.send({ type: 'recording' });
-  }
+  if (recorder && room) recorder.attach(room);
 }).catch(() => {});
 let recorder = null;
 
@@ -179,7 +173,6 @@ function showGame() {
     log(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}.`);
     diag.event(`${nameOf(id, name)} ${returning ? 'is back' : words[event] ?? event}`);
     // Whoever comes in or back is told that this browser records (F-092, owner Q8).
-    if (recorder?.recording && (event === 'join' || event === 'back')) room.send({ type: 'recording' }, { to: [id] });
     if (room.isHost) {
       if (event === 'join' || event === 'back') {
         ensureShips();
@@ -196,25 +189,8 @@ function showGame() {
     }
   });
 
-  // Tell the others when this browser records (F-092, owner Q8); the recording
-  // browser tells each who joins later itself (the peer handler above).
-  if (recorder?.recording) room.send({ type: 'recording' });
   room.on('message', ({ from, data }) => {
     diag.messageIn();
-    if (data?.type === 'recording') {
-      if (data.on === false) {
-        $('recording-note')?.remove();
-        return;
-      }
-      if (!recorder?.recording && !$('recording-note')) {
-        const note = document.createElement('p');
-        note.id = 'recording-note';
-        note.className = 'hint';
-        note.textContent = RECORDER_NOTICE;
-        $('status').after(note);
-      }
-      return;
-    }
     if (data?.type === 'ping') {
       room.send({ type: 'pong', t: data.t }, { to: [from] }); // answered at once
       return;

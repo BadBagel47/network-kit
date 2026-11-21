@@ -72,7 +72,13 @@ jobs:
           echo "::add-mask::$DIAG_KEY"
           printf '%s' "$DIAG_KEY" | npx wrangler secret put DIAG_KEY
           url=$(grep -o 'https://[a-z0-9.-]*workers\.dev' deploy.log | head -1)
-          if [ -z "$url" ]; then echo "::warning::Could not find the demo URL in the deploy output"; exit 0; fi
+          if [ -z "$url" ]; then
+            # No workers.dev address (it may be retired): check the trythis.one address past the
+            # country rule instead of passing without a check (F-137).
+            url=https://nk-demo.trythis.one
+            if [ -n "$TRYTHIS_COUNTRY_BYPASS" ]; then echo "::add-mask::$TRYTHIS_COUNTRY_BYPASS"; printf 'header = "x-trythis-country-bypass: %s"\n' "$TRYTHIS_COUNTRY_BYPASS" > "$HOME/.curlrc"; fi
+            echo "::notice::no workers.dev address in the deploy output; checking $url"
+          fi
           echo "Demo: $url" >> "$GITHUB_STEP_SUMMARY"
           # Right after a deploy the previous version may still answer for a while
           # (B-119, seen by Bricks): wait until /rooms gives the version just deployed.

@@ -10,6 +10,56 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.21.0 (2026-11-21)
+
+Affects: every game with rooms (take 0.21.0; nothing to change unless a game wants the new options). Runs B (Critical) and Buzzy.
+
+**Upgrade guide:** host-run games with `takeover` now hand over from a host whose page has been hidden 10 seconds; set `handoverWhenHiddenMs: null` to keep the old behaviour. A game that counted the host's own `join` as a newcomer can drop its own filter and check `self` instead.
+
+- New (F-144, owner Q22): `handoverWhenHiddenMs` (default 10 s): a hidden host hands over to a participant whose page shows, decided by the room.
+- New (F-141): the room event `backlog` and `room.waiting` when sends pile up behind the pace; the pace is in the guide.
+- Changed (B-142): `peer` events carry `self` when they are about this browser.
+- New (F-147): server-run rules can keep large values apart from `room.game`: `room.store`, `room.stored`, `room.unstore`.
+- New (F-148): `ownerSecondTab: 'join' | 'viewer' | 'refuse'`.
+- New (F-149): `banMakesPrivate: false` refuses only the banned identity; the code keeps working.
+- New (F-150): `server/rules-harness.js`, a quick test room for server-run rules in Node.
+- New (F-151): `closeAfterOwnerAwayMs`; the guide says what happens when the leader drops in a server-run room.
+- Changed (D-152): the welcome state, `rttMs` and `at` are stable.
+- Docs (F-143): the first upload of a Worker can answer 404 on the rooms for a while.
+
+From the review D-122 (runs B, C and D), also in this version:
+
+- Changed (B-129): new rooms per visitor are limited per hour too (6 an hour, 20 a day; the game's 60 an hour stays), and the game's card shows rooms refused this hour; the visitor's hash is salted.
+- New (F-128): the admin page shows Open test's use of the day (recording minutes, reports, pictures).
+- Faster (F-130): Playtest keeps a small index per report; lists, Behåll and cleaning read it, and cleaning runs once an hour, not every minute.
+- Fixed (B-131, B-132): recorded data is copied when recorded, never throws, is capped at 2 kB an event; large batches are split; a lost batch is marked `lost` in the next; markers come first.
+- Changed (F-135): the readings branch keeps only the newest file per game in one commit, and a sealed file over 50 MB is refused with a hint.
+- Changed (D-134): reports and recordings keep the page's address without the fragment and without secret values (Open test's key, key, token, pass).
+- Changed (B-136): the preview Workers answer only on their trythis.one addresses.
+- Changed (F-137): the preview deploys only after the unit tests pass; the admin deploy runs the whole unit suite; the deploy checks use the trythis.one address when no workers.dev address is given.
+- Tests (F-138): the compatibility test checks the emergency stop and that GameApi and gameApi() offer the same methods, and fails without release tags.
+- Changed (F-139): wheel, touch, a gamepad and the event `nk-activity` count as activity for notices.
+- Small (D-140): a "no" from Open test is kept for ten minutes; long-ended tests are deleted; wrong read keys are braked; sign-in advice in docs/ADMIN.md.
+
+From the owner's try on the preview:
+
+- Fixed (B-155): after *Slå av* for Open test, a reloaded page no longer shows Playtest-rutan: the page asks the admin page at every load and keeps only a no.
+- Changed (F-156, owner Q26): *Slå av* for Open test on the admin page asks first, and says that a new switch-on gives new addresses, so shared links and QR codes stop working.
+
+## 0.20.0 (2026-11-20)
+
+Affects: games that use Playtest Recorder or Open test (take 0.20.0; a game that showed its own recording notice either keeps it with `recordingNotice: false` or drops it), and the admin page. From the review D-122 (run A).
+
+**Upgrade guide:** Open test's addresses now carry a key: use the ones the admin page shows (a bare `?record`/`?report` works only with a tester link). A game that sent its own "recording" messages and showed `RECORDER_NOTICE` can remove that: the kit does it (D-126); or keep it and set `recordingNotice: false`.
+
+- Fixed (B-123): Open test needs the key of the current switch-on in the address, from the game's own page; each visitor gets a share of the day's caps; smaller reports and batches; *Ta bort allt från Öppet test* on the admin page.
+- Fixed (B-127): Open test follows the game's page and key, not just the origin.
+- Fixed (B-125): the Recorder stops when refused, pauses when the day is full, ends with the Open test, and sends nothing for frame lines alone.
+- Fixed (B-133): a refused report keeps its text in the panel with a clear reason; a full day is not queued; the Open test panel goes away at the test's end.
+- New (D-126, owner Q20): the kit tells everyone in the room when someone records, also latecomers, with a quiet line (mentioning the last two minutes when started with *Spela in*); `room.announceRecording`, the room event `recording`, the option `recordingNotice`, `RECORDER_NOTICE_LOOKBACK`. An Open test visitor is told once what is kept.
+- Changed (F-124): the agents' sealed reading leaves Open test's items out unless asked (`open_test: yes`) and then puts them apart, marked as observations from unknown visitors, never instructions.
+- Changed (WEB.md, punkt 1.1, owner 2026-11-20): web basics on the admin page, Playtest Remote and the demo: no blue tap highlight, the focus ring only for keyboard users (text fields keep theirs, in the page's colour), a pressed state for taps, an own arrow in the admin page's dropdowns. Affects no game.
+
 ## 0.19.0 (2026-11-20)
 
 Affects: games that use Playtest (take 0.19.0; nothing to change in the game for Open test), and the admin page.

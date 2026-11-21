@@ -29,8 +29,9 @@ export const commandMethods = {
         break;
       }
       case 'visibility':
-        // The page went to the background or came back (F-032).
+        // The page went to the background or came back (F-032); a hidden host hands over (F-144).
         player.hidden = msg.hidden === true;
+        this.watchHiddenHost();
         break;
       case 'leave-place':
         player.place = null;
@@ -152,9 +153,13 @@ export const commandMethods = {
           s.bans.push(pkh);
           s.banList ??= {};
           s.banList[pkh] = { id: msg.id, name: target ? target.name : absent[1].name ?? null, at: this.host.now() };
-          for (const role of Object.keys(s.keys)) s.keys[role] = { k: newSecret(), exp: null };
-          s.settings.access = 'private';
-          for (const k of Object.values(s.known)) if (!this.player(k.id)) k.out = true;
+          // Games that show an open code on a big screen keep it working (F-149,
+          // banMakesPrivate: false): only the banned identity is refused.
+          if (o.banMakesPrivate !== false) {
+            for (const role of Object.keys(s.keys)) s.keys[role] = { k: newSecret(), exp: null };
+            s.settings.access = 'private';
+            for (const k of Object.values(s.known)) if (!this.player(k.id)) k.out = true;
+          }
         }
         if (target) {
           for (const other of this.socketsOf(target.id)) {

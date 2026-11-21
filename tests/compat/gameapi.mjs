@@ -24,9 +24,22 @@ try {
 }
 // The admin page as games met it: GameApi from 0.9 on, game links from 0.10, lobbies from 0.13.
 const earlier = tags.filter((t) => older(num(t), num(version)) && !older(num(t), [0, 13, 0])).sort((a, b) => (older(num(a), num(b)) ? -1 : 1));
+// The GameApi class games call (entry.js) and gameApi() have the same methods (F-138).
+// entry.js imports cloudflare:workers, so its methods are read from the text.
+const entryText = readFileSync('admin/entry.js', 'utf8');
+const classBody = entryText.slice(entryText.indexOf('export class GameApi'));
+const classMethods = [...classBody.matchAll(/^\s{2}(\w+)\(/gm)].map((m) => m[1]).filter((n) => n !== 'api').sort();
+const objectMethods = Object.keys(gameApi({ fetch: async () => new Response('{}') })).sort();
+assert.deepEqual(classMethods, objectMethods, 'GameApi in entry.js and gameApi() in gameapi.js offer the same methods');
+
 if (!earlier.length) {
-  console.log(`gameapi compat: no earlier release to check against ${version} (tags must be fetched)`);
-  process.exit(0);
+  // Without tags the test would check nothing (F-138): fail, unless told that is expected.
+  if (process.env.NK_COMPAT_NO_TAGS === '1') {
+    console.log(`gameapi compat: no earlier release to check against ${version} (allowed by NK_COMPAT_NO_TAGS)`);
+    process.exit(0);
+  }
+  console.error(`gameapi compat: no earlier release tag found to check against ${version}; fetch the tags (git fetch --tags) or set NK_COMPAT_NO_TAGS=1`);
+  process.exit(1);
 }
 // The newest release of each earlier minor line (games keep their copy for a while).
 const newest = [...new Map(earlier.map((t) => [num(t).slice(0, 2).join('.'), t])).values()];
@@ -81,6 +94,13 @@ try {
   const guest = await req('/rooms/lobby', { method: 'POST', body: JSON.stringify({ token: lobby.guestToken }) });
   assert.equal(guest.status, 200, `${tag}: the lobby link works`);
   assert.equal((await guest.json()).role, 'guest');
+
+  // The emergency stop: the earlier game Worker must refuse a new room, not fail open (F-138).
+  await call('/settings', 'PUT', { games: { bricks: { mode: 'on', stopped: true } } });
+  fresh();
+  const stopped = await req('/rooms', { method: 'POST', body: '{}' });
+  assert.equal(stopped.status, 503, `${tag}: the emergency stop closes the game`);
+  assert.equal((await stopped.json()).reason ?? 'stopped', 'stopped');
 
   console.log(`gameapi compat: the ${tag} game Worker works against the ${version} admin page`);
 } finally {

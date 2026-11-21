@@ -685,3 +685,57 @@ test('F-032: idleCloseMs null turns the idle close off', async () => {
   await world.advance(3 * 60 * 60_000);
   assert.equal(core.state.closed, null);
 });
+
+test('F-144: a host whose page stays hidden hands the game to a participant whose page shows; back in time, it keeps it', async () => {
+  const { world, core, owner } = await setup({ ...CREW, takeover: true });
+  const a = await connect(world, core, { name: 'A' });
+  // Hidden briefly and back: nothing changes.
+  await cmd(core, owner, 'visibility', { hidden: true });
+  await world.advance(5_000);
+  await cmd(core, owner, 'visibility', { hidden: false });
+  await world.advance(10_000);
+  assert.equal(core.state.hostId, owner.id, 'back in time: still the host');
+  // Hidden for good (a locked phone): A, whose page shows, takes over.
+  await cmd(core, owner, 'visibility', { hidden: true });
+  await world.advance(10_500);
+  assert.equal(core.state.hostId, a.id, 'the visible participant runs the game');
+  assert.ok(a.last('host'), 'and is told so');
+});
+
+test('F-144: no hand-over when every other page is hidden too, until one shows; never without takeover', async () => {
+  const { world, core, owner } = await setup({ ...CREW, takeover: true });
+  const a = await connect(world, core, { name: 'A' });
+  await cmd(core, a, 'visibility', { hidden: true });
+  await cmd(core, owner, 'visibility', { hidden: true });
+  await world.advance(20_000);
+  assert.equal(core.state.hostId, owner.id, 'nobody to hand to');
+  await cmd(core, a, 'visibility', { hidden: false });
+  await world.advance(10_500);
+  assert.equal(core.state.hostId, a.id, 'A shows again and takes over');
+
+  const off = await setup({ ...CREW, takeover: false });
+  const b = await connect(off.world, off.core, { name: 'B' });
+  await cmd(off.core, off.owner, 'visibility', { hidden: true });
+  await off.world.advance(30_000);
+  assert.equal(off.core.state.hostId, off.owner.id, 'a game without takeover keeps its host');
+  assert.ok(b);
+});
+
+test('F-151: with closeAfterOwnerAwayMs a server-run room closes when its leader stays away, and not when the leader comes back in time', async () => {
+  const quiz = { mode: 'server', roles: { leader: { seats: 1, plays: false }, player: { seats: 30 } }, ownerRole: 'leader', rules: {}, closeAfterOwnerAwayMs: 120_000 };
+  const back = await setup(quiz);
+  const p = await connect(back.world, back.core, { name: 'P' });
+  await drop(back.core, back.owner);
+  await back.world.advance(60_000);
+  await connect(back.world, back.core, { name: 'Owner', owner: back.created.ownerKey, pk: back.owner.pk });
+  await back.world.advance(120_000);
+  assert.ok(!back.core.state.closed, 'the leader came back in time');
+  assert.ok(p);
+
+  const gone = await setup(quiz);
+  const q = await connect(gone.world, gone.core, { name: 'Q' });
+  await drop(gone.core, gone.owner);
+  await gone.world.advance(121_000);
+  assert.ok(gone.core.state.closed, 'the room closes without its leader');
+  assert.equal(q.last('closed')?.reason, 'owner-away');
+});

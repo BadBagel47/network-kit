@@ -283,6 +283,9 @@ function card(name) {
     if (act) facts.append(fact(act.rooms, 'rum'), fact(act.players, 'spelare nu'), fact(act.peak, 'som mest i dag'));
     else facts.append(el('span', {}, 'Inga rum i dag'));
   }
+  // New rooms refused this hour (B-129): someone may be making rooms to close the game.
+  const refused = data.control.roomsRefused?.[name] ?? 0;
+  if (refused > 0) facts.append(fact(refused, 'rum nekade denna timme', true));
   const version = data.control.versions?.[name];
   if (version) {
     const v = el('span');
@@ -1111,10 +1114,11 @@ $('new-tester').addEventListener('submit', async (e) => {
 
 /* ---------- Open test (F-118): ready addresses, no tester link ---------- */
 
-/** The page's address with ?record, ?report or both (owner Q10: never typed by hand). */
-function openAddress(page, ask) {
+/** The page's address with ?record, ?report or both and this switch-on's key (owner Q10, B-123: never typed by hand). */
+function openAddress(page, ask, key) {
   const base = String(page).split('#')[0];
-  return `${base}${base.includes('?') ? '&' : '?'}${ask}`;
+  const query = ask.split('&').map((a) => `${a}=${encodeURIComponent(key)}`).join('&');
+  return `${base}${base.includes('?') ? '&' : '?'}${query}`;
 }
 
 function openItem(o) {
@@ -1122,17 +1126,34 @@ function openItem(o) {
   const info = el('div');
   info.append(el('span', { class: 'title' }, o.state === 'on' ? `${o.game} · på till ${clock(o.until)}` : `${o.game} · avslaget ${clock(o.until)}`));
   info.append(el('span', { class: 'sub' }, o.page));
+  // Today's use (F-128): the day's caps are shared by all visitors; a batch is about a minute.
+  if (o.used && o.caps) info.append(el('span', { class: 'sub' }, `I dag: ${o.used.chunk} av ${o.caps.chunk} inspelningsminuter · ${o.used.report} av ${o.caps.report} rapporter · ${o.used.image} av ${o.caps.image} bilder`));
   item.append(info);
-  if (o.state !== 'on') return item;
+  // Everything this game's Open test brought in, in one go (B-123).
+  const wipe = el('button', { type: 'button' }, 'Ta bort allt från Öppet test');
+  wipe.addEventListener('click', async () => {
+    if (!confirm(`Ta bort alla rapporter och inspelningar från Öppet test för ${o.game}? Testarlänkarnas finns kvar.`)) return;
+    const res = await fetch(`/api/open-tests/${encodeURIComponent(o.game)}/data`, { method: 'DELETE' });
+    const done = res.ok ? await res.json() : null;
+    wipe.textContent = done ? `Borttaget: ${done.reports} rapporter, ${done.recordings} inspelningar` : `Gick inte (${res.status})`;
+    loadReports().catch(() => {});
+    loadRecordings().catch(() => {});
+  });
+  if (o.state !== 'on') {
+    item.append(wipe);
+    return item;
+  }
   const stop = el('button', { type: 'button' }, 'Slå av');
   stop.addEventListener('click', async () => {
+    // Owner Q26 (F-156): a new switch-on gets a new key, so shared addresses and QR codes stop working.
+    if (!confirm(`Slå av öppet test för ${o.game}? Inspelningen hos testarna slutar inom en minut, och rutan försvinner när sidan laddas om. Slår du på igen får adresserna en ny nyckel, så delade länkar och QR-koder slutar fungera.`)) return;
     await fetch(`/api/open-tests/${encodeURIComponent(o.game)}`, { method: 'DELETE' });
     loadOpenTests();
   });
-  item.append(stop);
+  item.append(stop, wipe);
   const addresses = el('div', { class: 'open-addresses' });
   for (const [ask, what] of [['record', 'Spelar in'], ['report', 'Visar Playtest-rutan för att rapportera'], ['record&report', 'Båda']]) {
-    const link = openAddress(o.page, ask);
+    const link = openAddress(o.page, ask, o.key);
     const copyButton = el('button', { type: 'button' }, 'Kopiera');
     copyButton.addEventListener('click', () => copy(copyButton, link));
     const qr = el('button', { type: 'button' }, 'QR-kod');

@@ -22,7 +22,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The preview deploys only when the unit tests pass (F-137).
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci && npm test
   preview:
+    needs: test
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
