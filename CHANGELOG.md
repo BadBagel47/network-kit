@@ -10,6 +10,14 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.22.0 (2026-11-21)
+
+Affects: games whose players may be recorded with Playtest Recorder (take 0.22.0; nothing to change unless the notice should sit in another corner).
+
+**Upgrade guide:** the kit's recording notice moves from a line at the bottom to the top-right corner and shrinks to *● REC* after 6 seconds. A game with controls or information there sets `recordingNotice: 'top-left'`, `'bottom-left'` or `'bottom-right'`.
+
+- Changed (F-154, owner): the kit's recording notice no longer covers the game: a corner (`recordingNotice: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'`, default top-right), the whole text for 6 seconds, then a small *● REC* that shows the text again when tapped; clear of a notch where the browser knows it. Unit and browser tests on a phone-sized page.
+
 ## 0.21.0 (2026-11-21)
 
 Affects: every game with rooms (take 0.21.0; nothing to change unless a game wants the new options). Runs B (Critical) and Buzzy.

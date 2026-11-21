@@ -324,6 +324,37 @@ try {
   await game.locator('.nkp').waitFor({ state: 'detached' });
   assert.equal(await game.evaluate(() => localStorage.getItem('nk-playtest:tester')), null, 'the link is forgotten here');
 
+  // F-154: the kit's recording notice on a phone: a corner, the text a moment, then a small mark; a tap shows it again.
+  for (const corner of [true, 'bottom-left']) {
+    const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 700 } });
+    const shown = await phoneCtx.newPage();
+    shown.on('pageerror', (e) => errors.push(`notice: ${e.message}`));
+    await shown.goto(`${pageBase}/tests/browser/playtest-page.html`);
+    await shown.evaluate(async (c) => {
+      const { NetworkRoom } = await import('/src/client/room.js');
+      const { RECORDER_NOTICE_LOOKBACK } = await import('/src/client/playtest-entry.js');
+      window.noticeRoom = new NetworkRoom({ server: 'http://127.0.0.1:9', code: 'ABCDEF', recordingNotice: c });
+      window.noticeRoom.recordingNoticeMs = 800;
+      window.noticeRoom.showRecordingNotice(RECORDER_NOTICE_LOOKBACK);
+    }, corner);
+    const mark = shown.locator('button[aria-label*="recorded for a playtest"]');
+    await mark.waitFor();
+    if (process.env.SHOTS) await shown.screenshot({ path: `${process.env.SHOTS}/recording-notice-${corner === true ? 'text' : corner}.png` });
+    const open = await mark.boundingBox();
+    assert.ok(open.width <= 290, `the text keeps to a corner: ${open.width}px wide`);
+    await shown.waitForFunction(() => document.querySelector('button[aria-label]').innerText.trim() === '\u25CF REC');
+    const small = await mark.boundingBox();
+    if (process.env.SHOTS) await shown.screenshot({ path: `${process.env.SHOTS}/recording-notice-mark-${corner === true ? 'top-right' : corner}.png` });
+    assert.ok(small.width < 80 && small.height < 30, `then only a small mark: ${JSON.stringify(small)}`);
+    if (corner === true) assert.ok(small.y <= 12 && small.x + small.width >= 390 - 12, `top-right by default: ${JSON.stringify(small)}`);
+    else assert.ok(small.x <= 12 && small.y + small.height >= 700 - 12, `bottom-left when the game asks: ${JSON.stringify(small)}`);
+    await mark.click();
+    assert.match(await mark.innerText(), /including the last two minutes/, 'a tap shows the text again');
+    await shown.evaluate(() => { window.noticeRoom.showRecordingNotice(null); window.noticeRoom.stopped = true; window.noticeRoom.stopTimers(); });
+    assert.equal(await mark.count(), 0, 'gone when nobody records');
+    await phoneCtx.close();
+  }
+
   assert.deepEqual(errors, [], 'no page errors');
   console.log('playtest browser test passed');
 } finally {

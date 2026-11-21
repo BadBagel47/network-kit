@@ -516,3 +516,58 @@ test('F-141: sends faster than the pace wait in a queue, and the game hears "bac
   await world.settle();
   assert.equal(owner.events('message').filter((m) => m.from === a.me).length, 80, 'nothing is lost');
 });
+
+/** A small page for the recording notice: elements with style, attributes, children and listeners. */
+function noticePage() {
+  const make = (tag) => {
+    const node = {
+      tag, style: {}, attrs: {}, children: [], parent: null, listeners: {}, own: '',
+      setAttribute(k, v) { this.attrs[k] = String(v); },
+      append(...kids) { for (const k of kids) { k.parent = this; this.children.push(k); } },
+      remove() { if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this); this.parent = null; },
+      addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); },
+      fire(type) { for (const fn of this.listeners[type] ?? []) fn({ stopPropagation() {} }); },
+      get textContent() { return this.own + this.children.map((c) => c.textContent).join(''); },
+      set textContent(v) { this.own = String(v); this.children = []; },
+    };
+    return node;
+  };
+  const root = make('html');
+  const doc = new EventTarget();
+  doc.hidden = false;
+  doc.documentElement = root;
+  doc.createElement = make;
+  return { doc, root };
+}
+
+test('F-154: the kit\'s recording notice sits in a corner, shows its text a moment, then only a small mark; a tap shows it again; the game chooses the corner', async () => {
+  const { world, owner } = await start(CREW);
+  const page = noticePage();
+  const b = await join(world, 'B', { document: page.doc });
+  b.recordingNoticeMs = 60;
+  const corner = noticePage();
+  const c = await join(world, 'C', { document: corner.doc, recordingNotice: 'bottom-left' });
+  owner.announceRecording(true, { lookback: true });
+  await until(() => page.root.children.length === 1 && corner.root.children.length === 1, 2_000);
+  const box = page.root.children[0];
+  assert.equal(box.attrs.role, 'status');
+  assert.match(box.style.top, /8px/, 'top-right by default');
+  assert.match(box.style.right, /8px/);
+  assert.equal(box.style.bottom, undefined);
+  const mark = box.children[0];
+  assert.equal(mark.tag, 'button');
+  assert.match(mark.textContent, /including the last two minutes/, 'the whole text first');
+  assert.match(mark.attrs['aria-label'], /recorded for a playtest/);
+  await until(() => /^● REC$/.test(mark.textContent), 2_000);
+  mark.fire('click');
+  assert.match(mark.textContent, /recorded for a playtest/, 'a tap shows the text again');
+  await until(() => /^● REC$/.test(mark.textContent), 2_000);
+  const other = corner.root.children[0];
+  assert.match(other.style.bottom, /8px/, 'the game chose bottom-left');
+  assert.match(other.style.left, /8px/);
+  assert.equal(other.style.top, undefined);
+  owner.announceRecording(false);
+  await until(() => page.root.children.length === 0 && corner.root.children.length === 0, 2_000);
+  assert.equal(b.recordingNoticeText, null);
+  await c.leave();
+});

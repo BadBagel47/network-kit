@@ -24,6 +24,10 @@ import { tabSession } from './tab.js';
 import { Measure } from './measure.js';
 import { adminPass } from './admin-pass.js';
 
+/** Where the kit's recording notice may sit (F-154), and how long its text shows. */
+export const RECORDING_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+const RECORDING_NOTICE_MS = 6000;
+
 // Identities already renewed in this page because the tab was a copy.
 const renewedInThisPage = new Set();
 
@@ -101,8 +105,12 @@ export class NetworkRoom {
     this.doc = o.document ?? (typeof document !== 'undefined' ? document : null);
     // Playtest Recorder in the room (D-126, owner Q20): who records, and the kit's own
     // notice to everyone else, unless the game shows its own (recordingNotice: false).
+    // F-154: the notice sits in a corner the game may choose ('top-left', 'top-right',
+    // 'bottom-left', 'bottom-right'), shows its text a moment, then only a small mark.
     this.recorders = new Map(); // participant id → { lookback }
     this.recordingNotice = o.recordingNotice !== false;
+    this.recordingCorner = RECORDING_CORNERS.includes(o.recordingNotice) ? o.recordingNotice : 'top-right';
+    this.recordingNoticeMs = RECORDING_NOTICE_MS;
     this.minDelayMs = o.minDelayMs ?? 500;
     this.maxDelayMs = o.maxDelayMs ?? 15_000;
     this.slowDelayMs = o.slowDelayMs ?? 60_000; // retry pace after slowAfterMs or in a hidden tab
@@ -1076,23 +1084,63 @@ export class NetworkRoom {
     const doc = this.doc;
     if (!this.recordingNotice || !doc?.documentElement) return;
     if (!text) {
+      clearTimeout(this.recordingNoticeTimer);
       this.recordingNoticeEl?.remove();
       this.recordingNoticeEl = null;
+      this.recordingNoticeText = null;
       return;
     }
     if (!this.recordingNoticeEl) {
-      const el = doc.createElement('div');
-      el.setAttribute('role', 'status');
-      // A quiet line (owner Q1); styles through the CSSOM for a strict Content-Security-Policy.
-      Object.assign(el.style, {
-        position: 'fixed', left: '50%', bottom: '8px', transform: 'translateX(-50%)', zIndex: '2147481998', pointerEvents: 'none',
-        maxWidth: 'calc(100vw - 24px)', font: '13px/1.35 system-ui, sans-serif', color: '#e6edf3', background: 'rgba(40, 44, 52, .88)',
-        padding: '4px 10px', borderRadius: '8px', textAlign: 'center',
+      // Styles through the CSSOM for a strict Content-Security-Policy.
+      const box = doc.createElement('div');
+      box.setAttribute('role', 'status');
+      const [v, h] = this.recordingCorner.split('-');
+      Object.assign(box.style, { position: 'fixed', zIndex: '2147481998', pointerEvents: 'none', maxWidth: 'min(280px, calc(100vw - 24px))' });
+      box.style[v] = '8px';
+      box.style[h] = '8px';
+      // Clear of a notch or the home bar where the browser knows them; ignored where it does not.
+      box.style[v] = `max(8px, env(safe-area-inset-${v}))`;
+      box.style[h] = `max(8px, env(safe-area-inset-${h}))`;
+      const mark = doc.createElement('button');
+      mark.setAttribute('type', 'button');
+      Object.assign(mark.style, {
+        pointerEvents: 'auto', display: 'block', margin: '0', border: '0', cursor: 'pointer', textAlign: 'left',
+        font: '12px/1.35 system-ui, sans-serif', color: '#e6edf3', background: 'rgba(40, 44, 52, .82)',
+        padding: '3px 8px', borderRadius: '8px',
       });
-      doc.documentElement.append(el);
-      this.recordingNoticeEl = el;
+      const dot = doc.createElement('span');
+      dot.textContent = '\u25CF ';
+      dot.style.color = '#ff6b6b';
+      const words = doc.createElement('span');
+      mark.append(dot, words);
+      // A tap shows the text again; it does not reach the game.
+      const own = (e) => e.stopPropagation?.();
+      mark.addEventListener('pointerdown', own);
+      mark.addEventListener('click', (e) => {
+        own(e);
+        this.expandRecordingNotice();
+      });
+      box.append(mark);
+      doc.documentElement.append(box);
+      this.recordingNoticeEl = box;
+      this.recordingNoticeMark = mark;
+      this.recordingNoticeWords = words;
     }
-    this.recordingNoticeEl.textContent = text;
+    if (text === this.recordingNoticeText) return;
+    this.recordingNoticeText = text;
+    this.recordingNoticeMark.setAttribute('aria-label', text);
+    this.recordingNoticeMark.setAttribute('title', text);
+    this.expandRecordingNotice();
+  }
+
+  /** The whole text for a moment, then only the mark (F-154). */
+  expandRecordingNotice() {
+    if (!this.recordingNoticeWords || !this.recordingNoticeText) return;
+    this.recordingNoticeWords.textContent = this.recordingNoticeText;
+    clearTimeout(this.recordingNoticeTimer);
+    this.recordingNoticeTimer = setTimeout(() => {
+      if (this.recordingNoticeWords) this.recordingNoticeWords.textContent = 'REC';
+    }, this.recordingNoticeMs);
   }
 
   leave(snapshot) {
