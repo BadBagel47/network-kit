@@ -44,6 +44,7 @@ From the review D-122 (runs B, C and D), also in this version:
 From the owner's try on the preview:
 
 - Fixed (B-155): after *Slå av* for Open test, a reloaded page no longer shows Playtest-rutan: the page asks the admin page at every load and keeps only a no.
+- Changed (F-156, owner Q26): *Slå av* for Open test on the admin page asks first, and says that a new switch-on gives new addresses, so shared links and QR codes stop working.
 
 ## 0.20.0 (2026-11-20)
 

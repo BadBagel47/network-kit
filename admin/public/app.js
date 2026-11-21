@@ -1145,6 +1145,8 @@ function openItem(o) {
   }
   const stop = el('button', { type: 'button' }, 'Slå av');
   stop.addEventListener('click', async () => {
+    // Owner Q26 (F-156): a new switch-on gets a new key, so shared addresses and QR codes stop working.
+    if (!confirm(`Slå av öppet test för ${o.game}? Inspelningen hos testarna slutar inom en minut, och rutan försvinner när sidan laddas om. Slår du på igen får adresserna en ny nyckel, så delade länkar och QR-koder slutar fungera.`)) return;
     await fetch(`/api/open-tests/${encodeURIComponent(o.game)}`, { method: 'DELETE' });
     loadOpenTests();
   });

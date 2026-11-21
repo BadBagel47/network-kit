@@ -280,6 +280,12 @@ try {
   await recorderOnly.waitForFunction(() => window.ready);
   await recorderOnly.locator('button[aria-label^="Playtest Recorder spelar in"]').waitFor();
   assert.equal(await recorderOnly.locator('.nkp').count(), 0, '?record alone shows no panel');
+  // Slå av asks first (owner Q26, F-156); a no keeps the test on.
+  let asked = '';
+  owner.once('dialog', (d) => { asked = d.message(); d.dismiss(); });
+  await owner.locator('#open-tests').getByRole('button', { name: 'Slå av' }).click();
+  assert.match(asked, /ny nyckel/, `Slå av asks first: ${asked}`);
+  assert.equal((await (await api('/api/open-tests')).json()).find((t) => t.game === 'testgame')?.state, 'on', 'a no keeps Open test on');
   // Switched off: the addresses do nothing.
   await api('/api/open-tests/testgame', { method: 'DELETE' });
   // A tab that had the panel loses it at its next load (B-155).
