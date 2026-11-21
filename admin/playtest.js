@@ -86,6 +86,7 @@ function cleanScript(raw) {
     state: ['done', 'failed', 'stopped'].includes(raw.state) ? raw.state : 'failed',
     from: ['remote', 'link'].includes(raw.from) ? raw.from : 'panel',
     durationMs: num(raw.durationMs),
+    attempt: num(raw.attempt),
     summary: text(raw.summary, 300),
     steps: list(raw.steps, (x) => ({ at: num(x?.at), text: text(x?.text, 200) })),
     checks: list(raw.checks, (x) => ({ at: num(x?.at), text: text(x?.text, 200), ok: Boolean(x?.ok) })),

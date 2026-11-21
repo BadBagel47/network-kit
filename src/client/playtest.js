@@ -36,6 +36,7 @@ const PLACE_KEY = 'nk-playtest:place';
 const PAIR_KEY = 'nk-playtest:pair';
 const OPEN_KEY = 'nk-playtest:open'; // Open test (F-118): this tab's answer, sessionStorage
 export const NAME_KEY = 'nk-playtest:name'; // Open test: the optional name (owner Q8), sessionStorage
+const ATTEMPT_KEY = 'nk-playtest:attempts'; // F-121, B-158: how many times each script ran in this tab
 const QUEUE_MAX = 5;
 const IMAGE_TARGET = 300 * 1024; // owner 2026-11-19: about 300 kB, made smaller, never thrown away
 const RESULT_TEXT = { worked: 'Fungerade', partly: 'Delvis', failed: 'Fungerade inte', cancelled: 'Avbrutet', note: 'Anteckning' };
@@ -188,6 +189,13 @@ const STYLE = `
 .nkp .script .ok::before { content: "✓ "; color: #7fd49a; }
 .nkp .script .bad::before { content: "✗ "; color: #ff7b72; }
 .nkp .script .ask { font-weight: 700; color: #ffcc33; }
+.nkp.strip { top: max(4px, env(safe-area-inset-top)) !important; left: 50% !important; transform: translateX(-50%); width: min(560px, calc(100vw - 8px));
+  max-height: none !important; border-width: 1px; border-radius: 10px; background: rgba(16, 20, 42, .92); }
+.nkp.strip .line { display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; font-size: 13px; }
+.nkp.strip .line .now { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nkp.strip .line .tally { font: 700 12px ui-monospace, Menlo, monospace; white-space: nowrap; }
+.nkp.strip .line .ask { flex: 1; font-weight: 700; color: #ffcc33; }
+.nkp.strip button { min-height: 32px; padding: 4px 10px; }
 `;
 
 function addStyle(doc) {
@@ -666,7 +674,11 @@ export class PlaytestPanel {
   render() {
     const root = this.root;
     root.replaceChildren();
-    root.classList.toggle('folded', this.folded);
+    // While a script runs the box is a narrow strip at the top, so the game stays in view (B-158).
+    const strip = this.script?.state === 'running';
+    root.classList.toggle('strip', strip);
+    root.classList.toggle('folded', this.folded && !strip);
+    if (strip) return this.renderStrip(root);
     if (this.folded) {
       // A round button with a flask (F-117): a tap opens the box, a drag moves it.
       const label = `Visa Playtest${this.run ? ` (test ${this.run.id} pågår)` : ''}${this.remotes ? ', fjärrkontroll ansluten' : ''}`;
@@ -741,6 +753,9 @@ export class PlaytestPanel {
     }
     this.renderRecording(body);
     if (this.notice) body.append(this.el('p', { class: 'note', role: 'status' }, this.notice));
+    if (this.lastScript && this.scripted(this.item(this.lastScript.id))) {
+      body.append(this.el('button', { type: 'button', class: 'go', on: { click: () => this.again(this.lastScript.id) } }, `Kör ${this.lastScript.id} igen`));
+    }
     if (!this.items.length) body.append(this.el('p', { class: 'muted' }, 'Spelet har inga tester i listan just nu.'));
     for (const item of this.items) {
       const done = this.reported.has(item.id);
@@ -801,6 +816,7 @@ export class PlaytestPanel {
     }
     this.view = 'test';
     this.notice = null;
+    this.lastScript = null;
     this.render();
   }
 
@@ -963,6 +979,34 @@ export class PlaytestPanel {
     return Boolean(this.canScript && item && typeof item.run === 'function');
   }
 
+  /** The strip while a script runs: its step, its checks, Stoppa; its question with Ja / Nej (B-158). */
+  renderStrip(root) {
+    const run = this.script;
+    const passed = run.checks.filter((c) => c.ok).length;
+    const failed = run.checks.length - passed;
+    root.append(this.el('div', { class: 'line', role: 'status', 'aria-label': 'Skriptet körs' },
+      this.el('span', { class: 'dot' }),
+      this.el('span', { class: 'now' }, `${run.item.id} · ${run.current || 'Skriptet körs'}`),
+      run.checks.length ? this.el('span', { class: 'tally', title: 'Kontroller' }, `✓${passed}${failed ? ` ✗${failed}` : ''}`) : null,
+      this.el('button', { type: 'button', on: { click: () => run.stop() } }, 'Stoppa')));
+    if (this.pending?.kind === 'ask') {
+      root.append(this.el('div', { class: 'line', role: 'group', 'aria-label': 'Svar' },
+        this.el('span', { class: 'ask' }, this.pending.text),
+        this.el('button', { type: 'button', class: 'go', on: { click: () => this.answer(true) } }, 'Ja'),
+        this.el('button', { type: 'button', on: { click: () => this.answer(false) } }, 'Nej')));
+    } else if (this.pending?.kind === 'tap') {
+      // The browser needs a real tap for sound or fullscreen: the script's own step runs inside it.
+      root.append(this.el('div', { class: 'line' }, this.el('button', { type: 'button', class: 'go', on: { click: () => this.tapped() } }, this.pending.text)));
+    }
+  }
+
+  /** Kör igen (B-158): the same test's script once more; each run is reported on its own. */
+  again(id, from = 'panel') {
+    if (!this.scripted(this.item(id))) return;
+    if (this.run?.id !== id) this.open(id);
+    this.startScript(from);
+  }
+
   renderScript(body) {
     const run = this.script;
     const box = this.el('div', { class: 'script', 'aria-label': 'Skript' });
@@ -1002,16 +1046,19 @@ export class PlaytestPanel {
   async runScript(from = 'panel') {
     const item = this.item(this.run?.id);
     if (!this.scripted(item) || this.script?.state === 'running') return;
-    if (this.folded) this.fold(false);
     this.view = 'test';
     this.notice = null;
+    this.lastScript = null;
+    const tries = read(this.session, ATTEMPT_KEY) ?? {};
+    const attempt = (Number(tries[item.id]) || 0) + 1;
+    write(this.session, ATTEMPT_KEY, { ...tries, [item.id]: attempt });
     this.frames = { count: 0, slowest: 0, last: 0, since: 0 };
     this.errors = [];
     const run = new ScriptRun({
       item, win: this.win, doc: this.doc, outside: this.root,
       ui: {
         update: () => {
-          if (this.view === 'test' && !this.folded) this.render();
+          this.render();
           this.remoteState();
         },
         ask: (text, r) => this.wait('ask', text, r),
@@ -1019,6 +1066,7 @@ export class PlaytestPanel {
         shot: () => this.scriptShot(),
       },
     });
+    run.attempt = attempt;
     this.script = run;
     this.render();
     this.remoteState();
@@ -1027,16 +1075,18 @@ export class PlaytestPanel {
     if (!this.pictures.length && run.state !== 'stopped') await this.scriptShot();
     const outcome = await this.finish(run.result, {
       answers: run.asks.map((a) => ({ q: a.q, a: a.a === null ? '' : a.a ? 'Ja' : 'Nej' })),
-      text: run.summary(),
+      text: `${attempt > 1 ? `Försök ${attempt}: ` : ''}${run.summary()}`,
       via: from === 'remote' ? 'remote' : 'panel',
-      script: run.toReport(from),
+      script: { ...run.toReport(from), attempt },
     });
-    if (outcome?.sent || outcome?.queued) {
-      this.notice = `${outcome.sent ? 'Skickat' : 'Sparat, skickas när det går'}: ${run.summary()}`;
-      this.render();
-    }
-    this.remote?.send({ t: 'script', done: true, result: run.result, summary: run.summary(), ok: Boolean(outcome?.sent), queued: Boolean(outcome?.queued) });
     this.script = null;
+    if (this.folded) this.folded = false; // the outcome and Kör igen show in the box
+    if (outcome?.sent || outcome?.queued) {
+      this.notice = `${outcome.sent ? 'Skickat' : 'Sparat, skickas när det går'}${attempt > 1 ? ` (försök ${attempt})` : ''}: ${run.summary()}`;
+      this.lastScript = { id: item.id };
+    }
+    this.render();
+    this.remote?.send({ t: 'script', done: true, id: item.id, attempt, result: run.result, summary: run.summary(), ok: Boolean(outcome?.sent), queued: Boolean(outcome?.queued) });
     this.remoteState();
   }
 
@@ -1061,7 +1111,6 @@ export class PlaytestPanel {
           reject(e);
         },
       };
-      if (this.folded) this.fold(false);
       this.render();
       this.remoteState();
     });
@@ -1224,11 +1273,9 @@ export class PlaytestPanel {
       this.render();
       this.remoteState();
     } else if (data.t === 'restart' && this.run) this.restart();
-    else if (data.t === 'run' && this.item(data.id)) {
-      // Playtest Remote starts the script on this device (owner Q27).
-      if (this.run?.id !== data.id) this.open(data.id);
-      this.startScript('remote');
-    } else if (data.t === 'answer') this.answer(Boolean(data.yes));
+    // Playtest Remote starts the script here, answers it and stops it (owner Q27).
+    else if (data.t === 'run' && this.item(data.id)) this.again(data.id, 'remote');
+    else if (data.t === 'answer') this.answer(Boolean(data.yes));
     else if (data.t === 'stop') this.script?.stop();
     else if (data.t === 'shot') {
       const blob = await this.takeShot();

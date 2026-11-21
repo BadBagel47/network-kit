@@ -22,7 +22,7 @@ watchNotices(SERVER, { onNotice: (n) => diag.event(`notice ${n.kind}`) });
 // admin page. The demo's own tests, to try the panel and Playtest Remote.
 const PLAYTEST_ITEMS = [
   { id: 'D-PT1', title: 'Skapa ett rum och styr skeppet', where: 'mobil eller padda',
-    steps: ['Skriv ett namn och tryck Create room.', 'Styr skeppet en stund med knapparna eller tangenterna.'],
+    steps: ['Skriv ett namn och tryck Create room.', 'Tryck Start.', 'Styr skeppet en stund med pilarna på skärmen eller tangenterna.'],
     links: [['Öppna demon', './']], ask: ['Går skeppet dit du styr, utan hack?'],
     // A scripted test (F-121): Kör in Playtest-rutan plays it on this device and sends the result.
     run: async (t) => {
@@ -37,25 +37,36 @@ const PLAYTEST_ITEMS = [
         await t.wait(() => demo.room.phase === 'playing', { what: 'matchen', timeout: 10_000 });
       }
       const ship = () => demo.world.ships[demo.room.me] ?? { x: 0, y: 0 };
+      // The tester is told what to watch before it moves (B-158).
+      t.step('Titta på skeppet nu');
+      await t.wait(1500);
       t.step('Styr åt höger');
       const x = ship().x;
-      await t.key('ArrowRight', { hold: 700 });
+      t.keyDown('ArrowRight');
+      const m = await t.measure('styrning', 1500); // measured while the ship moves
+      t.keyUp('ArrowRight');
       t.check(ship().x > x + 10, 'Skeppet rörde sig åt höger');
       t.step('Styr nedåt');
       const y = ship().y;
       await t.key('ArrowDown', { hold: 700 });
       t.check(ship().y > y + 10, 'Skeppet rörde sig nedåt');
-      t.step('Mäter bilder per sekund');
-      const m = await t.measure('styrning', 3000);
       t.check(m.fps >= 30, `Minst 30 bilder per sekund (${m.fps})`);
       t.step('Din bedömning');
       await t.ask('Rörde sig skeppet mjukt, utan hack?');
     } },
   { id: 'D-PT2', title: 'Två enheter i samma rum', where: 'två enheter',
-    steps: ['Skapa ett rum på den ena enheten.', 'Gå med från den andra med koden eller QR-koden.', 'Styr på båda.'],
+    steps: [
+      'På enheten du håller i: skriv ett namn och tryck Create room.',
+      'På den andra enheten: öppna demon, skriv in rummets kod och tryck Join, eller skanna QR-koden som Share visar på den första enheten.',
+      'På den första enheten: tryck Start. Styr sedan på båda.',
+    ],
     links: [['Öppna demon', './']], ask: ['Syns båda skeppen på båda skärmarna?', 'Hur snabbt följer den andra skärmen med?'] },
   { id: 'D-PT3', title: 'Fjärrkontrollen', where: 'två enheter',
-    steps: ['Tryck Fjärr i Playtest-rutan.', 'Skanna QR-koden med en annan enhet, eller skriv in koden på fjärrkontrollens sida.', 'Rapportera det här testet från den andra enheten.'],
+    steps: [
+      'På enheten med spelet: tryck Fjärr i Playtest-rutan.',
+      'På den andra enheten: skanna QR-koden, eller skriv in koden på fjärrkontrollens sida.',
+      'Rapportera det här testet från den andra enheten.',
+    ],
     links: [], ask: 'Var det enkelt att koppla ihop?' },
 ];
 // The preview demo talks to the preview admin page (owner 2026-11-19, Q11).

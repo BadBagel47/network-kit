@@ -1196,7 +1196,7 @@ const RESULT_SV = { worked: 'Fungerade', partly: 'Delvis', failed: 'Fungerade in
 /** A scripted test's checks and measurements (F-121). */
 function scriptPart(sc) {
   const box = el('div', { class: 'script-part' });
-  box.append(el('p', { class: 'muted small' }, `Skript${sc.from === 'remote' ? ' (startat från fjärr)' : sc.from === 'link' ? ' (startat med en startlänk)' : ''} · ${sc.state === 'done' ? 'körde klart' : sc.state === 'stopped' ? 'avbrutet' : 'stoppade'}${sc.durationMs ? ` · ${Math.round(sc.durationMs / 1000)} s` : ''}`));
+  box.append(el('p', { class: 'muted small' }, `Skript${sc.from === 'remote' ? ' (startat från fjärr)' : sc.from === 'link' ? ' (startat med en startlänk)' : ''} · ${sc.state === 'done' ? 'körde klart' : sc.state === 'stopped' ? 'avbrutet' : 'stoppade'}${sc.durationMs ? ` · ${Math.round(sc.durationMs / 1000)} s` : ''}${sc.attempt > 1 ? ` · försök ${sc.attempt}` : ''}`));
   if (sc.error) box.append(el('p', { class: 'error small' }, `Stoppade: ${sc.error}`));
   if (sc.checks?.length) {
     const list = el('ul', { class: 'checks' });

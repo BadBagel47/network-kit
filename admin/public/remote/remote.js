@@ -100,7 +100,16 @@ function fromGame(data) {
     renderThumbs();
   } else if (data.t === 'script' && data.done) {
     // The scripted test sent itself (F-121): back to the list with its outcome.
-    $('list-note').textContent = `${data.ok ? 'Skickat' : data.queued ? 'Sparat på spelet, skickas när det går' : 'Kunde inte skickas'}: ${data.summary ?? ''}`;
+    $('list-note').textContent = `${data.ok ? 'Skickat' : data.queued ? 'Sparat på spelet, skickas när det går' : 'Kunde inte skickas'}${data.attempt > 1 ? ` (försök ${data.attempt})` : ''}: ${data.summary ?? ''}`;
+    // Kör igen (B-158): the same script once more on the game's device; each run is its own report.
+    const again = $('again');
+    again.hidden = !data.id;
+    again.textContent = `Kör ${data.id} igen`;
+    again.onclick = () => {
+      again.hidden = true;
+      $('list-note').textContent = '';
+      room.send({ t: 'run', id: data.id });
+    };
   } else if (data.t === 'sent') {
     sending = false;
     $('list-note').textContent = data.ok ? 'Skickat. Tack!' : data.queued ? 'Spelet har ingen kontakt just nu; rapporten skickas när det går.' : 'Rapporten kunde inte skickas.';
@@ -163,7 +172,7 @@ function renderList() {
   const reported = new Set(state?.reported ?? []);
   $('items').replaceChildren(...(state?.items ?? []).map((i) => el('button', {
     type: 'button', class: reported.has(i.id) ? 'done' : null,
-    on: { click: () => { $('list-note').textContent = ''; room.send({ t: 'start', id: i.id, link: 0, go: i.links.length > 0 }); } },
+    on: { click: () => { $('list-note').textContent = ''; $('again').hidden = true; room.send({ t: 'start', id: i.id, link: 0, go: i.links.length > 0 }); } },
   }, el('span', { class: 'id' }, `${i.id}${reported.has(i.id) ? ' · rapporterad' : ''}${i.script ? ' · skript' : ''}${i.where ? ` · ${i.where}` : ''}`), el('span', {}, i.title))));
   if (state && !state.items.length) $('items').replaceChildren(el('p', { class: 'muted' }, 'Spelet har inga tester i listan just nu.'));
 }

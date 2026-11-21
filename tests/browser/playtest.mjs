@@ -96,10 +96,14 @@ try {
   const scriptStart = Date.now() - 1000; // the local store may keep earlier runs
   await game.getByRole('button', { name: /T-3/ }).click();
   await game.locator('.nkp').getByRole('button', { name: 'Kör skriptet' }).click();
-  await game.locator('.nkp .script').getByText('Does it look right?').waitFor();
+  await game.locator('.nkp').getByText('Does it look right?').waitFor();
   if (process.env.SHOTS) await game.screenshot({ path: `${process.env.SHOTS}/script-ask.png` });
-  await game.locator('.nkp .script').getByRole('button', { name: 'Nej', exact: true }).click();
+  // B-158: while it runs the box is a narrow strip at the top, so the game stays in view.
+  const strip = await game.locator('.nkp.strip').boundingBox();
+  assert.ok(strip && strip.y < 10 && strip.height < 100, `a narrow strip at the top: ${JSON.stringify(strip)}`);
+  await game.locator('.nkp').getByRole('button', { name: 'Nej', exact: true }).click();
   await game.locator('.nkp').getByText(/^Skickat: 2 av 2 kontroller gick igenom/).waitFor();
+  assert.equal(await game.locator('.nkp.strip').count(), 0, 'the box comes back when the script ends');
   const scripted = (await (await api('/api/reports?game=testgame')).json()).find((r) => r.testId === 'T-3' && r.at >= scriptStart);
   assert.ok(scripted, 'the scripted report reached Rapporter');
   assert.equal(scripted.result, 'failed', 'a Nej fails the test');
@@ -110,6 +114,13 @@ try {
   assert.equal(scripted.script.measures.play.marks.work.count, 1, 'the game\'s own measure is counted');
   assert.equal(scripted.images.length, 1, 'a screenshot at the end');
   assert.equal(await game.locator('#keys').innerText(), '1', 'the key reached the game');
+  // B-158: Kör igen runs it once more, reported on its own with its attempt number.
+  await game.locator('.nkp').getByRole('button', { name: 'Kör T-3 igen' }).click();
+  await game.locator('.nkp').getByText('Does it look right?').waitFor();
+  await game.locator('.nkp').getByRole('button', { name: 'Ja', exact: true }).click();
+  await game.locator('.nkp').getByText(/^Skickat \(försök 2\): /).waitFor();
+  const again = (await (await api('/api/reports?game=testgame')).json()).filter((r) => r.testId === 'T-3' && r.at >= scriptStart);
+  assert.deepEqual(again.map((r) => [r.script.attempt, r.result]).sort(), [[1, 'failed'], [2, 'worked']], 'each run its own report');
 
   let reports = await (await api('/api/reports?game=testgame')).json();
   const first = reports.find((r) => r.testId === 'T-2');
@@ -209,7 +220,12 @@ try {
   await phone.locator('#script').getByText('Does it look right?').waitFor({ timeout: 15_000 });
   if (process.env.SHOTS) await phone.screenshot({ path: `${process.env.SHOTS}/remote-script.png`, fullPage: true });
   await phone.locator('#script').getByRole('button', { name: 'Ja', exact: true }).click();
-  await phone.getByText(/Skickat: /).waitFor({ timeout: 15_000 });
+  await phone.getByText(/Skickat \(försök 3\): /).waitFor({ timeout: 15_000 });
+  // Kör igen from the phone (B-158).
+  await phone.getByRole('button', { name: 'Kör T-3 igen' }).click();
+  await phone.locator('#script').getByText('Does it look right?').waitFor({ timeout: 15_000 });
+  await phone.locator('#script').getByRole('button', { name: 'Ja', exact: true }).click();
+  await phone.getByText(/Skickat \(försök 4\): /).waitFor({ timeout: 15_000 });
   const fromRemote = (await (await api('/api/reports?game=testgame')).json()).find((r) => r.testId === 'T-3' && r.script?.from === 'remote' && r.at >= scriptStart);
   assert.ok(fromRemote, 'the script started from the phone reported');
   assert.equal(fromRemote.result, 'worked');
@@ -378,9 +394,9 @@ try {
   const fresh = await agentCtx.newPage();
   fresh.on('pageerror', (e) => errors.push(`agent link: ${e.message}`));
   await fresh.goto(opened.link);
-  await fresh.locator('.nkp .script').getByText('Does it look right?').waitFor({ timeout: 20_000 });
+  await fresh.locator('.nkp').getByText('Does it look right?').waitFor({ timeout: 20_000 });
   assert.ok(!fresh.url().includes('kor') && !fresh.url().includes('nk-tester'), `the address forgets kor and the token: ${fresh.url()}`);
-  await fresh.locator('.nkp .script').getByRole('button', { name: 'Ja', exact: true }).click();
+  await fresh.locator('.nkp').getByRole('button', { name: 'Ja', exact: true }).click();
   await fresh.locator('.nkp').getByText(/^Skickat: /).waitFor();
   const byLink = (await (await api('/api/reports?game=testgame')).json()).find((r) => r.testId === 'T-3' && r.script?.from === 'link' && r.at >= linkStart);
   assert.ok(byLink, 'the script started by the link reported');
@@ -388,7 +404,8 @@ try {
   assert.equal(byLink.tester, 'Från agenten · Chromium');
   await fresh.reload();
   await fresh.locator('.nkp').waitFor();
-  assert.equal(await fresh.locator('.nkp .script').getByText('Skriptet körs').count(), 0, 'a reload does not run it again');
+  await fresh.waitForTimeout(1500);
+  assert.equal(await fresh.locator('.nkp.strip').count(), 0, 'a reload does not run it again');
   await agentCtx.close();
 
   // F-154: the kit's recording notice on a phone: a corner, the text a moment, then a small mark; a tap shows it again.
