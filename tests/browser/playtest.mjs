@@ -282,6 +282,10 @@ try {
   assert.equal(await recorderOnly.locator('.nkp').count(), 0, '?record alone shows no panel');
   // Switched off: the addresses do nothing.
   await api('/api/open-tests/testgame', { method: 'DELETE' });
+  // A tab that had the panel loses it at its next load (B-155).
+  await friend.reload();
+  await friend.waitForFunction(() => window.ready);
+  assert.equal(await friend.locator('.nkp').count(), 0, 'the panel is gone after a reload once Open test is off');
   const late = await browser.newContext();
   const latePage = await late.newPage();
   await latePage.goto(`${addresses[2]}&rec`);

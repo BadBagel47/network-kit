@@ -41,6 +41,10 @@ From the review D-122 (runs B, C and D), also in this version:
 - Changed (F-139): wheel, touch, a gamepad and the event `nk-activity` count as activity for notices.
 - Small (D-140): a "no" from Open test is kept for ten minutes; long-ended tests are deleted; wrong read keys are braked; sign-in advice in docs/ADMIN.md.
 
+From the owner's try on the preview:
+
+- Fixed (B-155): after *Slå av* for Open test, a reloaded page no longer shows Playtest-rutan: the page asks the admin page at every load and keeps only a no.
+
 ## 0.20.0 (2026-11-20)
 
 Affects: games that use Playtest Recorder or Open test (take 0.20.0; a game that showed its own recording notice either keeps it with `recordingNotice: false` or drops it), and the admin page. From the review D-122 (run A).

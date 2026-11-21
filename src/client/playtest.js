@@ -304,9 +304,9 @@ export function openMode(win = globalThis.window) {
 }
 
 /**
- * Asks the admin page once per tab whether this game's Open test is on (the
- * browser's Origin says which game); the answer is kept until the test ends.
- * Resolves to { game, label, expires, open: true, token } or null.
+ * Asks the admin page whether this game's Open test is on (the browser's
+ * Origin says which game), once per page load: a test switched off is gone at
+ * the next load (B-155). Resolves to { game, label, expires, open: true, token } or null.
  */
 export function openSession({ win, admin, fetch: f, fresh = false }) {
   if (win.__nkOpen && !fresh) return win.__nkOpen;
@@ -314,7 +314,6 @@ export function openSession({ win, admin, fetch: f, fresh = false }) {
   if (!key) return Promise.resolve(null); // no key in the address: nothing to ask (B-123)
   const s = store(win, 'sessionStorage');
   const kept = read(s, OPEN_KEY);
-  if (!fresh && kept?.token && kept.key === key && kept.expires > Date.now()) return (win.__nkOpen = Promise.resolve(kept));
   // A "no" is kept for ten minutes, so an address with ?record or ?report does not ask on every load (D-140).
   if (!fresh && kept?.no && kept.key === key && kept.until > Date.now()) return (win.__nkOpen = Promise.resolve(null));
   const go = f ?? ((...a) => win.fetch(...a));
@@ -326,9 +325,9 @@ export function openSession({ win, admin, fetch: f, fresh = false }) {
         write(s, OPEN_KEY, { no: true, key, until: Date.now() + 10 * 60_000 });
         return null;
       }
-      const found = { ...(await res.json()), key };
-      write(s, OPEN_KEY, found);
-      return found;
+      // Only a no is kept; a yes is asked again at the next load (B-155).
+      write(s, OPEN_KEY, null);
+      return { ...(await res.json()), key };
     } catch {
       return null;
     }
