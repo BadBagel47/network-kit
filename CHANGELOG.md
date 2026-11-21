@@ -48,6 +48,8 @@ From the owner's try on the preview:
 
 ## 0.20.0 (2026-11-20)
 
+Not released on its own: published with 0.21.0 (tag v0.21.0).
+
 Affects: games that use Playtest Recorder or Open test (take 0.20.0; a game that showed its own recording notice either keeps it with `recordingNotice: false` or drops it), and the admin page. From the review D-122 (run A).
 
 **Upgrade guide:** Open test's addresses now carry a key: use the ones the admin page shows (a bare `?record`/`?report` works only with a tester link). A game that sent its own "recording" messages and showed `RECORDER_NOTICE` can remove that: the kit does it (D-126); or keep it and set `recordingNotice: false`.
