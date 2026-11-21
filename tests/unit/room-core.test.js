@@ -395,3 +395,83 @@ test('D-105: every earlier stored-room version is either carried over or named a
     assert.ok(Number(from) < STATE_VERSION && typeof step === 'function', `step from ${from}`);
   }
 });
+
+test('F-147: server-run rules keep a large value apart from room.game; it is not written again at each change and survives a sleep', async () => {
+  const bank = { questions: Array.from({ length: 400 }, (_, i) => ({ q: `Question ${i} ${'x'.repeat(150)}`, a: i % 4 })) };
+  const rules = {
+    init: () => ({ asked: 0 }),
+    async onMessage(room, player, data) {
+      if (data === 'load') await room.store('bank', bank);
+      if (data === 'next') {
+        const stored = await room.stored('bank');
+        room.game = { asked: room.game.asked + 1, first: stored.questions[room.game.asked].q.slice(0, 11) };
+      }
+    },
+  };
+  const { world, core, owner } = await setup({ mode: 'server', rules });
+  await send(core, owner, { t: 'msg', d: 'load' });
+  await core.flush();
+  assert.ok(world.store.get('store:bank').parts >= 2, 'stored in parts');
+  world.puts.length = 0;
+  for (let i = 0; i < 5; i += 1) await send(core, owner, { t: 'msg', d: 'next' });
+  await core.flush();
+  assert.equal(world.puts.filter((k) => k.startsWith('store:')).length, 0, 'the bank is not written again');
+  assert.equal(core.state.game.asked, 5);
+  const again = await world.sleep();
+  assert.equal((await again.storedValue('bank')).questions.length, 400, 'kept after a sleep');
+});
+
+test('F-149: with banMakesPrivate false a ban refuses only the banned identity; the code and links keep working', async () => {
+  const { world, core, created, owner } = await setup({ ...CREW, roles: { player: { seats: 30 } }, banMakesPrivate: false });
+  const a = await connect(world, core, { name: 'A', pk: 'banned-key-open-xxxxxxxx' });
+  await cmd(core, owner, 'kick', { id: a.id, ban: true });
+  assert.equal(a.closedWith.code, CLOSE.BANNED);
+  assert.equal((await connect(world, core, { name: 'A', pk: a.pk })).closedWith.code, CLOSE.BANNED, 'the banned identity stays out');
+  assert.equal(owner.room.settings.access, 'open', 'the room stays open');
+  assert.equal(owner.room.keys.player.k, created.keys.player.k, 'the links are not renewed');
+  const newcomer = await connect(world, core, { name: 'New' });
+  assert.ok(!newcomer.closedWith, 'others still join with the code');
+});
+
+test('F-148: the owner\'s second tab joins as a viewer, or is refused, when the game says so', async () => {
+  const leader = { mode: 'server', roles: { leader: { seats: 1, plays: false }, player: { seats: 30 }, viewer: { seats: 1 } }, ownerRole: 'leader', rules: {} };
+  const asViewer = await setup({ ...leader, ownerSecondTab: 'viewer' });
+  const tab = await connect(asViewer.world, asViewer.core, { name: 'Leader 2', owner: asViewer.created.ownerKey, pk: 'second-tab-key-xxxxxxxxx' });
+  assert.ok(!tab.closedWith);
+  assert.equal(asViewer.core.player(tab.id).role, 'viewer', 'the second tab watches');
+  assert.equal(asViewer.core.state.ownerId, asViewer.owner.id, 'the first stays the owner');
+
+  const refused = await setup({ ...leader, ownerSecondTab: 'refuse' });
+  const tab2 = await connect(refused.world, refused.core, { name: 'Leader 2', owner: refused.created.ownerKey, pk: 'second-tab-key-yyyyyyyyy' });
+  assert.equal(tab2.closedWith.code, CLOSE.REPLACED);
+
+  const joins = await setup(leader);
+  const tab3 = await connect(joins.world, joins.core, { name: 'Leader 2', owner: joins.created.ownerKey, pk: 'second-tab-key-zzzzzzzzz' });
+  assert.equal(joins.core.player(tab3.id).role, 'player', 'by default it joins like anyone else');
+});
+
+test('F-150: the rules harness runs server-run rules in Node: join, messages, timers, commands', async () => {
+  const { testRoom } = await import('../../src/server/rules-harness.js');
+  const rules = {
+    init: () => ({ buzzes: [] }),
+    onMessage(room, player, data) {
+      if (data?.buzz) {
+        room.game = { buzzes: [...room.game.buzzes, player.id] };
+        room.setTimer('reveal', 2_000);
+      }
+    },
+    onTimer(room, name) {
+      if (name === 'reveal') room.send({ role: 'player' }, { first: room.game.buzzes[0] });
+    },
+  };
+  const t = await testRoom({ mode: 'server', rules, roles: { leader: { seats: 1, plays: false }, player: { seats: 30 }, viewer: { seats: 1 } }, ownerRole: 'leader' });
+  const ana = await t.join('Ana');
+  const bo = await t.join('Bo');
+  await t.send(bo, { buzz: true });
+  await t.send(ana, { buzz: true });
+  assert.deepEqual(t.game.buzzes, [bo.id, ana.id]);
+  assert.deepEqual(t.received(ana), [], 'nothing before the timer');
+  await t.advance(2_000);
+  assert.deepEqual(t.received(ana), [{ first: bo.id }]);
+  assert.equal(t.roomOf(ana).players.length, 3);
+});

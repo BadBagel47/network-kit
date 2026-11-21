@@ -67,11 +67,21 @@ export const DEFAULT_OPTIONS = Object.freeze({
   autoPauseMs: null, // pause automatically when a playing participant has been away this long
   takeover: false, // host-run rooms: may another participant take over a lost host's game?
   takeoverMs: 5_000, // ... after waiting this long for the host
+  // Host-run rooms with takeover: a host whose page has been hidden this long (a tab in
+  // the background, a locked phone) hands the game to a participant whose page shows
+  // (F-144, owner Q22). The room does it, since a hidden page's own timers may not run. null: never.
+  handoverWhenHiddenMs: 10_000,
   hostCheckMs: 3_000, // how long a host has to answer when others report it silent
   heartbeatMs: null, // clients send a free heartbeat this often; a participant silent for
   // 2.5 heartbeats is treated as dropped (F-051). null: the client's default (20 s), no check
   closeAfterHostAwayMs: null, // without takeover: close the room after waiting this long
   passOwnerAfterMs: null, // ownership passes on when the owner has been away this long
+  closeAfterOwnerAwayMs: null, // close the room when the owner has been away this long (F-151; e.g. a quiz whose leader is gone)
+  // A second tab of the owner's browser (the owner key, while the owner's seat is in use):
+  // 'join' like anyone else, 'viewer' as a viewer, or 'refuse' (F-148, for games where the
+  // owner leads without playing).
+  ownerSecondTab: 'join',
+  banMakesPrivate: true, // a ban renews every key and makes the room private; false: only the banned identity is refused, the code keeps working (F-149)
   ownerLeave: 'close', // owner leaving on purpose: 'close' the room or 'pass' ownership on
   countdownMs: 3_000,
   idleCloseMs: 60 * 60_000, // close the room when every connected page has been hidden this long (null: never) (F-032)
@@ -262,6 +272,56 @@ export class RoomCore {
     this.storedParts = parts;
   }
 
+  // The rules' own store (F-147): large values that seldom change, such as a quiz's
+  // question bank, kept apart from room.game so they are not written again at every
+  // change. Stored in parts like the snapshot:
+  //   store:<key>   { parts }   store:<key>:0 … text parts
+  async storeValue(key, value) {
+    const name = String(key);
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(name)) throw new Error('room.store: the key must be 1 to 40 letters, digits, - or _');
+    this.storedValues ??= new Map();
+    const text = JSON.stringify(value ?? null);
+    if (byteLength(text) > this.options.maxSnapshotBytes) throw new Error('room.store: the value is larger than maxSnapshotBytes');
+    const known = this.storedValues.has(name) || (await this.host.storage.get(`store:${name}`));
+    if (!known && (this.storeKeys ??= await this.countStoreKeys()) >= 20) throw new Error('room.store: at most 20 keys');
+    const old = (await this.host.storage.get(`store:${name}`))?.parts ?? 0;
+    const parts = Math.max(1, Math.ceil(text.length / PART_CHARS));
+    for (let i = 0; i < parts; i++) await this.host.storage.put(`store:${name}:${i}`, text.slice(i * PART_CHARS, (i + 1) * PART_CHARS));
+    await this.host.storage.put(`store:${name}`, { parts });
+    for (let i = parts; i < old; i++) await this.host.storage.delete(`store:${name}:${i}`);
+    if (!known) this.storeKeys = (this.storeKeys ?? 0) + 1;
+    this.storedValues.set(name, structuredClone(value ?? null));
+  }
+
+  async storedValue(key) {
+    const name = String(key);
+    this.storedValues ??= new Map();
+    if (!this.storedValues.has(name)) {
+      const record = await this.host.storage.get(`store:${name}`);
+      if (!record) return undefined;
+      const texts = [];
+      for (let i = 0; i < record.parts; i++) texts.push((await this.host.storage.get(`store:${name}:${i}`)) ?? '');
+      this.storedValues.set(name, JSON.parse(texts.join('') || 'null'));
+    }
+    return structuredClone(this.storedValues.get(name));
+  }
+
+  async unstoreValue(key) {
+    const name = String(key);
+    const record = await this.host.storage.get(`store:${name}`);
+    if (!record) return;
+    for (let i = 0; i < record.parts; i++) await this.host.storage.delete(`store:${name}:${i}`);
+    await this.host.storage.delete(`store:${name}`);
+    this.storedValues?.delete(name);
+    if (this.storeKeys) this.storeKeys -= 1;
+  }
+
+  async countStoreKeys() {
+    const listed = await this.host.storage.list?.({ prefix: 'store:' });
+    if (!listed) return 0;
+    return [...listed.keys()].filter((k) => !/:\d+$/.test(k.slice('store:'.length))).length;
+  }
+
   // State for newcomers (F-030): set by the host (or the rules), one shared and
   // optionally one per role, kept by the room and sent to everyone who joins
   // or comes back, right after the welcome. Stored in parts like the snapshot:
@@ -415,9 +475,22 @@ export class RoomCore {
         if (!hostPlayer || hostPlayer.status === 'away') await this.takeOver();
         break;
       }
+      case 'hiddenhost': {
+        // The host's page is still hidden: a participant whose page shows takes over (F-144).
+        const hostPlayer = this.player(s.hostId);
+        const next = hostPlayer?.hidden === true && hostPlayer.status === 'online' && this.visibleSuccessor();
+        if (next) await this.takeOver(next.id);
+        break;
+      }
       case 'hostaway': {
         const hostPlayer = this.player(s.hostId);
         if (!hostPlayer || hostPlayer.status === 'away') await this.closeRoom('host-away');
+        break;
+      }
+      case 'owneraway': {
+        // The owner is still away (or gone): a room that needs its leader closes (F-151).
+        const owner = this.player(s.ownerId);
+        if (!owner || owner.status === 'away') await this.closeRoom('owner-away');
         break;
       }
       case 'ownerpass': {
@@ -575,6 +648,8 @@ export class RoomCore {
     this.cancelSave = null;
     this.state = null;
     this.welcomeStates = null;
+    this.storedValues = null;
+    this.storeKeys = null;
     this.cancelWelcomeSave?.();
     this.cancelWelcomeSave = null;
     this.snapshot = null;
@@ -918,9 +993,13 @@ export class RoomCore {
       if (closed && !admin && !invited) return this.reject(ws, CLOSE.GAME_CLOSED, word.reason ?? 'off', { until: word.until ?? null });
       let role = null;
       let admitted = false;
+      const secondTab = !isOwner && typeof msg.owner === 'string' && sameSecret(msg.owner, s.ownerKey);
+      if (secondTab && o.ownerSecondTab === 'refuse') return this.reject(ws, CLOSE.REPLACED, 'owner-elsewhere');
       if (isOwner) {
         role = o.ownerRole;
         admitted = true;
+      } else if (secondTab && o.ownerSecondTab === 'viewer' && own(o.roles, 'viewer')) {
+        role = 'viewer'; // the owner's second window watches (F-148)
       } else {
         let expired = false;
         for (const [keyRole, key] of Object.entries(s.keys)) {
@@ -1016,13 +1095,17 @@ export class RoomCore {
       }
       s.ownerId = player.id;
       s.ownerOpen = false;
+      this.clearTimer('owneraway'); // the owner is back, also after the grace period (F-151)
     } else if (s.ownerOpen && !this.player(s.ownerId) && this.canLead(player)) {
       await this.giveOwner(player, true);
     } else if (player.id === s.ownerId) {
       // The owner without the current key (it was renewed and may not have arrived).
       this.sendJson(ws, { t: 'owner', key: s.ownerKey });
     }
-    if (player.id === s.ownerId) this.clearTimer('ownerpass');
+    if (player.id === s.ownerId) {
+      this.clearTimer('ownerpass');
+      this.clearTimer('owneraway');
+    }
     if (o.mode === 'server') s.hostId = s.ownerId;
 
     // Host seat (host-run rooms).
@@ -1074,6 +1157,7 @@ export class RoomCore {
     else this.event('back', player.id, about);
 
     if (oldOwnerSeat) await this.removePlayer(oldOwnerSeat, 'moved');
+    this.watchHiddenHost(); // a page that shows now may take over from a hidden host (F-144)
 
     if (o.mode === 'server') {
       if (isNew && !player.waiting) await this.callRules('onJoin', this.rulesPlayer(player));
@@ -1102,6 +1186,28 @@ export class RoomCore {
     return Boolean(p) && this.role(p).canHost && !p.waiting && p.status === 'online';
   }
 
+  /** A participant who could run the game and whose page shows, or null (F-144). */
+  visibleSuccessor() {
+    const s = this.state;
+    return Object.values(s.players).find((p) => p.id !== s.hostId && this.canHost(p) && p.hidden !== true) ?? null;
+  }
+
+  /**
+   * After a page shows or hides (F-144): when the host's page is hidden and someone
+   * else's shows, the host hands over after handoverWhenHiddenMs; when it shows again, not.
+   */
+  watchHiddenHost() {
+    const o = this.options;
+    const s = this.state;
+    if (o.mode !== 'host' || !o.takeover || !o.handoverWhenHiddenMs) return;
+    const hostPlayer = this.player(s.hostId);
+    if (hostPlayer?.hidden === true && hostPlayer.status === 'online' && this.visibleSuccessor()) {
+      if (!this.hasTimer('hiddenhost')) this.setTimer('hiddenhost', o.handoverWhenHiddenMs);
+    } else {
+      this.clearTimer('hiddenhost');
+    }
+  }
+
   /** May this participant receive ownership when it is passed on? */
   canLead(p) {
     return this.canHost(p);
@@ -1119,6 +1225,7 @@ export class RoomCore {
       this.setTimer('autopause', o.autoPauseMs, p.id);
     }
     if (p.id === s.ownerId && o.passOwnerAfterMs !== null) this.setTimer('ownerpass', o.passOwnerAfterMs);
+    if (p.id === s.ownerId && o.closeAfterOwnerAwayMs !== null && !this.hasTimer('owneraway')) this.setTimer('owneraway', o.closeAfterOwnerAwayMs);
     if (o.mode === 'host' && p.id === s.hostId) {
       await this.saveSnapshot();
       this.cancelHostCheck();
@@ -1182,6 +1289,7 @@ export class RoomCore {
   async takeOver(preferId = null) {
     const s = this.state;
     this.clearTimer('takeover');
+    this.clearTimer('hiddenhost');
     // The host's preferred order first (F-040), then the owner, then whoever has been here longest.
     const preferred = Array.isArray(s.successors) ? s.successors : [];
     const rank = (p) => {
@@ -1262,6 +1370,7 @@ export class RoomCore {
     s.ownerId = p.id;
     s.ownerOpen = false;
     this.clearTimer('ownerpass');
+    this.clearTimer('owneraway');
     if (this.options.mode === 'server') s.hostId = p.id;
     this.touch();
     this.sendTo(p.id, JSON.stringify({ t: 'owner', key: s.ownerKey }));
@@ -1543,6 +1652,14 @@ export class RoomCore {
       setWelcomeState: (data, role = null) => core.setWelcomeState(role && own(core.options.roles, role) ? role : '*', data ?? null),
       setTimer: (name, ms) => core.setTimer('rules', ms, String(name)),
       clearTimer: (name) => core.clearTimer('rules', String(name)),
+      /**
+       * Large values that seldom change, kept apart from room.game (F-147): room.game is
+       * written whole at every change, these only when stored. At most 20 keys, each at
+       * most maxSnapshotBytes. `await room.store('questions', bank)`, `await room.stored('questions')`.
+       */
+      store: (key, value) => core.storeValue(key, value),
+      stored: (key) => core.storedValue(key),
+      unstore: (key) => core.unstoreValue(key),
     };
   }
 

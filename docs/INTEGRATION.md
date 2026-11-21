@@ -5,7 +5,7 @@ network-kit has two parts, both plain JavaScript without a build step or depende
 - `client/`: the browser side (`NetworkRoom`, share links, QR codes).
 - `server/`: the room server for the game's own Cloudflare Worker (`createRoomServer`).
 
-Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.20** (0.20.0).
+Each game keeps its own copy of a fixed version, so a change in network-kit never reaches a game before the game takes it in. This guide describes **v0.21** (0.21.0).
 
 Contents: [1 Copy and updates](#1-take-a-copy-and-keep-it-updated) · [2 The game's Worker](#2-the-games-worker) · [3 Concepts](#3-concepts) · [4 The browser client](#4-the-browser-client) · [5 Host-run games](#5-host-run-games) · [6 Server-run games](#6-server-run-games) · [7 Close codes](#7-close-codes) · [8 Cost and limits](#8-cost-and-limits) · [9 Privacy](#9-privacy)
 
@@ -33,7 +33,8 @@ This writes `client/`, `server/`, `shared/`, `version.js`, `smoke.mjs`, `VERSION
 | `send` (targets, `reliable`, `latest`), snapshots, large states | **Stable** |
 | Server-run `rules` hooks and the `room` object | **Stable** in shape; expect additions, not changes |
 | Share links, QR codes, `tabSession` | **Stable** |
-| Welcome state, successors, `sendsTo: 'all'`, `rttMs`, `at` on messages | **On trial** |
+| Welcome state, `rttMs`, `at` on messages | **Stable** (from 0.21, D-152: Buzzy builds on them) |
+| Successors, `sendsTo: 'all'`, `handoverWhenHiddenMs`, `room.store`, the rules harness | **On trial** |
 | The `admin` option, game links, lobbies, modes, `status()`, notices | **On trial** |
 | `measure` | **On trial** |
 | Playtest and Playtest Remote | **Experimental** |
@@ -133,6 +134,10 @@ HTTP API under `basePath`: `POST /rooms` creates a room (`{ code, ownerKey, keys
 | `heartbeatMs` | off | Clients send a free heartbeat this often (the platform answers it without waking the room); anyone, host or player, who has sent nothing for 2.5 heartbeats is treated as dropped, so a phone that loses its network is noticed in seconds instead of a minute or more. 2 s gives about 5 s. The room looks while messages arrive and when a timer fires, so in a quiet lobby it can take longer (from 0.6, F-051). |
 | `rttProbeMs` | off | Server-run rules: measure each participant's response time this often (the room asks the page when the participant's own messages arrive, so a quiet participant is not asked); the rules see it as `participant.rttMs` (from 0.13, F-076). 10 s is plenty. |
 | `closeAfterHostAwayMs` | off | Without takeover: close the room after waiting this long for its host. |
+| `handoverWhenHiddenMs` | `10000` | From 0.21 (F-144, owner Q22): host-run rooms with `takeover`: a host whose page has been hidden this long (a tab in the background, a locked phone) hands the game to a participant whose page shows, as at a takeover. The room does it, since a hidden page's own timers may not run. Back in time, it keeps the game. `null`: never. |
+| `closeAfterOwnerAwayMs` | off | From 0.21 (F-151): close the room (reason `owner-away`) when the owner has been away this long, also past the grace period; for games that cannot go on without their leader. |
+| `ownerSecondTab` | `'join'` | From 0.21 (F-148): a second tab with the owner key, while the owner's seat is in use: `'join'` like anyone else, `'viewer'` as a viewer (the room needs a `viewer` role), or `'refuse'` (close code 4003, reason `owner-elsewhere`). |
+| `banMakesPrivate` | `true` | From 0.21 (F-149): `false` keeps the code and the links working after a ban; only the banned identity is refused. For games that show an open code on a big screen. |
 | `passOwnerAfterMs` | off | Ownership passes on (to the host, else whoever has been in the room longest) when the owner has been away this long. |
 | `ownerLeave` | `'close'` | The owner leaving on purpose `'close'`s the room or `'pass'`es ownership on. |
 | `countdownMs` | 3 s | Time from start to play (0: none). |
@@ -196,6 +201,8 @@ roles: {
 Every role has its own invitation key, so a viewer link can never play. In an open room someone without a key gets the first playing role that needs no key, or the role they ask for if it needs no key.
 
 ### Deploying the Worker
+
+**The very first upload (F-143, from Critical).** The first time a Worker with a Durable Object and its first migration is uploaded, its own files can answer while `GET <basePath>` still answers 404 for a while; a later upload answered at once. Wait and try again after a first upload (the check below does), before deciding something is wrong.
 
 **Check the new version, not just an answer (B-119).** Right after `wrangler deploy` the previous version may still answer for a while (Bricks got the old version just after uploading a new one). A check after deploying should wait until the Worker answers with the version just deployed, for example until `GET <basePath>` gives `"version":"<the copied VERSION>"`, polling every 5 seconds for up to 3 minutes, as network-kit's own workflows do.
 
@@ -292,7 +299,8 @@ Identities and owner keys are stored per game server, so games on the same site 
 | `host` | `{ snapshot }` this browser runs the game now: continue from `snapshot`, or start fresh when it is `null`. Also sent to the creator at the start and to a host whose page reloaded. `room.isHost` is already true. |
 | `welcome-state` | `{ data }` the room's state for newcomers (F-030), right after the welcome, also after a reconnect; also in `room.welcomeState` |
 | `role` | `{ isHost, isOwner }` when either changes for this client |
-| `peer` | `{ event, id, name, player, why, returning }` with `event` = `join`, `waiting`, `drop`, `back`, `gone`, `host` or `owner`. `back` is sent on every reconnect, also a silent one. The room list already includes the participant when `join` or `back` arrives, and `name` is always given (from 0.5.1). `returning` is true for a `join` by someone who was here before and was away longer than the grace period. |
+| `peer` | `{ event, id, name, player, why, returning, self }` (`self` from 0.21, B-142: the event is about this browser, e.g. the host's own `join` when it made the room; skip it when counting newcomers) with `event` = `join`, `waiting`, `drop`, `back`, `gone`, `host` or `owner`. `back` is sent on every reconnect, also a silent one. The room list already includes the participant when `join` or `back` arrives, and `name` is always given (from 0.5.1). `returning` is true for a `join` by someone who was here before and was away longer than the grace period. |
+| `backlog` | `{ waiting }` (from 0.21, F-141): sends are held back by the pace, about 32 messages a second per connection (40 a second with 0.8 headroom); when more than 16 wait the room says so, and again with `waiting: 0` when they have gone. `room.waiting` is the count now. Send inputs on change, several steps in one message, or with `latest` for values where only the newest counts (Critical sends 20 a second). |
 | `error` | `{ code, command }` a refused command (a refused start because the game is closed: `game-closed`, with `reason`, `until` and `text`): `place-taken`, `owner-only`, `host-only`, `not-allowed`, `too-large`, … |
 | `ok` | `{ command, n }` a command was carried out |
 | `closed` | `{ code, reason, text }` the room is over for this client (no more reconnecting). For a closed game (`GAME_CLOSED`) `reason` is `off` (no new players), `budget` or `stopped` (`until` only from an admin page older than 0.11) and `text` says so in plain words, with the time it opens again (from 0.7, F-026); `gameClosedText(reason, until)` is exported for games that show their own text. |
@@ -353,9 +361,24 @@ export const rules = {
 
 A `participant` has `id`, `name`, `role`, `place`, `status`, `waiting` and `rttMs`: the median of the last few measured response times to the room (from 0.13, F-076), or `null` until the room option `rttProbeMs` has measured one. The page answers the room's probes by itself; a page could answer late on purpose, so use it with a cap, for example to subtract half of it from a buzz, at most 100 ms.
 
-`room` offers `code`, `phase`, `round`, `seed`, `ownerId`, `players`, `env` (the Worker's bindings), `now()`, `game` (the game's state), `data` (the shared room data), `send(to, data)`, `end()`, `admit()`, `setTimer(name, ms)`, `clearTimer(name)`.
+`room` offers `code`, `phase`, `round`, `seed`, `ownerId`, `players`, `env` (the Worker's bindings), `now()`, `game` (the game's state), `data` (the shared room data), `send(to, data)`, `end()`, `admit()`, `setTimer(name, ms)`, `clearTimer(name)`, and from 0.21 `store(key, value)`, `stored(key)`, `unstore(key)`.
 
-**Storing:** the room writes to storage only when the rules assign `room.game = ...` or call `room.save()` after changing it in place. A hook that changes nothing costs no write.
+**Storing:** the room writes to storage only when the rules assign `room.game = ...` or call `room.save()` after changing it in place. A hook that changes nothing costs no write. `room.game` is written **whole** each time, so keep it small: put large values that seldom change, such as a question bank, in `await room.store('questions', bank)` and read them with `await room.stored('questions')` (from 0.21, F-147; at most 20 keys, each at most `maxSnapshotBytes`, stored in parts and kept until the room is deleted).
+
+**When the owner (the leader) loses the connection** (F-151): the seat is held for `graceMs`, and the rules keep running (the room, not a browser, runs them), so a quiz goes on without its leader unless the rules wait. `onDrop` and `onGone` tell the rules. Choose: `passOwnerAfterMs` gives ownership to someone else after a while; `closeAfterOwnerAwayMs` closes the room when the leader stays away; with neither, the room waits and the leader comes back with the owner key (also after the grace period).
+
+**Testing rules in Node** (from 0.21, F-150): `server/rules-harness.js` runs the real room core with a pretend clock, storage and connections, without workerd:
+
+```js
+import { testRoom } from './vendor/network-kit/server/rules-harness.js';
+const t = await testRoom({ mode: 'server', rules, roles, ownerRole: 'leader' });
+const ana = await t.join('Ana');
+await t.command(t.owner, 'start');
+await t.send(ana, { buzz: true });
+await t.advance(2_000);            // timers run as they fall due
+t.received(ana);                   // what the rules sent Ana
+t.game; await t.stored('questions');
+```
 
 The seed is not sent to clients in server-run rooms, so rules can shuffle hidden things from it. See `examples/demo/memory-rules.js`.
 

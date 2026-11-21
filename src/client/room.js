@@ -70,6 +70,9 @@ export class RoomError extends Error {
   }
 }
 
+/** How many held-back messages make the room say 'backlog' (F-141): about half a second's worth. */
+export const BACKLOG_WARN = 16;
+
 export class NetworkRoom {
   /**
    * @param {object} o
@@ -382,6 +385,7 @@ export class NetworkRoom {
     this.ws = ws;
     this.socketWelcomed = false;
     this.outbox = [];
+    this.backlogChanged();
     this.tokens = this.rate;
     this.tokensAt = Date.now();
     const joiner = new PartJoiner(MAX_INCOMING_CHARS); // large messages arrive in parts (F-036)
@@ -565,6 +569,7 @@ export class NetworkRoom {
     clearTimeout(this.leaveTimer);
     clearInterval(this.silentTimer);
     this.outbox = [];
+    this.backlogChanged();
     this.dropSocket();
     this.unwatch?.();
   }
@@ -682,9 +687,10 @@ export class NetworkRoom {
       case 'ev':
         if (msg.e === 'drop') this.measure?.peerDropped();
         if (msg.e === 'host') this.measure?.hostChanged();
+        // `self`: the event is about this browser, e.g. its own join when it made the room (B-142).
         this.emit('peer', {
           event: msg.e, id: msg.id, why: msg.why, name: msg.name ?? this.player(msg.id)?.name ?? null,
-          returning: msg.returning === true, player: this.player(msg.id),
+          returning: msg.returning === true, player: this.player(msg.id), self: msg.id === this.me,
         });
         this.recordingPeer(msg.e, msg.id);
         break;
@@ -848,7 +854,29 @@ export class NetworkRoom {
     if (droppable) return false;
     this.outbox.push(text);
     this.outboxTimer ??= setTimeout(() => this.drain(), 50);
+    this.backlogChanged();
     return true;
+  }
+
+  /** Messages held back by the pace (about 32 a second per connection), waiting to go (F-141). */
+  get waiting() {
+    return this.outbox.length;
+  }
+
+  /**
+   * Tell the game when sends pile up (F-141): the event 'backlog' with { waiting } when the
+   * queue passes BACKLOG_WARN, and again with waiting 0 when it has drained. Send less
+   * often, or with `latest` for values where only the newest counts.
+   */
+  backlogChanged() {
+    const waiting = this.outbox.length;
+    if (!this.backlogged && waiting >= BACKLOG_WARN) {
+      this.backlogged = true;
+      this.emit('backlog', { waiting });
+    } else if (this.backlogged && waiting === 0) {
+      this.backlogged = false;
+      this.emit('backlog', { waiting: 0 });
+    }
   }
 
   /** Send the newest pending value of each kind as soon as the pace allows (F-037). */
@@ -866,6 +894,7 @@ export class NetworkRoom {
     this.outboxTimer = null;
     while (this.outbox.length > 0 && this.ready && this.takeToken()) this.rawSend(this.outbox.shift());
     if (this.outbox.length > 0 && this.ready) this.outboxTimer = setTimeout(() => this.drain(), 50);
+    this.backlogChanged();
   }
 
   numbered(msg, kind) {

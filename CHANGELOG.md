@@ -10,6 +10,23 @@ Each version says who is affected. From 1.0 on, functions on their way out are m
 
 ## Unreleased
 
+## 0.21.0 (2026-11-21)
+
+Affects: every game with rooms (take 0.21.0; nothing to change unless a game wants the new options). Runs B (Critical) and Buzzy.
+
+**Upgrade guide:** host-run games with `takeover` now hand over from a host whose page has been hidden 10 seconds; set `handoverWhenHiddenMs: null` to keep the old behaviour. A game that counted the host's own `join` as a newcomer can drop its own filter and check `self` instead.
+
+- New (F-144, owner Q22): `handoverWhenHiddenMs` (default 10 s): a hidden host hands over to a participant whose page shows, decided by the room.
+- New (F-141): the room event `backlog` and `room.waiting` when sends pile up behind the pace; the pace is in the guide.
+- Changed (B-142): `peer` events carry `self` when they are about this browser.
+- New (F-147): server-run rules can keep large values apart from `room.game`: `room.store`, `room.stored`, `room.unstore`.
+- New (F-148): `ownerSecondTab: 'join' | 'viewer' | 'refuse'`.
+- New (F-149): `banMakesPrivate: false` refuses only the banned identity; the code keeps working.
+- New (F-150): `server/rules-harness.js`, a quick test room for server-run rules in Node.
+- New (F-151): `closeAfterOwnerAwayMs`; the guide says what happens when the leader drops in a server-run room.
+- Changed (D-152): the welcome state, `rttMs` and `at` are stable.
+- Docs (F-143): the first upload of a Worker can answer 404 on the rooms for a while.
+
 ## 0.20.0 (2026-11-20)
 
 Affects: games that use Playtest Recorder or Open test (take 0.20.0; a game that showed its own recording notice either keeps it with `recordingNotice: false` or drops it), and the admin page. From the review D-122 (run A).
