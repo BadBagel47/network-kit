@@ -36,6 +36,9 @@ let armedOn = null;
 // The events after which a page may start sound: lifting the finger (iPad and
 // Android need this, a finger down is not enough), a click, a key (B-084).
 const UNLOCK = ['touchend', 'click', 'keydown'];
+// What counts as someone at the page for notices (F-139): a big screen or a long turn
+// may see no touches, so a game can also send `window.dispatchEvent(new Event('nk-activity'))`.
+const TOUCH_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart', 'gamepadconnected', 'nk-activity'];
 
 function play(ctx, { level, volume }) {
   const t0 = ctx.currentTime + 0.02;
@@ -342,7 +345,8 @@ export function watchNotices(server, {
     }
   };
   doc?.addEventListener?.('visibilitychange', onVisible);
-  for (const type of ['pointerdown', 'keydown']) win?.addEventListener?.(type, onTouch, { capture: true, passive: true });
+  // Touches, keys, the wheel and a gamepad count (F-139); so does the game saying so (`nk-activity`).
+  for (const type of TOUCH_EVENTS) win?.addEventListener?.(type, onTouch, { capture: true, passive: true });
   check();
   schedule();
   return {
@@ -352,7 +356,7 @@ export function watchNotices(server, {
       stopped = true;
       clearTimeout(timer);
       doc?.removeEventListener?.('visibilitychange', onVisible);
-      for (const type of ['pointerdown', 'keydown']) win?.removeEventListener?.(type, onTouch, { capture: true });
+      for (const type of TOUCH_EVENTS) win?.removeEventListener?.(type, onTouch, { capture: true });
     },
   };
 }

@@ -20,7 +20,7 @@
 //   recorder?.onStop(() => room.send({ type: 'recording', on: false }));
 
 import { VERSION } from '../version.js';
-import { describeDevice, confirmTap, openSession, openMode, NAME_KEY } from './playtest.js';
+import { describeDevice, confirmTap, openSession, openMode, NAME_KEY, pageAddress } from './playtest.js';
 import { RECORDER_NOTICE } from './playtest-entry.js';
 
 export { RECORDER_NOTICE };
@@ -30,6 +30,8 @@ const BATCH_MS = 60_000;
 const EVENTS_MAX = 500; // per batch, as the admin page takes them
 const CHUNKS_MAX = 240; // per session (four hours); then a new session starts
 export const LOOKBACK_MS = 2 * 60_000; // owner Q12: the last two minutes
+const EVENT_MAX_CHARS = 2048; // one event's data, as JSON (B-131)
+const BATCH_MAX_CHARS = 48 * 1024; // a batch, split above this (B-131); the beacon takes about 64 kB
 
 const randomId = (win) => {
   const bytes = win.crypto.getRandomValues(new Uint8Array(12));
@@ -43,6 +45,22 @@ const session = (win) => {
     return null;
   }
 };
+
+/**
+ * The game's data as it is now (B-131): a copy made at once, so later changes do not
+ * show up, never throwing (a loop or a BigInt), and at most EVENT_MAX_CHARS.
+ */
+function snapshotOf(data) {
+  if (data === null || data === undefined) return null;
+  try {
+    const text = JSON.stringify(data);
+    if (text === undefined) return null;
+    if (text.length > EVENT_MAX_CHARS) return { tooLarge: text.length };
+    return JSON.parse(text);
+  } catch {
+    return { notJson: true };
+  }
+}
 
 export class Recorder {
   constructor({ admin, token, version = '', window: win, document: doc, fetch: f, everyMs = BATCH_MS, badge = true, recording = true, open = false, expires = null }) {
@@ -87,7 +105,7 @@ export class Recorder {
       }
       this.events.shift(); // the look-back keeps the newest
     }
-    this.events.push({ at: Date.now(), k: String(kind).slice(0, 40), d: data });
+    this.events.push({ at: Date.now(), k: String(kind).slice(0, 40), d: snapshotOf(data) });
   }
 
   /** Also record what happens in a NetworkRoom: connection, participants, host, closing. */
@@ -161,7 +179,7 @@ export class Recorder {
     const w = this.win;
     const { device, browser, userAgent } = describeDevice(w.navigator);
     return {
-      url: String(w.location?.href ?? ''), version: String(this.version ?? ''), kit: VERSION, device, browser, userAgent,
+      url: pageAddress(w.location), version: String(this.version ?? ''), kit: VERSION, device, browser, userAgent,
       window: `${w.innerWidth}x${w.innerHeight}`, screen: `${w.screen?.width ?? 0}x${w.screen?.height ?? 0}`,
       dpr: w.devicePixelRatio ?? 1, language: w.navigator?.language ?? '', startedAt: this.startedAt,
     };
@@ -172,8 +190,13 @@ export class Recorder {
     if (!this.recording || this.full) return false;
     // Frame lines and hiding alone are not worth a request (B-125): they go with the next real event.
     if (!this.dropped && !this.events.some((e) => e.k !== 'perf' && e.k !== 'visibility')) return false;
+    // Markers first, so a full batch never loses them (B-132).
+    if (this.lost) {
+      this.events.unshift({ at: Date.now(), k: 'lost', d: { events: this.lost } });
+      this.lost = 0;
+    }
     if (this.dropped) {
-      this.events.push({ at: Date.now(), k: 'dropped', d: { events: this.dropped } });
+      this.events.unshift({ at: Date.now(), k: 'dropped', d: { events: this.dropped } });
       this.dropped = 0;
     }
     if (!this.events.length) return false;
@@ -184,29 +207,48 @@ export class Recorder {
       name = '';
     }
     // Times count from the session's start; the look-back's are negative (F-120).
-    const events = this.events.slice(0, EVENTS_MAX + 2).map((e) => ({ t: e.at - this.startedAt, k: e.k, d: e.d }));
+    // A batch stays under about 48 kB (B-131): what does not fit goes in the next one, at once.
+    const events = [];
+    let size = 0;
+    while (this.events.length && events.length < EVENTS_MAX) {
+      const e = this.events[0];
+      const one = { t: e.at - this.startedAt, k: e.k, d: e.d };
+      const chars = JSON.stringify(one).length;
+      if (events.length && size + chars > BATCH_MAX_CHARS) break;
+      events.push(one);
+      size += chars;
+      this.events.shift();
+    }
+    const more = this.events.length > 0;
     const chunk = {
       token: this.token, session: this.session, seq: this.seq, events,
       ...(this.seq === 0 ? { context: this.context() } : {}),
       ...(name ? { name } : {}),
     };
-    this.events = [];
     this.seq += 1;
     if (this.seq >= CHUNKS_MAX) this.newSession();
     const url = `${this.admin}/playtest/v1/record`;
     const body = JSON.stringify(chunk);
-    // A plain-text beacon needs no preflight, so it still goes when the page closes.
-    if (leaving && this.win.navigator?.sendBeacon) return this.win.navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
-    try {
-      const res = await this.fetch(url, { method: 'POST', headers: { 'content-type': 'text/plain' }, body, keepalive: true });
-      // The admin page says no (B-125): the link or the test has ended, so stop for good;
-      // the day is full, so stop sending and say so on the badge.
-      if (res.status === 401) this.close();
-      else if (res.status === 429) this.dayFull();
-      return res.ok;
-    } catch {
-      return false; // a lost batch is acceptable: recording never disturbs the game
+    let ok = false;
+    if (leaving && this.win.navigator?.sendBeacon) {
+      // A plain-text beacon needs no preflight, so it still goes when the page closes.
+      ok = this.win.navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
+    } else {
+      try {
+        const res = await this.fetch(url, { method: 'POST', headers: { 'content-type': 'text/plain' }, body, keepalive: true });
+        // The admin page says no (B-125): the link or the test has ended, so stop for good;
+        // the day is full, so stop sending and say so on the badge.
+        if (res.status === 401) this.close();
+        else if (res.status === 429) this.dayFull();
+        ok = res.ok;
+      } catch {
+        ok = false; // a lost batch is acceptable: recording never disturbs the game
+      }
     }
+    // A batch that did not arrive is marked in the next one (B-131).
+    if (!ok && !this.closed && !this.full) this.lost = (this.lost ?? 0) + events.length;
+    if (more && !this.closed && !this.full) return this.flush(leaving);
+    return ok;
   }
 
   showBadge() {

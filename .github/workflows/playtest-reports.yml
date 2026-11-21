@@ -67,14 +67,23 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git ls-remote --exit-code origin refs/heads/playtest-reports >/dev/null; then
-            git fetch -q origin playtest-reports && git checkout -q -B playtest-reports FETCH_HEAD
-          else
-            git checkout -q --orphan playtest-reports && git rm -rqf .
-          fi
           # Recordings alone go in their own file, so a reading of reports never replaces them (F-092).
           FILE="$GAME.txt"; [ "$WHAT" = recordings ] && FILE="$GAME-recordings.txt"
+          # GitHub refuses files over 100 MB (F-135): stop well before, and say how to narrow it.
+          SIZE=$(stat -c %s "$RUNNER_TEMP/sealed.txt")
+          if [ "$SIZE" -gt $((50 * 1024 * 1024)) ]; then
+            echo "::error::the sealed file is $((SIZE / 1024 / 1024)) MB; narrow it with since (only newer) or what: reports"; exit 1
+          fi
+          # The branch keeps only the newest file of each game, in a single commit (F-135):
+          # its history no longer grows with every reading. The workflow owns this branch.
+          mkdir -p "$RUNNER_TEMP/kept"
+          if git ls-remote --exit-code origin refs/heads/playtest-reports >/dev/null; then
+            git fetch -q origin playtest-reports && git checkout -q FETCH_HEAD
+            cp ./*.txt "$RUNNER_TEMP/kept/" 2>/dev/null || true
+          fi
+          git checkout -q --orphan fresh-playtest-reports && git rm -rqf . 2>/dev/null || true
+          cp "$RUNNER_TEMP/kept/"*.txt . 2>/dev/null || true
           cp "$RUNNER_TEMP/sealed.txt" "$FILE"
-          git add "$FILE"
-          git commit -q -m "Sealed Playtest $WHAT for $GAME (F-091, F-092)" || echo "Nothing new"
-          git push -q origin playtest-reports
+          git add ./*.txt
+          git commit -q -m "Sealed Playtest readings (newest per game; this run: $WHAT for $GAME) (F-091, F-092, F-135)"
+          git push -q -f origin HEAD:playtest-reports

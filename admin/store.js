@@ -24,7 +24,10 @@ const KEEP_DAYS = 7; // measurement summaries are kept a week (F-052)
 // New rooms per game (F-098): a game's rooms across all its Worker instances.
 // Friends playing make a few rooms an evening; a script makes hundreds.
 export const ROOMS_PER_HOUR = 60;
-export const ROOMS_PER_VISITOR_DAY = 40;
+// Per visitor far below the game's (B-129, review ROOM-1): closing a game for new
+// rooms then takes ten addresses each hour, not two.
+export const ROOMS_PER_VISITOR_HOUR = 6;
+export const ROOMS_PER_VISITOR_DAY = 20;
 const PER_DAY_MAX = 3_000;
 const median = (list) => {
   const s = list.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
@@ -108,10 +111,21 @@ export class AdminStore {
     const hour = new Date(now).toISOString().slice(0, 13);
     const today = day(now);
     const hourKey = `rc:${game}:${hour}`;
-    const who = visitor ? (await hashText(`${today}:${visitor}`)).slice(0, 16) : 'unknown';
+    // A random value kept in the store goes into the hash (review PRIV-2), so the
+    // stored hash cannot be turned back into an address by trying them all.
+    this.roomSalt ??= (await this.storage.get('salt:rooms')) ?? null;
+    if (!this.roomSalt) {
+      this.roomSalt = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+      await this.storage.put('salt:rooms', this.roomSalt);
+    }
+    const who = visitor ? (await hashText(`${this.roomSalt}:${today}:${visitor}`)).slice(0, 16) : 'unknown';
     const visitorKey = `ra:${game}:${today}:${who}`;
-    const [inHour, byVisitor] = await Promise.all([this.storage.get(hourKey), this.storage.get(visitorKey)]);
-    if ((inHour ?? 0) >= ROOMS_PER_HOUR || (byVisitor ?? 0) >= ROOMS_PER_VISITOR_DAY) {
+    const visitorHourKey = `rh:${game}:${hour}:${who}`;
+    const [inHour, byVisitor, byVisitorHour] = await Promise.all([this.storage.get(hourKey), this.storage.get(visitorKey), this.storage.get(visitorHourKey)]);
+    if ((inHour ?? 0) >= ROOMS_PER_HOUR || (byVisitor ?? 0) >= ROOMS_PER_VISITOR_DAY || (byVisitorHour ?? 0) >= ROOMS_PER_VISITOR_HOUR) {
+      // Shown on the game's card (B-129): one log line an hour is easy to miss.
+      const refusedKey = `rr:${game}:${hour}`;
+      await this.storage.put(refusedKey, ((await this.storage.get(refusedKey)) ?? 0) + 1);
       if (!this.warnedRooms?.has(`${game}:${hour}`)) {
         (this.warnedRooms ??= new Set()).add(`${game}:${hour}`);
         await this.log(game, `${game}: för många nya rum (${inHour ?? 0} den här timmen); fler nekas en stund`);
@@ -120,19 +134,31 @@ export class AdminStore {
     }
     await this.storage.put(hourKey, (inHour ?? 0) + 1);
     await this.storage.put(visitorKey, (byVisitor ?? 0) + 1);
+    await this.storage.put(visitorHourKey, (byVisitorHour ?? 0) + 1);
     // Counts older than two days go (checked once an hour per store instance).
     if (this.roomsCleaned !== hour) {
       this.roomsCleaned = hour;
       const old = [];
-      for (const prefix of ['rc:', 'ra:']) {
+      for (const prefix of ['rc:', 'ra:', 'rh:', 'rr:']) {
         for (const key of (await this.storage.list({ prefix })).keys()) {
-          const stamp = prefix === 'rc:' ? key.split(':')[2] : key.split(':')[2];
+          const stamp = key.split(':')[2];
           if (stamp < day(now - 2 * 86_400_000)) old.push(key);
         }
       }
       for (let i = 0; i < old.length; i += 128) await this.storage.delete(old.slice(i, i + 128));
     }
     return { ok: true };
+  }
+
+  /** New rooms refused this hour, per game (B-129), for the game cards. */
+  async roomsRefused() {
+    const hour = new Date(this.now()).toISOString().slice(0, 13);
+    const out = {};
+    for (const [key, n] of await this.storage.list({ prefix: 'rr:' })) {
+      const [, game, h] = key.split(':');
+      if (h === hour) out[game] = n;
+    }
+    return out;
   }
 
   /** A timer that has run out gets one log line, at the time it ran out (B-088). */
@@ -395,7 +421,7 @@ export class AdminStore {
     if (url.pathname === '/settings' && request.method === 'GET') {
       await this.dropOldPlaytest();
       await this.logEndedTimers(await this.settings());
-      return json({ settings: await this.settings(), rev: (await this.storage.get('settings-rev')) ?? 0, budget: await this.budget(), connected: await this.connected(), versions: await this.versions() });
+      return json({ settings: await this.settings(), rev: (await this.storage.get('settings-rev')) ?? 0, budget: await this.budget(), connected: await this.connected(), versions: await this.versions(), roomsRefused: await this.roomsRefused() });
     }
     if (url.pathname === '/settings' && request.method === 'PUT') {
       const before = await this.settings();

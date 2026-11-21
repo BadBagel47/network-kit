@@ -6,6 +6,8 @@
 // Keys in the store's storage:
 //   tst:<id>              a tester link (the secret only as a hash)
 //   rep:<time>-<id>       a report
+//   rix:<time>-<id>       its small index entry (F-130): id, game, test, result, time, keep, open, pictures;
+//                         lists, Behåll and cleaning read these, never the reports' bodies
 //   img:<id>              a picture's facts (type, size, owner), small, so lists stay light (B-099)
 //   imgd:<id>             the picture itself (base64), read only when one picture is asked for
 //   ptn:<tester>:<day>    how many reports and pictures a tester sent that day
@@ -46,6 +48,7 @@ export const RECORDING_CHUNKS_MAX = 240;
 export const RECORDING_EVENTS_MAX = 500;
 export const RECORDING_KEEP_MAX = 20;
 const SESSION_ID = /^[A-Za-z0-9_-]{8,40}$/;
+const CLEAN_EVERY_MS = 60 * 60_000; // F-130
 const RESULTS = new Set(['worked', 'partly', 'failed', 'cancelled', 'note']);
 
 export const validGame = (g) => typeof g === 'string' && /^[a-z0-9][a-z0-9-]{0,62}$/.test(g);
@@ -163,8 +166,13 @@ export class Playtest {
     const now = this.now();
     const out = [];
     for (const o of (await this.storage.list({ prefix: 'ot:' })).values()) {
-      if (o.until <= now && now - o.until > OPEN_KEEP_MS) continue;
-      out.push({ ...o, state: o.until > now ? 'on' : 'ended' });
+      if (o.until <= now && now - o.until > OPEN_KEEP_MS) {
+        await this.storage.delete(`ot:${o.game}`); // long ended (D-140)
+        continue;
+      }
+      // Today's use against the caps (F-128): a batch is about a minute of recording.
+      const used = { report: 0, image: 0, chunk: 0, ...((await this.storage.get(`ptn:open-${o.game}:${day(now)}`)) ?? {}) };
+      out.push({ ...o, state: o.until > now ? 'on' : 'ended', used, caps: PER_DAY_OPEN, perVisitor: PER_VISITOR_OPEN });
     }
     return out.sort((a, b) => b.until - a.until);
   }
@@ -210,14 +218,32 @@ export class Playtest {
     return null;
   }
 
+  // ---- the reports' index (F-130, review COST-2)
+
+  indexOf(r) {
+    return { id: r.id, key: r.key, game: r.game, testId: r.testId, result: r.result, at: r.at, keep: Boolean(r.keep), open: Boolean(r.open), images: r.images ?? [] };
+  }
+
+  /** The index, built once from the reports stored before it existed. */
+  async index() {
+    if (!this.indexBuilt) {
+      if (!(await this.storage.get('meta:rix-built'))) {
+        for (const [key, r] of await this.storage.list({ prefix: 'rep:' })) await this.storage.put(`rix:${key.slice(4)}`, this.indexOf({ ...r, key }));
+        await this.storage.put('meta:rix-built', this.now());
+      }
+      this.indexBuilt = true;
+    }
+    return this.storage.list({ prefix: 'rix:' });
+  }
+
   /** *Ta bort allt från Öppet test* (B-123): every report and recording an Open test brought in for a game. */
   async removeOpenData(game) {
     const gone = [];
     let reports = 0;
     let recordings = 0;
-    for (const [key, r] of await this.storage.list({ prefix: 'rep:' })) {
-      if (r.game === game && r.open) {
-        gone.push(key, ...r.images.flatMap((i) => [`img:${i}`, `imgd:${i}`]));
+    for (const x of (await this.index()).values()) {
+      if (x.game === game && x.open) {
+        gone.push(x.key, `rix:${x.key.slice(4)}`, ...x.images.flatMap((i) => [`img:${i}`, `imgd:${i}`]));
         reports += 1;
       }
     }
@@ -282,8 +308,8 @@ export class Playtest {
     if (!t) return null;
     if (t.open) return { game: t.game, label: t.label, expires: t.expires, reported: [], open: true };
     const reported = new Set();
-    for (const r of (await this.storage.list({ prefix: 'rep:' })).values()) {
-      if (r.game === t.game && r.testId && r.result !== 'cancelled') reported.add(r.testId);
+    for (const x of (await this.index()).values()) {
+      if (x.game === t.game && x.testId && x.result !== 'cancelled') reported.add(x.testId);
     }
     return { game: t.game, label: t.label, expires: t.expires, reported: [...reported] };
   }
@@ -351,7 +377,9 @@ export class Playtest {
     }
     const tester = t.open ? `Öppet test${report.name ? ` · ${report.name}` : ''}` : t.label || 'Testare';
     const stored = { ...report, images, id, key, game: t.game, tester, testerId: t.id, open: Boolean(t.open), at: now, keep: false };
+    await this.index(); // built before the first new entry, so older reports are in it too
     await this.storage.put(key, stored);
+    await this.storage.put(`rix:${key.slice(4)}`, this.indexOf(stored));
     await this.clean();
     return { id };
   }
@@ -377,7 +405,12 @@ export class Playtest {
   }
 
   async findReport(id) {
-    for (const [key, r] of await this.storage.list({ prefix: 'rep:' })) if (r.id === id) return { key, r };
+    for (const x of (await this.index()).values()) {
+      if (x.id === id) {
+        const r = await this.storage.get(x.key);
+        return r ? { key: x.key, r } : null;
+      }
+    }
     return null;
   }
 
@@ -387,18 +420,19 @@ export class Playtest {
     if (!found) return { error: 'not-found', status: 404 };
     if (keep && !found.r.keep) {
       let kept = 0;
-      for (const r of (await this.storage.list({ prefix: 'rep:' })).values()) if (r.keep && r.game === found.r.game) kept += 1;
+      for (const x of (await this.index()).values()) if (x.keep && x.game === found.r.game) kept += 1;
       if (kept >= KEEP_MAX) return { error: 'keep-full', status: 409 };
     }
     found.r.keep = Boolean(keep);
     await this.storage.put(found.key, found.r);
+    await this.storage.put(`rix:${found.key.slice(4)}`, this.indexOf({ ...found.r, key: found.key }));
     return { ok: true, keep: found.r.keep };
   }
 
   async deleteReport(id) {
     const found = await this.findReport(id);
     if (!found) return;
-    await this.storage.delete([found.key, ...found.r.images.flatMap((i) => [`img:${i}`, `imgd:${i}`])]);
+    await this.storage.delete([found.key, `rix:${found.key.slice(4)}`, ...found.r.images.flatMap((i) => [`img:${i}`, `imgd:${i}`])]);
   }
 
   // ---- Playtest Recorder (F-092)
@@ -423,7 +457,7 @@ export class Playtest {
     // Open test: a name typed after recording started still comes with it (owner 2026-11-20).
     const name = text(raw?.name, 40).trim();
     if (t.open && name && meta.tester === 'Öppet test') meta.tester = `Öppet test · ${name}`;
-    const events = Array.isArray(raw?.events) ? raw.events.slice(0, RECORDING_EVENTS_MAX).map((e) => ({
+    const events = Array.isArray(raw?.events) ? raw.events.slice(0, RECORDING_EVENTS_MAX + 2).map((e) => ({ // the client's markers fit too (B-132)
       t: Number.isFinite(Number(e?.t)) ? Number(e.t) : null,
       k: typeof e?.k === 'string' ? e.k.slice(0, 40) : 'event',
       d: plain(e?.d),
@@ -491,11 +525,13 @@ export class Playtest {
   /** Reports older than 30 days (unless kept), their pictures, and stray pictures go. */
   async clean() {
     const now = this.now();
-    if (now - (this.cleanedAt ?? 0) < 60_000) return;
+    // Once an hour, from the small index (F-130): a recording tab sends a batch a
+    // minute, and cleaning every minute read every stored row each time.
+    if (now - (this.cleanedAt ?? 0) < CLEAN_EVERY_MS) return;
     this.cleanedAt = now;
     const gone = [];
-    for (const [key, r] of await this.storage.list({ prefix: 'rep:' })) {
-      if (!r.keep && now - r.at > REPORT_KEEP_MS) gone.push(key, ...r.images.flatMap((i) => [`img:${i}`, `imgd:${i}`]));
+    for (const [ikey, x] of await this.index()) {
+      if (!x.keep && now - x.at > REPORT_KEEP_MS) gone.push(x.key, ikey, ...x.images.flatMap((i) => [`img:${i}`, `imgd:${i}`]));
     }
     for (const [key, img] of await this.storage.list({ prefix: 'img:' })) {
       if (!img.report && now - img.at > UNUSED_IMAGE_MS) gone.push(key, `imgd:${img.id}`);

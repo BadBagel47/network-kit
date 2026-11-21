@@ -27,6 +27,20 @@ Affects: every game with rooms (take 0.21.0; nothing to change unless a game wan
 - Changed (D-152): the welcome state, `rttMs` and `at` are stable.
 - Docs (F-143): the first upload of a Worker can answer 404 on the rooms for a while.
 
+From the review D-122 (runs B, C and D), also in this version:
+
+- Changed (B-129): new rooms per visitor are limited per hour too (6 an hour, 20 a day; the game's 60 an hour stays), and the game's card shows rooms refused this hour; the visitor's hash is salted.
+- New (F-128): the admin page shows Open test's use of the day (recording minutes, reports, pictures).
+- Faster (F-130): Playtest keeps a small index per report; lists, Behåll and cleaning read it, and cleaning runs once an hour, not every minute.
+- Fixed (B-131, B-132): recorded data is copied when recorded, never throws, is capped at 2 kB an event; large batches are split; a lost batch is marked `lost` in the next; markers come first.
+- Changed (F-135): the readings branch keeps only the newest file per game in one commit, and a sealed file over 50 MB is refused with a hint.
+- Changed (D-134): reports and recordings keep the page's address without the fragment and without secret values (Open test's key, key, token, pass).
+- Changed (B-136): the preview Workers answer only on their trythis.one addresses.
+- Changed (F-137): the preview deploys only after the unit tests pass; the admin deploy runs the whole unit suite; the deploy checks use the trythis.one address when no workers.dev address is given.
+- Tests (F-138): the compatibility test checks the emergency stop and that GameApi and gameApi() offer the same methods, and fails without release tags.
+- Changed (F-139): wheel, touch, a gamepad and the event `nk-activity` count as activity for notices.
+- Small (D-140): a "no" from Open test is kept for ten minutes; long-ended tests are deleted; wrong read keys are braked; sign-in advice in docs/ADMIN.md.
+
 ## 0.20.0 (2026-11-20)
 
 Affects: games that use Playtest Recorder or Open test (take 0.20.0; a game that showed its own recording notice either keeps it with `recordingNotice: false` or drops it), and the admin page. From the review D-122 (run A).

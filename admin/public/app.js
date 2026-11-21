@@ -283,6 +283,9 @@ function card(name) {
     if (act) facts.append(fact(act.rooms, 'rum'), fact(act.players, 'spelare nu'), fact(act.peak, 'som mest i dag'));
     else facts.append(el('span', {}, 'Inga rum i dag'));
   }
+  // New rooms refused this hour (B-129): someone may be making rooms to close the game.
+  const refused = data.control.roomsRefused?.[name] ?? 0;
+  if (refused > 0) facts.append(fact(refused, 'rum nekade denna timme', true));
   const version = data.control.versions?.[name];
   if (version) {
     const v = el('span');
@@ -1123,6 +1126,8 @@ function openItem(o) {
   const info = el('div');
   info.append(el('span', { class: 'title' }, o.state === 'on' ? `${o.game} · på till ${clock(o.until)}` : `${o.game} · avslaget ${clock(o.until)}`));
   info.append(el('span', { class: 'sub' }, o.page));
+  // Today's use (F-128): the day's caps are shared by all visitors; a batch is about a minute.
+  if (o.used && o.caps) info.append(el('span', { class: 'sub' }, `I dag: ${o.used.chunk} av ${o.caps.chunk} inspelningsminuter · ${o.used.report} av ${o.caps.report} rapporter · ${o.used.image} av ${o.caps.image} bilder`));
   item.append(info);
   // Everything this game's Open test brought in, in one go (B-123).
   const wipe = el('button', { type: 'button' }, 'Ta bort allt från Öppet test');

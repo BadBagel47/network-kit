@@ -97,3 +97,5 @@ createRoomServer({ ...options, admin: { binding: 'NETWORK_KIT_ADMIN', game: 'my-
 ```
 
 The game asks at most every 30 seconds per Worker instance and per room, over the service binding (never over the internet). If the admin Worker cannot be reached, the game stays open. The demo is connected as `network-kit-demo`.
+
+**When sign-in is held up on a new device (D-140).** The brake for all addresses together (F-101) lets 30 wrong passwords through in an hour and then waits. A device that has signed in before is never held up; a new phone or a cleared browser is, for as long as someone keeps sending wrong passwords. Then sign in from a device you have used before.

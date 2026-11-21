@@ -157,7 +157,11 @@ async function playtestPublic(request, env, deps) {
   const path = url.pathname.replace(/^\/playtest\/v1\//, '/playtest/');
   if (path === '/playtest/read' || path === '/playtest/keep' || path === '/playtest/read-image' || path === '/playtest/read-recordings' || path === '/playtest/read-recording') {
     // The agent's workflow (playtest-reports.yml), with the key the deploy derives.
-    if (!(await sameKey(request.headers.get('x-playtest-key'), env.PLAYTEST_READ_KEY))) return json({ error: 'forbidden' }, 403);
+    if (!(await sameKey(request.headers.get('x-playtest-key'), env.PLAYTEST_READ_KEY))) {
+      // Wrong keys count against the per-address brake (D-140); the right one is never braked.
+      if (tooMany(request, deps.now())) return json({ error: 'too-many' }, 429);
+      return json({ error: 'forbidden' }, 403);
+    }
     if (path === '/playtest/keep' && request.method === 'POST') {
       const { ids = [], keep = true } = await request.json().catch(() => ({}));
       const out = {};
@@ -307,7 +311,7 @@ async function readSettings(env) {
 }
 
 /** Each game's and mode's status as the games see it, with the settings (F-067). */
-function controlOf({ settings, rev = 0, budget, connected = {}, versions = {} }, names, now) {
+function controlOf({ settings, rev = 0, budget, connected = {}, versions = {}, roomsRefused = {} }, names, now) {
   // What each game and each of its modes says now, and when a running timer ends (F-067).
   const one = (n, m) => {
     const entry = m ? settings.games[n]?.modes?.[m] : settings.games[n];
@@ -321,7 +325,7 @@ function controlOf({ settings, rev = 0, budget, connected = {}, versions = {} },
       modes: Object.fromEntries(Object.keys(settings.games[n]?.modes ?? {}).map((m) => [m, one(n, m)])),
     }]),
   );
-  return { settings, rev, budget, status, connected, versions };
+  return { settings, rev, budget, status, connected, versions, roomsRefused };
 }
 
 /**

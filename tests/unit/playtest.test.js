@@ -217,7 +217,7 @@ test('F-092: Playtest Recorder keeps a session in batches; the owner and the age
   tick(31 * 86_400_000);
   assert.equal((await (await call('/api/recordings', { headers: { cookie } })).json()).length, 1, 'kept');
   await call(`/api/recordings/${session}/keep`, { method: 'POST', headers: { cookie }, body: JSON.stringify({ keep: false }) });
-  tick(61_000);
+  tick(61 * 60_000); // cleaning runs once an hour (F-130)
   assert.equal((await (await call('/api/recordings', { headers: { cookie } })).json()).length, 0, 'gone after 30 days');
 });
 

@@ -277,6 +277,22 @@ function blobToDataUrl(blob) {
 
 // ------------------------------------------------------------------ the panel
 
+/**
+ * The page's address as reports and recordings keep it (D-134, review PRIV-2): no
+ * fragment (invitation keys, game links and tester links travel there), and no values
+ * for parameters that carry a secret (Open test's key, anything named key, token or
+ * pass). Other values stay, since they set up the test (`?test&at=star`).
+ */
+export function pageAddress(loc) {
+  try {
+    const u = new URL(String(loc?.href ?? ''));
+    const query = [...u.searchParams].map(([k, v]) => (/^(record|report)$|key|token|pass|secret/i.test(k) || !v ? k : `${k}=${v}`)).join('&');
+    return `${u.origin}${u.pathname}${query ? `?${query}` : ''}`;
+  } catch {
+    return '';
+  }
+}
+
 /** Open test (F-118): what the address asks for, `?record`, `?report` or both; null for neither. */
 export function openMode(win = globalThis.window) {
   const q = new URLSearchParams(win?.location?.search ?? '');
@@ -299,13 +315,15 @@ export function openSession({ win, admin, fetch: f, fresh = false }) {
   const s = store(win, 'sessionStorage');
   const kept = read(s, OPEN_KEY);
   if (!fresh && kept?.token && kept.key === key && kept.expires > Date.now()) return (win.__nkOpen = Promise.resolve(kept));
+  // A "no" is kept for ten minutes, so an address with ?record or ?report does not ask on every load (D-140).
+  if (!fresh && kept?.no && kept.key === key && kept.until > Date.now()) return (win.__nkOpen = Promise.resolve(null));
   const go = f ?? ((...a) => win.fetch(...a));
   win.__nkOpen = (async () => {
     try {
       // Plain text needs no preflight.
       const res = await go(`${String(admin).replace(/\/$/, '')}/playtest/v1/open`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ key }) });
       if (!res.ok) {
-        write(s, OPEN_KEY, null);
+        write(s, OPEN_KEY, { no: true, key, until: Date.now() + 10 * 60_000 });
         return null;
       }
       const found = { ...(await res.json()), key };
@@ -487,7 +505,7 @@ export class PlaytestPanel {
       game = { error: String(e?.message ?? e) };
     }
     return {
-      url: String(w.location?.href ?? ''),
+      url: pageAddress(w.location),
       version: String(this.o.version ?? ''),
       kit: VERSION,
       device,

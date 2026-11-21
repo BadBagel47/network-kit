@@ -582,13 +582,16 @@ test('F-098: a host-run room that keeps getting messages with nobody to receive 
 });
 
 test('F-098, F-100: the admin page counts a game\'s new rooms across Worker instances; past the limit the Worker refuses', async () => {
-  const { ROOMS_PER_HOUR, ROOMS_PER_VISITOR_DAY } = await import('../../admin/store.js');
+  const { ROOMS_PER_HOUR, ROOMS_PER_VISITOR_HOUR } = await import('../../admin/store.js');
   const store = storeWith();
   const created = async (visitor) => (await store.fetch(new Request('https://store/room-created', { method: 'POST', body: JSON.stringify({ game: 'bricks', visitor }) }))).json();
-  for (let i = 0; i < ROOMS_PER_VISITOR_DAY; i += 1) assert.equal((await created('1.2.3.4')).ok, true);
-  assert.deepEqual(await created('1.2.3.4'), { ok: false, reason: 'too-many-rooms' }, 'one visitor\'s day');
-  for (let i = ROOMS_PER_VISITOR_DAY; i < ROOMS_PER_HOUR; i += 1) assert.equal((await created(`10.0.0.${i}`)).ok, true);
+  for (let i = 0; i < ROOMS_PER_VISITOR_HOUR; i += 1) assert.equal((await created('1.2.3.4')).ok, true);
+  assert.deepEqual(await created('1.2.3.4'), { ok: false, reason: 'too-many-rooms' }, 'one visitor\'s hour (B-129: 6, far below the game\'s 60)');
+  for (let i = ROOMS_PER_VISITOR_HOUR; i < ROOMS_PER_HOUR; i += 1) assert.equal((await created(`10.0.0.${i}`)).ok, true);
   assert.equal((await created('10.9.9.9')).ok, false, 'the game\'s hour');
+  const settings = await (await store.fetch(new Request('https://store/settings'))).json();
+  assert.equal(settings.roomsRefused.bricks, 2, 'refusals counted for the game\'s card (B-129)');
+  assert.ok(![...(await store.storage?.list?.({ prefix: 'ra:' }) ?? new Map()).keys()].some((k) => k.includes('1.2.3.4')), 'no address in the keys');
 
   // The Worker asks before it makes a room, and passes the visitor by /64.
   let asked = null;
